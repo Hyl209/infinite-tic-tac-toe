@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#111827">
+    <meta name="description" content="每方最多保留三颗棋子的无限动态井字棋，支持人机和本地双人对战">
+    <title>无限井字棋 - 人机与双人对战</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="style.css">
+    <script src="game.js" defer></script>
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="control-panel" aria-labelledby="game-title">
+        <header class="hero-copy">
+          <p class="brand-mark" aria-hidden="true">X<span>O</span></p>
+          <div>
+            <h1 id="game-title">无限井字棋</h1>
+            <p>每方只保留 3 颗棋子，棋局永远不会填满。</p>
+          </div>
+        </header>
+
+        <div class="status-card" data-result="playing">
+          <p class="status-label">当前对局</p>
+          <p id="status-text" class="status-text" aria-live="polite">轮到你，你是 X</p>
+          <p id="mark-info" class="mark-info">你执 X，AI 执 O</p>
+        </div>
+
+        <div class="settings" aria-label="游戏设置">
+          <fieldset>
+            <legend>对战模式</legend>
+            <div class="segmented-control two-options">
+              <label>
+                <input type="radio" name="game-mode" value="ai" checked>
+                <span>人机对战</span>
+              </label>
+              <label>
+                <input type="radio" name="game-mode" value="pvp">
+                <span>双人对战</span>
+              </label>
+            </div>
+          </fieldset>
+
+          <fieldset id="ai-difficulty-settings">
+            <legend>AI 强度</legend>
+            <div class="segmented-control">
+              <label>
+                <input type="radio" name="difficulty" value="easy">
+                <span>简单</span>
+              </label>
+              <label>
+                <input type="radio" name="difficulty" value="normal" checked>
+                <span>普通</span>
+              </label>
+              <label>
+                <input type="radio" name="difficulty" value="hard">
+                <span>困难</span>
+              </label>
+            </div>
+          </fieldset>
+
+          <fieldset id="ai-first-settings">
+            <legend>谁先落子</legend>
+            <div class="segmented-control two-options">
+              <label>
+                <input type="radio" name="first-player" value="player" checked>
+                <span>我先手</span>
+              </label>
+              <label>
+                <input type="radio" name="first-player" value="ai">
+                <span>AI 先手</span>
+              </label>
+            </div>
+          </fieldset>
+        </div>
+
+        <section class="scoreboard" aria-label="本次会话比分">
+          <div>
+            <span id="left-score-name" class="score-name">玩家</span>
+            <strong id="player-score">0</strong>
+          </div>
+          <div>
+            <span class="score-name">平局</span>
+            <strong id="draw-score">0</strong>
+          </div>
+          <div>
+            <span id="right-score-name" class="score-name">AI</span>
+            <strong id="ai-score">0</strong>
+          </div>
+        </section>
+
+        <div class="actions">
+          <button id="restart-button" class="button primary" type="button">重新开始</button>
+          <button id="clear-score-button" class="button secondary" type="button">清空比分</button>
+        </div>
+      </section>
+
+      <section class="game-panel" aria-label="井字棋棋盘">
+        <div class="arena-heading">
+          <div>
+            <span class="arena-label">动态棋盘</span>
+            <strong id="difficulty-label">普通模式</strong>
+          </div>
+          <span id="thinking-label" class="thinking-label" aria-hidden="true">AI 思考中</span>
+        </div>
+
+        <div id="board" class="board" role="grid" aria-label="3 乘 3 井字棋棋盘">
+          <button class="cell" type="button" role="gridcell" data-index="0" aria-label="第 1 格，空"></button>
+          <button class="cell" type="button" role="gridcell" data-index="1" aria-label="第 2 格，空"></button>
+          <button class="cell" type="button" role="gridcell" data-index="2" aria-label="第 3 格，空"></button>
+          <button class="cell" type="button" role="gridcell" data-index="3" aria-label="第 4 格，空"></button>
+          <button class="cell" type="button" role="gridcell" data-index="4" aria-label="第 5 格，空"></button>
+          <button class="cell" type="button" role="gridcell" data-index="5" aria-label="第 6 格，空"></button>
+          <button class="cell" type="button" role="gridcell" data-index="6" aria-label="第 7 格，空"></button>
+          <button class="cell" type="button" role="gridcell" data-index="7" aria-label="第 8 格，空"></button>
+          <button class="cell" type="button" role="gridcell" data-index="8" aria-label="第 9 格，空"></button>
+        </div>
+
+        <p class="game-note">
+          <span class="expiry-swatch" aria-hidden="true"></span>
+          高亮棋子会在该方下次落子时消失
+        </p>
+      </section>
+    </main>
+  </body>
+</html>

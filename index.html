@@ -4,10 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#111827">
-    <meta name="description" content="每方最多保留三颗棋子的无限动态井字棋，支持人机和本地双人对战">
-    <title>无限井字棋 - 人机与双人对战</title>
+    <meta name="description" content="每方最多保留三颗棋子的无限动态井字棋，支持 AI、本地双人和线上好友对战">
+    <title>无限井字棋 - AI、本地与线上对战</title>
     <link rel="icon" href="data:,">
     <link rel="stylesheet" href="style.css">
+    <script src="online-config.js" defer></script>
+    <script src="online.js" defer></script>
     <script src="game.js" defer></script>
   </head>
   <body>
@@ -30,7 +32,7 @@
         <div class="settings" aria-label="游戏设置">
           <fieldset>
             <legend>对战模式</legend>
-            <div class="segmented-control two-options">
+            <div class="segmented-control">
               <label>
                 <input type="radio" name="game-mode" value="ai" checked>
                 <span>人机对战</span>
@@ -39,7 +41,39 @@
                 <input type="radio" name="game-mode" value="pvp">
                 <span>双人对战</span>
               </label>
+              <label>
+                <input type="radio" name="game-mode" value="online">
+                <span>线上对战</span>
+              </label>
             </div>
+          </fieldset>
+
+          <fieldset id="online-room-panel" hidden>
+            <legend>好友房间</legend>
+            <div class="online-room-actions">
+              <button id="create-room-button" class="button primary" type="button">创建房间</button>
+              <div class="room-join-row">
+                <input
+                  id="room-code-input"
+                  type="text"
+                  inputmode="text"
+                  maxlength="12"
+                  autocomplete="off"
+                  spellcheck="false"
+                  aria-label="六位房间码"
+                  placeholder="输入房间码"
+                >
+                <button id="join-room-button" class="button secondary" type="button">加入</button>
+              </div>
+            </div>
+            <div id="online-room-session" class="online-room-session" hidden>
+              <p>房间码 <strong id="room-code-display">------</strong></p>
+              <div class="room-session-actions">
+                <button id="copy-room-button" class="button secondary" type="button">复制邀请</button>
+                <button id="leave-room-button" class="button danger" type="button">退出房间</button>
+              </div>
+            </div>
+            <p id="online-room-message" class="online-room-message" aria-live="polite"></p>
           </fieldset>
 
           <fieldset id="ai-difficulty-settings">
@@ -81,7 +115,7 @@
             <strong id="player-score">0</strong>
           </div>
           <div>
-            <span class="score-name">平局</span>
+            <span id="middle-score-name" class="score-name">平局</span>
             <strong id="draw-score">0</strong>
           </div>
           <div>
@@ -103,6 +137,7 @@
             <strong id="difficulty-label">普通模式</strong>
           </div>
           <span id="thinking-label" class="thinking-label" aria-hidden="true">AI 思考中</span>
+          <span id="online-connection-label" class="connection-label" hidden>连接中</span>
         </div>
 
         <div id="board" class="board" role="grid" aria-label="3 乘 3 井字棋棋盘">

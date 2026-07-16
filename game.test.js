@@ -156,6 +156,21 @@ test('startGame 双人模式固定由 X 先手', () => {
   });
 });
 
+test('startGame 线上模式以等待房间状态启动', () => {
+  assert.deepEqual(engine.startGame({ gameMode: 'online' }), {
+    board: Array(9).fill(null),
+    gameMode: 'online',
+    difficulty: 'normal',
+    playerMark: null,
+    aiMark: null,
+    currentTurn: null,
+    currentMark: 'X',
+    status: 'waiting',
+    winningLine: [],
+    moveOrders: { X: [], O: [] },
+  });
+});
+
 test('getNextPvpMark 在 X 和 O 之间轮换', () => {
   assert.equal(engine.getNextPvpMark('X'), 'O');
   assert.equal(engine.getNextPvpMark('O'), 'X');
@@ -182,6 +197,36 @@ test('页面提供人机和双人模式入口及可切换比分标签', () => {
   assert.match(html, /id="ai-first-settings"/);
   assert.match(html, /id="left-score-name"/);
   assert.match(html, /id="right-score-name"/);
+});
+
+test('页面提供线上房间入口和在线操作控件', () => {
+  const html = fs.readFileSync('./index.html', 'utf8');
+  assert.match(html, /name="game-mode"\s+value="online"/);
+  assert.match(html, /id="online-room-panel"/);
+  assert.match(html, /id="room-code-input"/);
+  assert.match(html, /id="create-room-button"/);
+  assert.match(html, /id="join-room-button"/);
+  assert.match(html, /id="copy-room-button"/);
+  assert.match(html, /id="leave-room-button"/);
+  assert.match(html, /id="middle-score-name"/);
+  assert.match(html, /src="online-config\.js"[^>]*defer/);
+  assert.match(html, /src="online\.js"[^>]*defer/);
+});
+
+test('房间码输入先接收常见分隔符再由脚本清洗，不能提前截断第六位', () => {
+  const html = fs.readFileSync('./index.html', 'utf8');
+  const inputTag = html.match(/<input[\s\S]*?id="room-code-input"[\s\S]*?>/)?.[0] || '';
+  assert.match(inputTag, /maxlength="12"/);
+});
+
+test('页面控制器通过 OnlineGame 客户端提交线上操作而不是本地落子', () => {
+  const source = fs.readFileSync('./game.js', 'utf8');
+  assert.match(source, /createOnlineClient\(\{/);
+  assert.match(source, /onlineApi\?\.canOnlineMove/);
+  assert.match(source, /onlineClient\.makeMove/);
+  assert.match(source, /onlineClient\.requestRematch/);
+  assert.match(source, /onlineClient\.leaveRoom/);
+  assert.match(source, /restartButton\.hidden\s*=\s*isOnline\s*&&\s*!hasOnlineRoom/);
 });
 
 test('removeOldestPiece 删除顺序数组中的最早棋子', () => {
@@ -259,6 +304,22 @@ test('棋盘固定为三行等高，棋子内容不能拉伸格子', () => {
   );
 });
 
+test('线上房间控件在窄屏下使用可收缩网格避免横向溢出', () => {
+  const css = fs.readFileSync('./style.css', 'utf8');
+  const joinBlock = css.match(/\.room-join-row\s*\{([^}]*)\}/)?.[1] || '';
+  const inputBlock = css.match(/#room-code-input\s*\{([^}]*)\}/)?.[1] || '';
+  assert.match(joinBlock, /grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto/);
+  assert.match(inputBlock, /min-width:\s*0/);
+});
+
+test('线上会话区的网格样式不能覆盖 hidden 属性', () => {
+  const css = fs.readFileSync('./style.css', 'utf8');
+  assert.match(
+    css,
+    /\.online-room-session\[hidden\]\s*\{[^}]*display:\s*none\s*!important/s,
+  );
+});
+
 test('落子、胜利和按压反馈不能缩放格子容器', () => {
   const css = fs.readFileSync('./style.css', 'utf8');
   const selectors = [
@@ -289,7 +350,7 @@ test('AI 回合必须原生禁用格子并锁定棋盘点击', () => {
 
   assert.match(
     source,
-    /cell\.disabled\s*=\s*aiThinking\s*\|\|\s*state\.status\s*!==\s*'playing'/,
+    /:\s*aiThinking\s*\|\|\s*state\.status\s*!==\s*'playing'/,
   );
   assert.match(thinkingBoardBlock, /pointer-events:\s*none/);
   assert.match(thinkingPanelBlock, /cursor:\s*wait/);

@@ -250,6 +250,21 @@
     difficulty = 'normal',
     gameMode = 'ai',
   } = {}) {
+    if (gameMode === 'online') {
+      return {
+        board: Array(9).fill(null),
+        gameMode,
+        difficulty,
+        playerMark: null,
+        aiMark: null,
+        currentTurn: null,
+        currentMark: 'X',
+        status: 'waiting',
+        winningLine: [],
+        moveOrders: { X: [], O: [] },
+      };
+    }
+
     if (gameMode === 'pvp') {
       return {
         board: Array(9).fill(null),
@@ -325,7 +340,21 @@
     const gamePanel = document.querySelector('.game-panel');
     const aiDifficultySettings = document.querySelector('#ai-difficulty-settings');
     const aiFirstSettings = document.querySelector('#ai-first-settings');
+    const onlineRoomPanel = document.querySelector('#online-room-panel');
+    const onlineRoomActions = document.querySelector('.online-room-actions');
+    const onlineRoomSession = document.querySelector('#online-room-session');
+    const onlineRoomMessage = document.querySelector('#online-room-message');
+    const roomCodeInput = document.querySelector('#room-code-input');
+    const roomCodeDisplay = document.querySelector('#room-code-display');
+    const createRoomButton = document.querySelector('#create-room-button');
+    const joinRoomButton = document.querySelector('#join-room-button');
+    const copyRoomButton = document.querySelector('#copy-room-button');
+    const leaveRoomButton = document.querySelector('#leave-room-button');
+    const connectionLabel = document.querySelector('#online-connection-label');
+    const restartButton = document.querySelector('#restart-button');
+    const clearScoreButton = document.querySelector('#clear-score-button');
     const leftScoreName = document.querySelector('#left-score-name');
+    const middleScoreName = document.querySelector('#middle-score-name');
     const rightScoreName = document.querySelector('#right-score-name');
     const scoreElements = {
       left: document.querySelector('#player-score'),
@@ -344,18 +373,78 @@
     let aiTimer = null;
     let roundToken = 0;
     let lastMove = null;
+    let onlineGame = null;
+    let onlinePhase = 'idle';
+    let onlineConnected = false;
+    let onlineSubmitting = false;
+    let onlineError = '';
+    const onlineApi = globalScope.OnlineGame;
+    const onlineClient = onlineApi?.createOnlineClient({
+      config: globalScope.ONLINE_GAME_CONFIG,
+      onState: (game) => {
+        if (state?.gameMode !== 'online') return;
+        const previousBoard = state.board;
+        onlineGame = game;
+        state = {
+          ...state,
+          ...game,
+          aiMark: null,
+          currentTurn: null,
+          difficulty: state.difficulty,
+        };
+        const placedIndex = game.board.findIndex((mark, index) => (
+          mark && mark !== previousBoard[index]
+        ));
+        lastMove = placedIndex >= 0 ? placedIndex : null;
+        onlinePhase = game.status === 'waiting' ? 'waiting' : 'active';
+        onlineError = '';
+        render();
+      },
+      onConnection: (connected) => {
+        onlineConnected = connected;
+        render();
+      },
+      onPresence: (opponentOnline) => {
+        if (onlineGame) {
+          onlineGame = { ...onlineGame, opponentOnline };
+          state = { ...state, opponentOnline };
+        }
+        render();
+      },
+      onError: (error) => {
+        onlineError = onlineApi.mapOnlineError(error);
+        render();
+      },
+    });
 
     function selectedValue(name) {
       return document.querySelector(`input[name="${name}"]:checked`).value;
     }
 
     function renderScores() {
+      if (state.gameMode === 'online') {
+        scoreElements.left.textContent = onlineGame?.scores.X ?? 0;
+        scoreElements.draw.textContent = onlineGame?.round ?? 1;
+        scoreElements.right.textContent = onlineGame?.scores.O ?? 0;
+        return;
+      }
+
       scoreElements.left.textContent = scores.left;
       scoreElements.draw.textContent = scores.draw;
       scoreElements.right.textContent = scores.right;
     }
 
     function statusMessage() {
+      if (state.gameMode === 'online') {
+        return onlineApi?.getOnlineStatusMessage({
+          phase: onlinePhase,
+          game: onlineGame,
+          connected: onlineConnected,
+          submitting: onlineSubmitting,
+          error: onlineError,
+        }) || '线上服务暂时不可用';
+      }
+
       if (state.gameMode === 'pvp') {
         if (state.status === 'x-win') return 'X 获胜！漂亮的一局';
         if (state.status === 'o-win') return 'O 获胜！漂亮的一局';
@@ -372,33 +461,89 @@
 
     function render() {
       const isPvp = state.gameMode === 'pvp';
+      const isOnline = state.gameMode === 'online';
       const aiThinking = !isPvp
+        && !isOnline
         && state.status === 'playing'
         && state.currentTurn === 'ai';
+      const onlineBusy = isOnline && (
+        onlineSubmitting || onlinePhase === 'connecting'
+      );
+      const hasOnlineRoom = Boolean(onlineGame?.roomId);
       const expiringPieces = getExpiringPieces(state.moveOrders);
       const expiringByIndex = new Map(
         expiringPieces.map((piece) => [piece.index, piece.mark]),
       );
       statusText.textContent = statusMessage();
-      markInfo.textContent = isPvp
-        ? 'X 与 O 轮流落子，X 固定先手'
-        : `你执 ${state.playerMark}，AI 执 ${state.aiMark}`;
+      markInfo.textContent = isOnline
+        ? hasOnlineRoom
+          ? `你执 ${onlineGame.playerMark} · 房间 ${onlineGame.roomCode}`
+          : '创建房间或输入房间码，邀请好友加入'
+        : isPvp
+          ? 'X 与 O 轮流落子，X 固定先手'
+          : `你执 ${state.playerMark}，AI 执 ${state.aiMark}`;
       statusCard.dataset.result = state.status;
-      difficultyLabel.textContent = isPvp
-        ? '双人模式'
-        : difficultyNames[state.difficulty];
-      aiDifficultySettings.hidden = isPvp;
-      aiFirstSettings.hidden = isPvp;
-      leftScoreName.textContent = isPvp ? 'X' : '玩家';
-      rightScoreName.textContent = isPvp ? 'O' : 'AI';
+      difficultyLabel.textContent = isOnline
+        ? hasOnlineRoom ? `房间 ${onlineGame.roomCode}` : '好友房间'
+        : isPvp
+          ? '双人模式'
+          : difficultyNames[state.difficulty];
+      aiDifficultySettings.hidden = isPvp || isOnline;
+      aiFirstSettings.hidden = isPvp || isOnline;
+      onlineRoomPanel.hidden = !isOnline;
+      onlineRoomActions.hidden = hasOnlineRoom;
+      onlineRoomSession.hidden = !hasOnlineRoom;
+      onlineRoomMessage.textContent = onlineError || (
+        isOnline && !onlineClient?.isConfigured()
+          ? '线上服务尚未配置，AI 和本地双人仍可使用'
+          : ''
+      );
+      roomCodeDisplay.textContent = onlineGame?.roomCode || '------';
+      createRoomButton.disabled = onlineBusy || !onlineClient?.isConfigured();
+      joinRoomButton.disabled = onlineBusy
+        || !onlineClient?.isConfigured()
+        || !onlineApi?.isValidRoomCode(roomCodeInput.value);
+      copyRoomButton.disabled = onlineBusy || !hasOnlineRoom;
+      leaveRoomButton.disabled = onlineBusy || !hasOnlineRoom;
+      document.querySelectorAll('input[name="game-mode"]').forEach((input) => {
+        input.disabled = hasOnlineRoom && input.value !== 'online';
+      });
+      leftScoreName.textContent = isPvp || isOnline ? 'X' : '玩家';
+      middleScoreName.textContent = isOnline ? '局数' : '平局';
+      rightScoreName.textContent = isPvp || isOnline ? 'O' : 'AI';
       gamePanel.classList.toggle('is-thinking', aiThinking);
-      boardElement.setAttribute('aria-busy', String(aiThinking));
+      gamePanel.classList.toggle('is-syncing', onlineBusy);
+      boardElement.setAttribute('aria-busy', String(aiThinking || onlineBusy));
+      connectionLabel.hidden = !isOnline;
+      connectionLabel.textContent = onlineBusy
+        ? '连接中'
+        : onlineConnected
+          ? onlineGame?.opponentOnline ? '双方在线' : '已连接'
+          : '未连接';
+
+      const ownRematchReady = onlineGame?.rematchReady?.[onlineGame?.playerMark];
+      restartButton.hidden = isOnline && !hasOnlineRoom;
+      restartButton.textContent = isOnline
+        ? ownRematchReady ? '等待对手' : '再来一局'
+        : '重新开始';
+      restartButton.disabled = isOnline && (
+        !hasOnlineRoom
+        || !['x_win', 'o_win'].includes(state.status)
+        || ownRematchReady
+        || onlineBusy
+      );
+      clearScoreButton.hidden = isOnline;
 
       cells.forEach((cell, index) => {
         const mark = state.board[index];
-        const canMove = state.status === 'playing'
-          && (isPvp || state.currentTurn === 'player')
-          && mark === null;
+        const canMove = isOnline
+          ? onlineApi?.canOnlineMove(state, index, {
+            connected: onlineConnected,
+            submitting: onlineSubmitting,
+          })
+          : state.status === 'playing'
+            && (isPvp || state.currentTurn === 'player')
+            && mark === null;
 
         cell.textContent = '';
         cell.dataset.mark = mark || '';
@@ -412,7 +557,9 @@
           '--win-order',
           Math.max(0, state.winningLine.indexOf(index)),
         );
-        cell.disabled = aiThinking || state.status !== 'playing';
+        cell.disabled = isOnline
+          ? !canMove
+          : aiThinking || state.status !== 'playing';
         cell.setAttribute('aria-disabled', String(!canMove));
         const expiryHint = expiringByIndex.has(index)
           ? `，${expiringByIndex.get(index)} 下次落子时将被消除`
@@ -492,12 +639,37 @@
         difficulty: selectedValue('difficulty'),
         gameMode: selectedValue('game-mode'),
       });
+      if (state.gameMode === 'online' && !onlineGame) {
+        onlinePhase = 'idle';
+        onlineConnected = false;
+        onlineError = '';
+      }
       render();
 
       if (state.gameMode === 'ai' && state.currentTurn === 'ai') scheduleAI();
     }
 
-    function handlePlayerMove(index) {
+    async function handlePlayerMove(index) {
+      if (state.gameMode === 'online') {
+        if (!onlineApi?.canOnlineMove(state, index, {
+          connected: onlineConnected,
+          submitting: onlineSubmitting,
+        })) return;
+
+        onlineSubmitting = true;
+        onlineError = '';
+        render();
+        try {
+          await onlineClient.makeMove(index);
+        } catch (error) {
+          onlineError = onlineApi.mapOnlineError(error);
+        } finally {
+          onlineSubmitting = false;
+          render();
+        }
+        return;
+      }
+
       if (state.status !== 'playing' || state.currentTurn !== 'player') return;
 
       const mark = state.gameMode === 'pvp'
@@ -522,7 +694,7 @@
 
     cells.forEach((cell) => {
       cell.addEventListener('click', () => {
-        handlePlayerMove(Number(cell.dataset.index));
+        void handlePlayerMove(Number(cell.dataset.index));
       });
     });
 
@@ -547,6 +719,127 @@
       }
     });
 
+    function updateRoomUrl(roomCode) {
+      if (!globalScope.location || !globalScope.history?.replaceState) return;
+      const url = new URL(globalScope.location.href);
+      if (roomCode) url.searchParams.set('room', roomCode);
+      else url.searchParams.delete('room');
+      globalScope.history.replaceState(null, '', url);
+    }
+
+    async function createOnlineRoom() {
+      if (!onlineClient || onlineSubmitting) return;
+      onlineSubmitting = true;
+      onlinePhase = 'connecting';
+      onlineError = '';
+      render();
+      try {
+        const game = await onlineClient.createRoom();
+        updateRoomUrl(game.roomCode);
+      } catch (error) {
+        onlineError = onlineApi.mapOnlineError(error);
+      } finally {
+        onlineSubmitting = false;
+        onlinePhase = onlineGame
+          ? onlineGame.status === 'waiting' ? 'waiting' : 'active'
+          : 'idle';
+        render();
+      }
+    }
+
+    async function joinOnlineRoom(roomCode = roomCodeInput.value) {
+      if (!onlineClient || onlineSubmitting) return;
+      const normalized = onlineApi.normalizeRoomCode(roomCode);
+      roomCodeInput.value = normalized;
+      if (!onlineApi.isValidRoomCode(normalized)) {
+        onlineError = onlineApi.mapOnlineError(new Error('INVALID_ROOM_CODE'));
+        render();
+        return;
+      }
+
+      onlineSubmitting = true;
+      onlinePhase = 'connecting';
+      onlineError = '';
+      render();
+      try {
+        const game = await onlineClient.joinRoom(normalized);
+        updateRoomUrl(game.roomCode);
+      } catch (error) {
+        onlineError = onlineApi.mapOnlineError(error);
+      } finally {
+        onlineSubmitting = false;
+        onlinePhase = onlineGame
+          ? onlineGame.status === 'waiting' ? 'waiting' : 'active'
+          : 'idle';
+        render();
+      }
+    }
+
+    async function requestOnlineRematch() {
+      if (!onlineClient || onlineSubmitting || !onlineGame) return;
+      onlineSubmitting = true;
+      onlineError = '';
+      render();
+      try {
+        await onlineClient.requestRematch();
+      } catch (error) {
+        onlineError = onlineApi.mapOnlineError(error);
+      } finally {
+        onlineSubmitting = false;
+        render();
+      }
+    }
+
+    async function leaveOnlineRoom() {
+      if (!onlineClient || onlineSubmitting || !onlineGame) return;
+      onlineSubmitting = true;
+      onlineError = '';
+      render();
+      try {
+        await onlineClient.leaveRoom();
+        onlineGame = null;
+        onlineConnected = false;
+        onlinePhase = 'idle';
+        state = startGame({
+          difficulty: selectedValue('difficulty'),
+          gameMode: 'online',
+        });
+        lastMove = null;
+        updateRoomUrl(null);
+      } catch (error) {
+        onlineError = onlineApi.mapOnlineError(error);
+      } finally {
+        onlineSubmitting = false;
+        render();
+      }
+    }
+
+    async function copyInvitation() {
+      if (!onlineGame) return;
+      const inviteUrl = onlineApi.buildInviteUrl(
+        globalScope.location.href,
+        onlineGame.roomCode,
+      );
+
+      try {
+        if (globalScope.navigator?.clipboard?.writeText) {
+          await globalScope.navigator.clipboard.writeText(inviteUrl);
+        } else {
+          const textarea = document.createElement('textarea');
+          textarea.value = inviteUrl;
+          textarea.style.position = 'fixed';
+          textarea.style.opacity = '0';
+          document.body.append(textarea);
+          textarea.select();
+          document.execCommand('copy');
+          textarea.remove();
+        }
+        onlineRoomMessage.textContent = '邀请链接已复制';
+      } catch {
+        onlineRoomMessage.textContent = `房间码：${onlineGame.roomCode}`;
+      }
+    }
+
     document.querySelectorAll('input[name="difficulty"], input[name="first-player"]')
       .forEach((input) => input.addEventListener('change', () => newRound()));
 
@@ -555,12 +848,41 @@
         newRound({ clearScores: true });
       }));
 
-    document.querySelector('#restart-button').addEventListener('click', () => newRound());
-    document.querySelector('#clear-score-button').addEventListener('click', () => {
+    roomCodeInput.addEventListener('input', () => {
+      roomCodeInput.value = onlineApi.normalizeRoomCode(roomCodeInput.value);
+      onlineError = '';
+      render();
+    });
+    roomCodeInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') void joinOnlineRoom();
+    });
+    createRoomButton.addEventListener('click', () => void createOnlineRoom());
+    joinRoomButton.addEventListener('click', () => void joinOnlineRoom());
+    copyRoomButton.addEventListener('click', () => void copyInvitation());
+    leaveRoomButton.addEventListener('click', () => void leaveOnlineRoom());
+
+    restartButton.addEventListener('click', () => {
+      if (state.gameMode === 'online') {
+        void requestOnlineRematch();
+      } else {
+        newRound();
+      }
+    });
+    clearScoreButton.addEventListener('click', () => {
       newRound({ clearScores: true });
     });
 
-    newRound();
+    const requestedRoomCode = onlineApi?.normalizeRoomCode(
+      new URL(globalScope.location.href).searchParams.get('room'),
+    );
+    if (onlineApi?.isValidRoomCode(requestedRoomCode)) {
+      document.querySelector('input[name="game-mode"][value="online"]').checked = true;
+      roomCodeInput.value = requestedRoomCode;
+      newRound();
+      void joinOnlineRoom(requestedRoomCode);
+    } else {
+      newRound();
+    }
   }
 
   if (typeof module !== 'undefined' && module.exports) {

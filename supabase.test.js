@@ -45,9 +45,33 @@ test('Supabase 脚本启用 RLS、Realtime 和私有频道权限', () => {
   assert.doesNotMatch(sql, /service_role/i);
 });
 
+test('Realtime policies use a security-definer room membership check', () => {
+  const sql = readSetupSql();
+  assert.match(
+    sql,
+    /create or replace function public\.is_online_game_player[\s\S]*security definer/i,
+  );
+  assert.match(
+    sql,
+    /on realtime\.messages for select[\s\S]*public\.is_online_game_player/i,
+  );
+  assert.match(
+    sql,
+    /on realtime\.messages for insert[\s\S]*public\.is_online_game_player/i,
+  );
+});
+
 test('公开配置文件不包含服务端密钥字段', () => {
   const config = fs.readFileSync('./online-config.js', 'utf8');
   assert.match(config, /supabaseUrl/);
   assert.match(config, /supabaseAnonKey/);
   assert.doesNotMatch(config, /service[_-]?role/i);
+});
+
+test('Private room read policy authorizes broadcast and presence channel joins', () => {
+  const sql = readSetupSql();
+  const start = sql.indexOf('on realtime.messages for select');
+  const end = sql.indexOf('on realtime.messages for insert');
+  const readPolicy = sql.slice(start, end);
+  assert.match(readPolicy, /extension\s+in\s*\(\s*'broadcast'\s*,\s*'presence'\s*\)/i);
 });

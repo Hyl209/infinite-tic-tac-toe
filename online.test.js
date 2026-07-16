@@ -125,6 +125,34 @@ test('buildInviteUrl 生成包含标准房间码的邀请链接', () => {
   );
 });
 
+test('loadSupabaseSdk loads one browser bundle instead of an ESM dependency graph', async () => {
+  const sdk = { createClient() {} };
+  const browser = {};
+  let appendedScript = null;
+  const documentObject = {
+    createElement(tagName) {
+      assert.equal(tagName, 'script');
+      return {};
+    },
+    head: {
+      append(script) {
+        appendedScript = script;
+        browser.supabase = sdk;
+        queueMicrotask(() => script.onload());
+      },
+    },
+  };
+
+  const loaded = await online.loadSupabaseSdk({ documentObject, browser });
+
+  assert.equal(
+    appendedScript.src,
+    'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js',
+  );
+  assert.equal(appendedScript.async, true);
+  assert.equal(loaded, sdk);
+});
+
 function createFakeSupabase(rowOverrides = {}) {
   const calls = [];
   const handlers = {};

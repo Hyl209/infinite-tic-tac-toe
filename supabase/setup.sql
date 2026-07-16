@@ -84,6 +84,21 @@ begin
 end;
 $$;
 
+create or replace function public.is_online_game_player(p_topic text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select exists (
+    select 1
+    from public.online_games game
+    where p_topic = 'room:' || game.id::text
+      and (auth.uid() = game.x_player or auth.uid() = game.o_player)
+  );
+$$;
+
 create or replace function public.create_online_game()
 returns setof public.online_games
 language plpgsql
@@ -442,6 +457,7 @@ revoke insert, update, delete on public.online_games from anon, authenticated;
 
 revoke all on function public.generate_online_room_code() from public, anon, authenticated;
 revoke all on function public.online_winning_line(jsonb, text) from public, anon, authenticated;
+revoke all on function public.is_online_game_player(text) from public, anon, authenticated;
 
 revoke all on function public.create_online_game() from public, anon;
 revoke all on function public.join_online_game(text) from public, anon;
@@ -454,6 +470,7 @@ grant execute on function public.join_online_game(text) to authenticated;
 grant execute on function public.play_online_move(uuid, smallint) to authenticated;
 grant execute on function public.request_online_rematch(uuid) to authenticated;
 grant execute on function public.leave_online_game(uuid) to authenticated;
+grant execute on function public.is_online_game_player(text) to authenticated;
 
 do $$
 begin
@@ -474,13 +491,8 @@ create policy "online players can receive room presence"
 on realtime.messages for select
 to authenticated
 using (
-  extension = 'presence'
-  and exists (
-    select 1
-    from public.online_games game
-    where realtime.topic() = 'room:' || game.id::text
-      and (auth.uid() = game.x_player or auth.uid() = game.o_player)
-  )
+  extension in ('broadcast', 'presence')
+  and public.is_online_game_player((select realtime.topic()))
 );
 
 drop policy if exists "online players can send room presence" on realtime.messages;
@@ -489,10 +501,5 @@ on realtime.messages for insert
 to authenticated
 with check (
   extension = 'presence'
-  and exists (
-    select 1
-    from public.online_games game
-    where realtime.topic() = 'room:' || game.id::text
-      and (auth.uid() = game.x_player or auth.uid() = game.o_player)
-  )
+  and public.is_online_game_player((select realtime.topic()))
 );

@@ -120,8 +120,20 @@
     return '线上棋局状态已更新';
   }
 
-  async function loadSupabaseSdk() {
-    return import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
+  async function loadSupabaseSdk({
+    documentObject = globalScope.document,
+    browser = globalScope,
+  } = {}) {
+    if (browser.supabase?.createClient) return browser.supabase;
+
+    return new Promise((resolve, reject) => {
+      const script = documentObject.createElement('script');
+      script.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
+      script.async = true;
+      script.onload = () => resolve(browser.supabase);
+      script.onerror = () => reject(new Error('SUPABASE_SDK_LOAD_FAILED'));
+      documentObject.head.append(script);
+    });
   }
 
   function firstRpcRow(data) {
@@ -312,6 +324,7 @@
     createOnlineClient,
     getOnlineStatusMessage,
     isValidRoomCode,
+    loadSupabaseSdk,
     mapOnlineError,
     mapOnlineGame,
     normalizeRoomCode,

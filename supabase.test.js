@@ -52,6 +52,25 @@ test('线上落子 RPC 使用行锁并包含稳定错误码', () => {
   assert.match(moveFunction, /game_type\s*=\s*'gomoku'/i);
 });
 
+test('PLpgSQL 动态胜利阈值使用可解析的 CASE 表达式', () => {
+  const sql = readSetupSql();
+  assert.match(
+    sql,
+    /if\s+cardinality\(v_winning_line\)\s*>=\s*\(\s*case\s+when\s+v_game\.game_type\s*=\s*'gomoku'\s+then\s+5\s+else\s+3\s+end\s*\)\s+then/i,
+  );
+});
+
+test('五子棋连续线扫描在 JSON 空位处停止', () => {
+  const sql = readSetupSql();
+  const start = sql.indexOf('create or replace function public.online_winning_line');
+  const end = sql.indexOf('create or replace function public.replay_online_history');
+  const winningFunction = sql.slice(start, end);
+  assert.equal(
+    (winningFunction.match(/exit when p_board ->> v_index is distinct from p_mark/gi) || []).length,
+    2,
+  );
+});
+
 test('线上悔棋使用行锁、15 秒超时、发起即扣额度并重放历史', () => {
   const sql = readSetupSql();
   const requestStart = sql.indexOf('create or replace function public.request_online_undo');

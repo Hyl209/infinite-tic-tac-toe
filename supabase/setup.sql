@@ -140,7 +140,7 @@ begin
     v_next_column := v_column - v_direction.column_step;
     while v_next_row between 0 and 14 and v_next_column between 0 and 14 loop
       v_index := (v_next_row * 15 + v_next_column)::smallint;
-      exit when p_board ->> v_index <> p_mark;
+      exit when p_board ->> v_index is distinct from p_mark;
       v_before := array_prepend(v_index, v_before);
       v_next_row := v_next_row - v_direction.row_step;
       v_next_column := v_next_column - v_direction.column_step;
@@ -150,7 +150,7 @@ begin
     v_next_column := v_column + v_direction.column_step;
     while v_next_row between 0 and 14 and v_next_column between 0 and 14 loop
       v_index := (v_next_row * 15 + v_next_column)::smallint;
-      exit when p_board ->> v_index <> p_mark;
+      exit when p_board ->> v_index is distinct from p_mark;
       v_after := array_append(v_after, v_index);
       v_next_row := v_next_row + v_direction.row_step;
       v_next_column := v_next_column + v_direction.column_step;
@@ -396,7 +396,7 @@ begin
   v_x_score := v_game.x_score;
   v_o_score := v_game.o_score;
   v_next_mark := case when v_mark = 'X' then 'O' else 'X' end;
-  if cardinality(v_winning_line) >= case when v_game.game_type = 'gomoku' then 5 else 3 end then
+  if cardinality(v_winning_line) >= (case when v_game.game_type = 'gomoku' then 5 else 3 end) then
     v_status := lower(v_mark) || '_win';
     v_next_mark := v_mark;
     if v_mark = 'X' then v_x_score := v_x_score + 1;

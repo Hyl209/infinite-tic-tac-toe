@@ -25,6 +25,32 @@ test('Supabase 脚本创建线上棋局表和全部 RPC', () => {
   }
 });
 
+test('Supabase 脚本创建账号资料表并限制用户只能维护自己的资料', () => {
+  const sql = readSetupSql();
+  assert.match(sql, /create table if not exists public\.profiles/i);
+  assert.match(sql, /username\s+text\s+not null\s+unique/i);
+  assert.match(sql, /game_name\s+text\s+not null/i);
+  assert.match(sql, /game_name\s*!~\s*'\[\[:cntrl:\]\]'/i);
+  assert.match(sql, /enable row level security/i);
+  assert.match(sql, /on public\.profiles[\s\S]*auth\.uid\(\)\s*=\s*id/i);
+  assert.doesNotMatch(sql, /grant select on table public\.profiles to anon/i);
+});
+
+test('在线房间保存双方名称快照并由服务端优先采用注册资料', () => {
+  const sql = readSetupSql();
+  assert.match(sql, /x_player_name\s+text\s+not null/i);
+  assert.match(sql, /o_player_name\s+text/i);
+  assert.match(sql, /create or replace function public\.resolve_online_player_name/i);
+  const resolverStart = sql.indexOf('create or replace function public.resolve_online_player_name');
+  const createStart = sql.indexOf('create or replace function public.create_online_game');
+  const resolver = sql.slice(resolverStart, createStart);
+  assert.match(resolver, /from public\.profiles/i);
+  assert.match(resolver, /game_name/i);
+  assert.match(resolver, /匿名玩家/i);
+  assert.match(sql, /create_online_game\(p_game_type text, p_guest_name text\)/i);
+  assert.match(sql, /join_online_game\(p_room_code text, p_game_type text, p_guest_name text\)/i);
+});
+
 test('线上表支持两种游戏、落子历史和每人三次悔棋额度', () => {
   const sql = readSetupSql();
   assert.match(sql, /drop table if exists public\.online_games cascade/i);

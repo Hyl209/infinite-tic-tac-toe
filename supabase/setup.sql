@@ -9,12 +9,54 @@ drop function if exists public.online_winning_line(text, jsonb, text, smallint);
 drop function if exists public.replay_online_history(text, smallint[]);
 drop function if exists public.online_empty_board(text);
 
+create table if not exists public.profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  username text not null unique,
+  game_name text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  check (username ~ '^[a-z0-9_]{3,20}$'),
+  check (char_length(game_name) between 1 and 16),
+  check (game_name = btrim(game_name)),
+  check (game_name !~ '[[:cntrl:]]')
+);
+
+alter table public.profiles enable row level security;
+
+drop policy if exists "players can read own profile" on public.profiles;
+drop policy if exists "players can create own profile" on public.profiles;
+drop policy if exists "players can update own profile" on public.profiles;
+
+create policy "players can read own profile"
+on public.profiles for select
+to authenticated
+using (auth.uid() = id);
+
+create policy "players can create own profile"
+on public.profiles for insert
+to authenticated
+with check (
+  auth.uid() = id
+  and username = split_part(coalesce(auth.jwt() ->> 'email', ''), '@', 1)
+);
+
+create policy "players can update own profile"
+on public.profiles for update
+to authenticated
+using (auth.uid() = id)
+with check (
+  auth.uid() = id
+  and username = split_part(coalesce(auth.jwt() ->> 'email', ''), '@', 1)
+);
+
 create table public.online_games (
   id uuid primary key default gen_random_uuid(),
   room_code text not null unique check (room_code ~ '^[A-HJ-NP-Z2-9]{6}$'),
   game_type text not null check (game_type in ('tic_tac_toe', 'gomoku')),
   x_player uuid not null,
   o_player uuid,
+  x_player_name text not null check (char_length(x_player_name) between 1 and 16),
+  o_player_name text check (o_player_name is null or char_length(o_player_name) between 1 and 16),
   status text not null default 'waiting'
     check (status in ('waiting', 'playing', 'x_win', 'o_win', 'draw', 'abandoned')),
   board jsonb not null,
@@ -236,7 +278,31 @@ as $$
   );
 $$;
 
-create or replace function public.create_online_game(p_game_type text)
+create or replace function public.resolve_online_player_name(p_guest_name text)
+returns text
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_name text;
+begin
+  select game_name into v_name
+  from public.profiles
+  where id = auth.uid();
+
+  if found then return v_name; end if;
+
+  v_name := btrim(coalesce(p_guest_name, ''));
+  if v_name !~ '^匿名玩家·[A-HJ-NP-Z2-9]{4}$' then
+    raise exception 'INVALID_PLAYER_NAME';
+  end if;
+  return v_name;
+end;
+$$;
+
+create or replace function public.create_online_game(p_game_type text, p_guest_name text)
 returns setof public.online_games
 language plpgsql
 security definer
@@ -244,6 +310,7 @@ set search_path = public, pg_temp
 as $$
 declare
   v_user uuid := auth.uid();
+  v_player_name text := public.resolve_online_player_name(p_guest_name);
   v_game public.online_games;
   v_attempt integer;
 begin
@@ -260,15 +327,25 @@ begin
     and expires_at >= now()
   order by created_at desc
   limit 1;
-  if found then return next v_game; return; end if;
+  if found then
+    update public.online_games
+    set x_player_name = v_player_name,
+        updated_at = now(),
+        expires_at = now() + interval '24 hours'
+    where id = v_game.id
+    returning * into v_game;
+    return next v_game;
+    return;
+  end if;
 
   for v_attempt in 1..20 loop
     begin
-      insert into public.online_games (room_code, game_type, x_player, board)
+      insert into public.online_games (room_code, game_type, x_player, x_player_name, board)
       values (
         public.generate_online_room_code(),
         p_game_type,
         v_user,
+        v_player_name,
         public.online_empty_board(p_game_type)
       )
       returning * into v_game;
@@ -282,7 +359,7 @@ begin
 end;
 $$;
 
-create or replace function public.join_online_game(p_room_code text, p_game_type text)
+create or replace function public.join_online_game(p_room_code text, p_game_type text, p_guest_name text)
 returns setof public.online_games
 language plpgsql
 security definer
@@ -290,6 +367,7 @@ set search_path = public, pg_temp
 as $$
 declare
   v_user uuid := auth.uid();
+  v_player_name text := public.resolve_online_player_name(p_guest_name);
   v_code text := upper(trim(p_room_code));
   v_game public.online_games;
 begin
@@ -320,6 +398,7 @@ begin
 
   update public.online_games
   set o_player = v_user,
+      o_player_name = v_player_name,
       status = 'playing',
       updated_at = now(),
       expires_at = now() + interval '24 hours',
@@ -713,15 +792,19 @@ with check (
 revoke all on table public.online_games from public, anon;
 grant select on table public.online_games to authenticated;
 
+revoke all on table public.profiles from public, anon;
+grant select, insert, update on table public.profiles to authenticated;
+
 revoke all on function public.online_empty_board(text) from public, anon, authenticated;
 revoke all on function public.generate_online_room_code() from public, anon, authenticated;
 revoke all on function public.online_winning_line(text, jsonb, text, smallint) from public, anon, authenticated;
 revoke all on function public.replay_online_history(text, smallint[]) from public, anon, authenticated;
 revoke all on function public.is_online_game_player(text) from public, anon;
 grant execute on function public.is_online_game_player(text) to authenticated;
+revoke all on function public.resolve_online_player_name(text) from public, anon, authenticated;
 
-revoke all on function public.create_online_game(text) from public, anon;
-revoke all on function public.join_online_game(text, text) from public, anon;
+revoke all on function public.create_online_game(text, text) from public, anon;
+revoke all on function public.join_online_game(text, text, text) from public, anon;
 revoke all on function public.play_online_move(uuid, smallint) from public, anon;
 revoke all on function public.request_online_undo(uuid) from public, anon;
 revoke all on function public.respond_online_undo(uuid, boolean) from public, anon;
@@ -729,8 +812,8 @@ revoke all on function public.cancel_online_undo(uuid) from public, anon;
 revoke all on function public.request_online_rematch(uuid) from public, anon;
 revoke all on function public.leave_online_game(uuid) from public, anon;
 
-grant execute on function public.create_online_game(text) to authenticated;
-grant execute on function public.join_online_game(text, text) to authenticated;
+grant execute on function public.create_online_game(text, text) to authenticated;
+grant execute on function public.join_online_game(text, text, text) to authenticated;
 grant execute on function public.play_online_move(uuid, smallint) to authenticated;
 grant execute on function public.request_online_undo(uuid) to authenticated;
 grant execute on function public.respond_online_undo(uuid, boolean) to authenticated;

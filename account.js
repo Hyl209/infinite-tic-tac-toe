@@ -1,0 +1,298 @@
+(function initPlayerAccount(globalScope) {
+  'use strict';
+
+  const USERNAME_EMAIL_DOMAIN = 'players.invalid';
+  const GUEST_NAME_STORAGE_KEY = 'board-game-guest-name';
+  const GUEST_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const USERNAME_PATTERN = /^[a-z0-9_]{3,20}$/;
+  const GUEST_NAME_PATTERN = /^匿名玩家·[A-HJ-NP-Z2-9]{4}$/;
+  const CONTROL_CHARACTER_PATTERN = /[\u0000-\u001f\u007f]/;
+
+  const ERROR_MESSAGES = {
+    ONLINE_NOT_CONFIGURED: '账号服务尚未配置',
+    SUPABASE_SDK_LOAD_FAILED: '账号服务加载失败，请稍后重试',
+    INVALID_USERNAME: '用户名需为 3 至 20 位英文、数字或下划线',
+    INVALID_PASSWORD: '密码需为 8 至 64 位',
+    INVALID_GAME_NAME: '游戏名需为 1 至 16 个字符',
+    PROFILE_REQUIRED: '请先完成个人资料',
+    PROFILE_SAVE_FAILED: '个人资料保存失败，请稍后重试',
+  };
+
+  function normalizeUsername(value) {
+    return String(value || '').trim().toLowerCase();
+  }
+
+  function isValidUsername(value) {
+    return USERNAME_PATTERN.test(String(value || ''));
+  }
+
+  function isValidPassword(value) {
+    const length = String(value || '').length;
+    return length >= 8 && length <= 64;
+  }
+
+  function normalizeGameName(value) {
+    return String(value || '').trim();
+  }
+
+  function isValidGameName(value) {
+    const normalized = normalizeGameName(value);
+    return normalized.length >= 1
+      && normalized.length <= 16
+      && !CONTROL_CHARACTER_PATTERN.test(normalized);
+  }
+
+  function usernameToEmail(value) {
+    const username = normalizeUsername(value);
+    if (!isValidUsername(username)) throw new Error('INVALID_USERNAME');
+    return `${username}@${USERNAME_EMAIL_DOMAIN}`;
+  }
+
+  function getGuestName({
+    storage = globalScope.localStorage,
+    random = Math.random,
+  } = {}) {
+    const stored = storage?.getItem?.(GUEST_NAME_STORAGE_KEY);
+    if (GUEST_NAME_PATTERN.test(stored || '')) return stored;
+
+    let suffix = '';
+    for (let index = 0; index < 4; index += 1) {
+      const position = Math.min(
+        GUEST_ALPHABET.length - 1,
+        Math.floor(random() * GUEST_ALPHABET.length),
+      );
+      suffix += GUEST_ALPHABET[position];
+    }
+    const name = `匿名玩家·${suffix}`;
+    storage?.setItem?.(GUEST_NAME_STORAGE_KEY, name);
+    return name;
+  }
+
+  function mapAccountError(error) {
+    const message = error?.message || String(error || '');
+    const stableCode = Object.keys(ERROR_MESSAGES).find((code) => message.includes(code));
+    if (stableCode) return ERROR_MESSAGES[stableCode];
+    if (/already registered|duplicate key|23505/i.test(message)) return '这个用户名已被使用';
+    if (/invalid login credentials/i.test(message)) return '用户名或密码错误';
+    if (/password/i.test(message) && /weak|short|characters/i.test(message)) return ERROR_MESSAGES.INVALID_PASSWORD;
+    return '账号服务暂时不可用，请稍后重试';
+  }
+
+  function guestIdentity(guestName) {
+    return {
+      kind: 'guest',
+      username: null,
+      displayName: guestName,
+      needsProfile: false,
+    };
+  }
+
+  function createAccountClient({
+    config = globalScope.ONLINE_GAME_CONFIG || {},
+    loadSupabase = (...args) => globalScope.OnlineGame.loadSupabaseSdk(...args),
+    storage = globalScope.localStorage,
+    random = Math.random,
+    onIdentity = () => {},
+  } = {}) {
+    const guestName = getGuestName({ storage, random });
+    const listeners = new Set();
+    let supabase = null;
+    let identity = guestIdentity(guestName);
+
+    function isConfigured() {
+      return Boolean(config.supabaseUrl && config.supabaseAnonKey);
+    }
+
+    function getIdentity() {
+      return { ...identity };
+    }
+
+    function setIdentity(nextIdentity) {
+      identity = nextIdentity;
+      onIdentity(getIdentity());
+      listeners.forEach((listener) => listener(getIdentity()));
+      return getIdentity();
+    }
+
+    function subscribe(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    }
+
+    async function getSupabaseClient() {
+      if (supabase) return supabase;
+      if (!isConfigured()) throw new Error('ONLINE_NOT_CONFIGURED');
+      const sdk = await loadSupabase();
+      supabase = sdk.createClient(config.supabaseUrl, config.supabaseAnonKey, {
+        auth: {
+          persistSession: true,
+          autoRefreshToken: true,
+          detectSessionInUrl: false,
+        },
+      });
+      return supabase;
+    }
+
+    async function readProfile(userId) {
+      const client = await getSupabaseClient();
+      const result = await client
+        .from('profiles')
+        .select('username, game_name')
+        .eq('id', userId)
+        .maybeSingle();
+      if (result.error) throw result.error;
+      return result.data;
+    }
+
+    function registeredIdentity(user, profile) {
+      const fallbackUsername = String(user?.email || '').split('@')[0];
+      const username = profile?.username || fallbackUsername;
+      return {
+        kind: 'registered',
+        username,
+        displayName: profile?.game_name || username,
+        needsProfile: !profile,
+      };
+    }
+
+    async function identityForUser(user) {
+      if (!user || user.is_anonymous) return guestIdentity(guestName);
+      const profile = await readProfile(user.id);
+      return registeredIdentity(user, profile);
+    }
+
+    async function initialize() {
+      if (!isConfigured()) return setIdentity(guestIdentity(guestName));
+      const client = await getSupabaseClient();
+      const result = await client.auth.getSession();
+      if (result.error) throw result.error;
+      const user = result.data.session?.user || null;
+      return setIdentity(await identityForUser(user));
+    }
+
+    function validateCredentials({ username, password, gameName, requireGameName = false }) {
+      const normalizedUsername = normalizeUsername(username);
+      if (!isValidUsername(normalizedUsername)) throw new Error('INVALID_USERNAME');
+      if (!isValidPassword(password)) throw new Error('INVALID_PASSWORD');
+      const normalizedGameName = normalizeGameName(gameName);
+      if (requireGameName && !isValidGameName(normalizedGameName)) throw new Error('INVALID_GAME_NAME');
+      return { normalizedUsername, normalizedGameName };
+    }
+
+    async function saveProfile(user, username, gameName) {
+      const client = await getSupabaseClient();
+      const payload = { id: user.id, username, game_name: gameName };
+      const result = await client
+        .from('profiles')
+        .upsert(payload, { onConflict: 'id' })
+        .select('username, game_name')
+        .single();
+      if (result.error) throw new Error('PROFILE_SAVE_FAILED', { cause: result.error });
+      return result.data || payload;
+    }
+
+    async function register({ username, password, gameName }) {
+      const { normalizedUsername, normalizedGameName } = validateCredentials({
+        username,
+        password,
+        gameName,
+        requireGameName: true,
+      });
+      const client = await getSupabaseClient();
+      const sessionResult = await client.auth.getSession();
+      if (sessionResult.error) throw sessionResult.error;
+      let user = sessionResult.data.session?.user || null;
+      if (!user) {
+        const anonymousResult = await client.auth.signInAnonymously();
+        if (anonymousResult.error) throw anonymousResult.error;
+        user = anonymousResult.data.user;
+      }
+
+      const updateResult = await client.auth.updateUser({
+        email: usernameToEmail(normalizedUsername),
+        password,
+      });
+      if (updateResult.error) throw updateResult.error;
+      user = updateResult.data.user;
+      const profile = await saveProfile(user, normalizedUsername, normalizedGameName);
+      return setIdentity(registeredIdentity(user, profile));
+    }
+
+    async function login({ username, password }) {
+      const { normalizedUsername } = validateCredentials({ username, password });
+      const client = await getSupabaseClient();
+      const result = await client.auth.signInWithPassword({
+        email: usernameToEmail(normalizedUsername),
+        password,
+      });
+      if (result.error) throw result.error;
+      return setIdentity(await identityForUser(result.data.user));
+    }
+
+    async function updateGameName(value) {
+      const gameName = normalizeGameName(value);
+      if (!isValidGameName(gameName)) throw new Error('INVALID_GAME_NAME');
+      const client = await getSupabaseClient();
+      const sessionResult = await client.auth.getSession();
+      if (sessionResult.error) throw sessionResult.error;
+      const user = sessionResult.data.session?.user;
+      if (!user || user.is_anonymous || !identity.username) throw new Error('PROFILE_REQUIRED');
+      const profile = await saveProfile(user, identity.username, gameName);
+      return setIdentity(registeredIdentity(user, profile));
+    }
+
+    async function logout() {
+      if (supabase) {
+        const result = await supabase.auth.signOut({ scope: 'local' });
+        if (result.error) throw result.error;
+      }
+      return setIdentity(guestIdentity(guestName));
+    }
+
+    async function ensureOnlineIdentity() {
+      const client = await getSupabaseClient();
+      const sessionResult = await client.auth.getSession();
+      if (sessionResult.error) throw sessionResult.error;
+      let user = sessionResult.data.session?.user || null;
+      if (!user) {
+        const anonymousResult = await client.auth.signInAnonymously();
+        if (anonymousResult.error) throw anonymousResult.error;
+        user = anonymousResult.data.user;
+      }
+      const nextIdentity = await identityForUser(user);
+      setIdentity(nextIdentity);
+      return { supabase: client, user, identity: getIdentity() };
+    }
+
+    return {
+      ensureOnlineIdentity,
+      getIdentity,
+      getSupabaseClient,
+      initialize,
+      isConfigured,
+      login,
+      logout,
+      register,
+      subscribe,
+      updateGameName,
+    };
+  }
+
+  const playerAccount = {
+    GUEST_ALPHABET,
+    GUEST_NAME_STORAGE_KEY,
+    USERNAME_EMAIL_DOMAIN,
+    createAccountClient,
+    getGuestName,
+    isValidGameName,
+    isValidPassword,
+    isValidUsername,
+    mapAccountError,
+    normalizeGameName,
+    normalizeUsername,
+    usernameToEmail,
+  };
+
+  if (typeof module !== 'undefined' && module.exports) module.exports = playerAccount;
+  globalScope.PlayerAccount = playerAccount;
+})(typeof window !== 'undefined' ? window : globalThis);

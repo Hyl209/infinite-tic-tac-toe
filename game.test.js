@@ -393,6 +393,59 @@ test('页面先显示双游戏首页并按顺序加载两个规则引擎', () =>
   );
 });
 
+test('首页提供个人资料入口、登录注册表单并在游戏脚本前加载账号服务', () => {
+  const html = fs.readFileSync('./index.html', 'utf8');
+  const homeStart = html.indexOf('id="game-home"');
+  const gameViewStart = html.indexOf('id="game-view"');
+  const homeMarkup = html.slice(homeStart, gameViewStart);
+
+  assert.match(homeMarkup, /id="account-button"/);
+  assert.match(homeMarkup, /id="account-dialog"/);
+  assert.match(homeMarkup, /id="account-login-form"/);
+  assert.match(homeMarkup, /id="account-register-form"/);
+  assert.match(homeMarkup, /id="account-profile-form"/);
+  assert.match(html, /id="register-username"[^>]*autocomplete="username"/);
+  assert.match(html, /id="register-password"[^>]*autocomplete="new-password"/);
+  assert.match(html, /id="register-game-name"[^>]*maxlength="16"/);
+  assert.match(
+    html,
+    /src="online\.js"[^>]*defer[\s\S]*src="account\.js"[^>]*defer[\s\S]*src="game\.js"[^>]*defer/,
+  );
+});
+
+test('页面控制器共享账号客户端并处理注册、登录、改名和退出', () => {
+  const source = fs.readFileSync('./game.js', 'utf8');
+  assert.match(source, /PlayerAccount/);
+  assert.match(source, /createAccountClient/);
+  assert.match(source, /createOnlineClient\(\{[\s\S]*accountClient/);
+  assert.match(source, /accountClient\.register/);
+  assert.match(source, /accountClient\.login/);
+  assert.match(source, /accountClient\.updateGameName/);
+  assert.match(source, /accountClient\.logout/);
+});
+
+test('账号重绘不能清除刚产生的成功或错误提示', () => {
+  const source = fs.readFileSync('./game.js', 'utf8');
+  assert.match(source, /function setAccountMode\(mode, \{ clearMessage = true \} = \{\}\)/);
+  assert.match(source, /setAccountMode\(accountMode, \{ clearMessage: false \}\)/);
+});
+
+test('在线比分标签组合游戏名和棋子，缺少名称时保留棋子', () => {
+  assert.equal(app.formatOnlineScoreName('立哥', 'X'), '立哥 · X');
+  assert.equal(app.formatOnlineScoreName('', 'O'), 'O');
+});
+
+test('个人资料弹窗使用固定层并在窄屏改为安全边距布局', () => {
+  const css = fs.readFileSync('./style.css', 'utf8');
+  assert.match(css, /\.account-dialog\s*\{[^}]*position:\s*fixed/s);
+  assert.match(css, /\.account-dialog::backdrop/);
+  assert.match(css, /\.account-field\s+input:focus-visible/);
+  const mobileStart = css.indexOf('@media (max-width: 760px)');
+  const mobileStyles = css.slice(mobileStart);
+  assert.match(mobileStyles, /\.account-button\s*\{[^}]*position:\s*static/s);
+  assert.match(mobileStyles, /\.account-dialog\s*\{[^}]*max-width:/s);
+});
+
 test('五子棋页面提供落子确认和悔棋控件', () => {
   const html = fs.readFileSync('./index.html', 'utf8');
   assert.match(html, /id="placement-settings"/);

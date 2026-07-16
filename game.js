@@ -38,6 +38,10 @@
     return `${gameType}:${gameMode}`;
   }
 
+  function formatOnlineScoreName(name, mark) {
+    return name ? `${name} · ${mark}` : mark;
+  }
+
   function getLocalUndoCount(state) {
     const history = state?.moveHistory || [];
     if (history.length === 0 || state?.gameMode === 'online') return 0;
@@ -56,6 +60,7 @@
     getDefaultPlacementMode,
     getLocalUndoCount,
     getScoreKey,
+    formatOnlineScoreName,
     resolvePlacementSelection,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = exported;
@@ -108,8 +113,31 @@
       draw: document.querySelector('#draw-score'),
       right: document.querySelector('#ai-score'),
     };
+    const accountButton = document.querySelector('#account-button');
+    const accountAvatar = document.querySelector('.account-avatar');
+    const accountKindLabel = document.querySelector('#account-kind-label');
+    const accountDisplayName = document.querySelector('#account-display-name');
+    const accountDialog = document.querySelector('#account-dialog');
+    const accountCloseButton = document.querySelector('#account-close-button');
+    const accountDialogTitle = document.querySelector('#account-dialog-title');
+    const accountDialogDescription = document.querySelector('#account-dialog-description');
+    const accountAuthView = document.querySelector('#account-auth-view');
+    const accountLoginTab = document.querySelector('#account-login-tab');
+    const accountRegisterTab = document.querySelector('#account-register-tab');
+    const accountLoginForm = document.querySelector('#account-login-form');
+    const accountRegisterForm = document.querySelector('#account-register-form');
+    const accountProfileForm = document.querySelector('#account-profile-form');
+    const accountLogoutButton = document.querySelector('#account-logout-button');
+    const accountMessage = document.querySelector('#account-message');
+    const profileUsername = document.querySelector('#profile-username');
+    const profileGameName = document.querySelector('#profile-game-name');
 
     const onlineApi = globalScope.OnlineGame;
+    const accountApi = globalScope.PlayerAccount;
+    const accountClient = accountApi?.createAccountClient({
+      config: globalScope.ONLINE_GAME_CONFIG,
+      loadSupabase: onlineApi?.loadSupabaseSdk,
+    });
     const sessionScores = new Map();
     let gameType = null;
     let engine = null;
@@ -128,6 +156,79 @@
     let onlineConnected = false;
     let onlineSubmitting = false;
     let onlineError = '';
+    let accountIdentity = accountClient?.getIdentity() || {
+      kind: 'guest',
+      username: null,
+      displayName: '匿名玩家',
+      needsProfile: false,
+    };
+    let accountBusy = false;
+    let accountMode = 'login';
+
+    function setAccountMessage(message = '', stateName = '') {
+      if (!accountMessage) return;
+      accountMessage.textContent = message;
+      accountMessage.dataset.state = stateName;
+    }
+
+    function setAccountMode(mode, { clearMessage = true } = {}) {
+      accountMode = mode === 'register' ? 'register' : 'login';
+      const registering = accountMode === 'register';
+      accountLoginForm.hidden = registering;
+      accountRegisterForm.hidden = !registering;
+      accountLoginTab.setAttribute('aria-selected', String(!registering));
+      accountRegisterTab.setAttribute('aria-selected', String(registering));
+      accountDialogTitle.textContent = registering ? '注册账号' : '登录账号';
+      accountDialogDescription.textContent = registering
+        ? '用户名用于登录，游戏名会显示给在线对手。'
+        : '登录后，游戏名会同步到其他设备。';
+      if (clearMessage) setAccountMessage();
+    }
+
+    function setAccountBusy(busy) {
+      accountBusy = busy;
+      accountDialog.querySelectorAll('button, input').forEach((control) => {
+        control.disabled = busy;
+      });
+      accountDialog.setAttribute('aria-busy', String(busy));
+    }
+
+    function renderAccount() {
+      if (!accountButton || !accountDialog) return;
+      const registered = accountIdentity.kind === 'registered';
+      accountAvatar.textContent = registered ? accountIdentity.displayName.slice(0, 1) : '游';
+      accountKindLabel.textContent = registered ? '个人资料' : '游客身份';
+      accountDisplayName.textContent = accountIdentity.displayName;
+      accountAuthView.hidden = registered;
+      accountProfileForm.hidden = !registered;
+      if (registered) {
+        accountDialogTitle.textContent = '个人资料';
+        accountDialogDescription.textContent = '修改后的游戏名会用于之后加入的在线房间。';
+        profileUsername.textContent = accountIdentity.username;
+        if (document.activeElement !== profileGameName) {
+          profileGameName.value = accountIdentity.displayName;
+        }
+      } else {
+        setAccountMode(accountMode, { clearMessage: false });
+      }
+      accountButton.disabled = accountBusy;
+    }
+
+    async function runAccountAction(action, successMessage) {
+      if (!accountClient || accountBusy) return;
+      setAccountBusy(true);
+      setAccountMessage();
+      try {
+        accountIdentity = await action();
+        renderAccount();
+        setAccountMessage(successMessage, 'success');
+      } catch (error) {
+        setAccountMessage(accountApi.mapAccountError(error), 'error');
+      } finally {
+        setAccountBusy(false);
+        renderAccount();
+      }
+    }
 
     function selectedValue(name) {
       return document.querySelector(`input[name="${name}"]:checked`)?.value;
@@ -303,10 +404,13 @@
       onlineUndoRequest.hidden = !showRequest;
       if (!showRequest) return;
       const ownRequest = request.requesterMark === onlineGame.playerMark;
+      const opponentMark = onlineGame.playerMark === 'X' ? 'O' : 'X';
+      const requesterName = onlineGame.playerNames?.[request.requesterMark] || '对方';
+      const opponentName = onlineGame.playerNames?.[opponentMark] || '对方';
       const seconds = Math.max(1, Math.ceil((Date.parse(request.expiresAt) - Date.now()) / 1000));
       onlineUndoMessage.textContent = ownRequest
-        ? `等待对方回应，${seconds} 秒后自动取消`
-        : `对方申请撤回最近一手，剩余 ${seconds} 秒`;
+        ? `等待${opponentName}回应，${seconds} 秒后自动取消`
+        : `${requesterName}申请撤回最近一手，剩余 ${seconds} 秒`;
       acceptUndoButton.hidden = ownRequest;
       rejectUndoButton.hidden = ownRequest;
       cancelUndoButton.hidden = !ownRequest;
@@ -341,7 +445,7 @@
       statusCard.dataset.result = state.status;
       markInfo.textContent = isOnline
         ? hasOnlineRoom
-          ? `你执${displayMark(onlineGame.playerMark)}，房间 ${onlineGame.roomCode}`
+          ? `你是${onlineGame.playerNames?.[onlineGame.playerMark] || '玩家'}，执${displayMark(onlineGame.playerMark)}，房间 ${onlineGame.roomCode}`
           : '创建房间或输入房间码，邀请好友加入'
         : isPvp
           ? `${displayMark('X')}和${displayMark('O')}轮流落子，${displayMark('X')}先手`
@@ -372,9 +476,13 @@
         input.disabled = hasOnlineRoom && input.value !== 'online';
       });
 
-      leftScoreName.textContent = isPvp || isOnline ? displayMark('X') : '玩家';
+      leftScoreName.textContent = isOnline
+        ? formatOnlineScoreName(onlineGame?.playerNames?.X, displayMark('X'))
+        : isPvp ? displayMark('X') : '玩家';
       middleScoreName.textContent = isOnline ? '局数' : '平局';
-      rightScoreName.textContent = isPvp || isOnline ? displayMark('O') : 'AI';
+      rightScoreName.textContent = isOnline
+        ? formatOnlineScoreName(onlineGame?.playerNames?.O, displayMark('O'))
+        : isPvp ? displayMark('O') : 'AI';
       gamePanel.classList.toggle('is-thinking', aiThinking);
       gamePanel.classList.toggle('is-syncing', onlineBusy || Boolean(undoRequest));
       boardElement.setAttribute('aria-busy', String(aiThinking || onlineBusy));
@@ -627,7 +735,7 @@
     }
 
     const onlineClient = onlineApi?.createOnlineClient({
-      config: globalScope.ONLINE_GAME_CONFIG,
+      accountClient,
       onState: (game) => {
         if (state?.gameMode !== 'online' || game.gameType !== gameType) return;
         onlineGame = game;
@@ -777,6 +885,7 @@
       gameType = type;
       engine = engineFor(type);
       if (!engine) return;
+      if (accountDialog?.open) accountDialog.close();
       home.hidden = true;
       gameView.hidden = false;
       document.querySelector('input[name="game-mode"][value="ai"]').checked = true;
@@ -819,6 +928,47 @@
 
     document.querySelectorAll('[data-game-type]').forEach((button) => {
       button.addEventListener('click', () => enterGame(button.dataset.gameType));
+    });
+    accountButton?.addEventListener('click', () => {
+      renderAccount();
+      if (!accountClient?.isConfigured()) {
+        setAccountMessage('账号服务尚未配置，游客仍可使用本地模式', 'error');
+      }
+      accountDialog.showModal();
+    });
+    accountCloseButton?.addEventListener('click', () => accountDialog.close());
+    accountLoginTab?.addEventListener('click', () => setAccountMode('login'));
+    accountRegisterTab?.addEventListener('click', () => setAccountMode('register'));
+    accountLoginForm?.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const data = new FormData(accountLoginForm);
+      void runAccountAction(() => accountClient.login({
+        username: data.get('username'),
+        password: data.get('password'),
+      }), '登录成功');
+    });
+    accountRegisterForm?.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const data = new FormData(accountRegisterForm);
+      void runAccountAction(() => accountClient.register({
+        username: data.get('username'),
+        password: data.get('password'),
+        gameName: data.get('gameName'),
+      }), '注册成功');
+    });
+    accountProfileForm?.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const data = new FormData(accountProfileForm);
+      void runAccountAction(
+        () => accountClient.updateGameName(data.get('gameName')),
+        '游戏名已保存',
+      );
+    });
+    accountLogoutButton?.addEventListener('click', () => {
+      void runAccountAction(() => accountClient.logout(), '已退出账号');
+    });
+    accountDialog?.addEventListener('click', (event) => {
+      if (event.target === accountDialog) accountDialog.close();
     });
     backHomeButton.addEventListener('click', () => void showHome());
     document.querySelectorAll('input[name="difficulty"], input[name="first-player"]')
@@ -894,6 +1044,19 @@
       enterGame(requestedGame, {
         replaceUrl: true,
         roomCode: onlineApi?.isValidRoomCode(requestedRoom) ? requestedRoom : null,
+      });
+    }
+    accountClient?.subscribe((identity) => {
+      accountIdentity = identity;
+      renderAccount();
+    });
+    renderAccount();
+    if (accountClient?.isConfigured()) {
+      void accountClient.initialize().then((identity) => {
+        accountIdentity = identity;
+        renderAccount();
+      }).catch((error) => {
+        setAccountMessage(accountApi.mapAccountError(error), 'error');
       });
     }
   }

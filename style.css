@@ -50,6 +50,7 @@ button {
 }
 
 .game-home {
+  position: relative;
   width: min(1040px, calc(100% - 32px));
   min-height: 100dvh;
   margin: 0 auto;
@@ -57,6 +58,234 @@ button {
   display: grid;
   align-content: center;
   gap: clamp(36px, 7vw, 72px);
+}
+
+.account-button {
+  position: absolute;
+  top: 28px;
+  right: 0;
+  min-width: 190px;
+  min-height: 54px;
+  padding: 8px 12px 8px 9px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--text);
+  text-align: left;
+  background: var(--surface);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06);
+  cursor: pointer;
+  transition: border-color 180ms ease, background-color 180ms ease, transform 180ms ease;
+}
+
+.account-button:hover {
+  border-color: #52617f;
+  background: #19263e;
+  transform: translateY(-2px);
+}
+
+.account-avatar {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #07171c;
+  background: var(--accent);
+  font-size: 0.88rem;
+  font-weight: 850;
+}
+
+.account-button-copy {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.account-button-copy small {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.account-button-copy strong {
+  overflow: hidden;
+  font-size: 0.92rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-dialog {
+  position: fixed;
+  inset: 0;
+  width: min(460px, calc(100% - 32px));
+  max-width: 460px;
+  max-height: min(760px, calc(100dvh - 32px));
+  margin: auto;
+  padding: 0;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) + 6px);
+  color: var(--text);
+  background: var(--surface);
+  box-shadow: var(--shadow), inset 0 1px 0 rgb(255 255 255 / 0.06);
+}
+
+.account-dialog::backdrop {
+  background: rgb(3 8 18 / 0.78);
+  backdrop-filter: blur(5px);
+}
+
+.account-dialog-shell {
+  position: relative;
+  padding: 30px;
+}
+
+.account-close-button {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  padding: 6px 8px;
+  border: 0;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.account-close-button:hover {
+  color: var(--text);
+}
+
+.account-dialog-header {
+  padding-right: 52px;
+}
+
+.account-dialog-header > p:first-child {
+  margin: 0 0 7px;
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.account-dialog-header h2 {
+  margin: 0;
+  font-size: 1.65rem;
+  letter-spacing: -0.035em;
+}
+
+.account-dialog-header > p:last-child {
+  margin: 10px 0 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.account-tabs {
+  margin-top: 24px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) - 3px);
+  background: rgb(12 19 35 / 0.58);
+}
+
+.account-tabs button {
+  min-height: 40px;
+  border: 0;
+  border-radius: calc(var(--radius) - 8px);
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  font-weight: 750;
+}
+
+.account-tabs button[aria-selected="true"] {
+  color: var(--text);
+  background: var(--surface-strong);
+}
+
+.account-form {
+  margin-top: 22px;
+  display: grid;
+  gap: 16px;
+}
+
+.account-field {
+  display: grid;
+  gap: 7px;
+}
+
+.account-field > span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.account-field > small {
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.account-field input {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) - 5px);
+  color: var(--text);
+  background: var(--surface-strong);
+}
+
+.account-field input:focus-visible,
+.account-button:focus-visible,
+.account-close-button:focus-visible,
+.account-tabs button:focus-visible {
+  outline: 3px solid rgb(114 215 231 / 0.42);
+  outline-offset: 2px;
+}
+
+.account-profile-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.account-username {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.account-username strong {
+  color: var(--text);
+}
+
+.account-message {
+  min-height: 1.45em;
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.account-message[data-state="error"] {
+  color: var(--x-color);
+}
+
+.account-message[data-state="success"] {
+  color: var(--success);
+}
+
+.account-footnote {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.5;
 }
 
 .home-copy {
@@ -552,6 +781,7 @@ legend {
   margin-bottom: 2px;
   color: var(--muted);
   font-size: 0.78rem;
+  overflow-wrap: anywhere;
 }
 
 .scoreboard strong {
@@ -934,6 +1164,17 @@ legend {
     padding: 34px 0;
   }
 
+  .account-button {
+    position: static;
+    justify-self: end;
+    margin-bottom: -18px;
+  }
+
+  .account-dialog {
+    width: calc(100% - 28px);
+    max-width: 460px;
+  }
+
   .home-copy {
     grid-template-columns: 74px minmax(0, 1fr);
   }
@@ -974,6 +1215,20 @@ legend {
   .game-home {
     width: min(100% - 20px, 400px);
     padding-top: 22px;
+  }
+
+  .account-button {
+    width: 100%;
+    min-width: 0;
+    margin-bottom: -8px;
+  }
+
+  .account-dialog-shell {
+    padding: 24px 18px 20px;
+  }
+
+  .account-profile-actions {
+    grid-template-columns: 1fr;
   }
 
   .home-copy {

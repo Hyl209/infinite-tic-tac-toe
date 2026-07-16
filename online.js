@@ -48,6 +48,10 @@
       roomId: row.id,
       roomCode: row.room_code,
       playerMark,
+      playerNames: {
+        X: row.x_player_name,
+        O: row.o_player_name,
+      },
       status: row.status,
       board: [...row.board],
       moveOrders: {
@@ -119,30 +123,37 @@
     if (error) return error;
     if (submitting || phase === 'connecting') return '正在连接线上房间';
     if (!game) return '创建房间或输入房间码加入好友';
-    if (game.status === 'waiting') return '等待对手加入房间';
-    if (game.status === 'abandoned') return '对手已退出房间';
+    const ownName = game.playerNames?.[game.playerMark] || '你';
+    const opponentMark = game.playerMark === 'X' ? 'O' : 'X';
+    const opponentName = game.playerNames?.[opponentMark] || '对手';
+    if (game.status === 'waiting') {
+      return game.playerNames?.X ? `等待对手加入，${game.playerNames.X}执 X` : '等待对手加入房间';
+    }
+    if (game.status === 'abandoned') return `${opponentName}已退出房间`;
     if (!connected) return '连接中断，正在等待恢复';
 
     if (game.status === 'playing') {
-      if (!game.opponentOnline) return '对手离线，棋局已保留';
+      if (!game.opponentOnline) return `${opponentName}离线，棋局已保留`;
       return game.currentMark === game.playerMark
-        ? `轮到你落子，你是 ${displayMark(game.playerMark)}`
-        : `等待对手落子，你是 ${displayMark(game.playerMark)}`;
+        ? `轮到你（${ownName}）落子`
+        : `等待 ${opponentName} 落子`;
     }
 
     if (game.status === 'x_win' || game.status === 'o_win') {
       if (game.rematchReady?.[game.playerMark]) {
-        return '等待对手确认再来一局';
+        return `等待${opponentName}确认再来一局`;
       }
 
-      const opponentMark = game.playerMark === 'X' ? 'O' : 'X';
-      if (game.rematchReady?.[opponentMark]) return '对手已申请再来一局';
+      if (game.rematchReady?.[opponentMark]) return `${opponentName}已申请再来一局`;
       const winner = game.status === 'x_win' ? 'X' : 'O';
-      return winner === game.playerMark ? '你赢了！漂亮的一局' : '对手赢了，再来一局';
+      const winnerName = game.playerNames?.[winner] || (winner === game.playerMark ? ownName : opponentName);
+      return winner === game.playerMark
+        ? `${winnerName}获胜，漂亮的一局`
+        : `${winnerName}获胜，再来一局`;
     }
 
     if (game.status === 'draw') {
-      if (game.rematchReady?.[game.playerMark]) return '等待对手确认再来一局';
+      if (game.rematchReady?.[game.playerMark]) return `等待${opponentName}确认再来一局`;
       return '本局平局，再来一局';
     }
 
@@ -170,8 +181,7 @@
   }
 
   function createOnlineClient({
-    config = globalScope.ONLINE_GAME_CONFIG || {},
-    loadSupabase = loadSupabaseSdk,
+    accountClient = null,
     onState = () => {},
     onConnection = () => {},
     onPresence = () => {},
@@ -184,9 +194,10 @@
     let currentGame = null;
     let connected = false;
     let opponentOnline = false;
+    let playerName = '';
 
     function isConfigured() {
-      return Boolean(config.supabaseUrl && config.supabaseAnonKey);
+      return Boolean(accountClient?.isConfigured());
     }
 
     function emitState() {
@@ -205,27 +216,11 @@
 
     async function connect() {
       if (supabase && user) return user;
-      if (!isConfigured()) throw new Error('ONLINE_NOT_CONFIGURED');
-
-      const sdk = await loadSupabase();
-      supabase = sdk.createClient(config.supabaseUrl, config.supabaseAnonKey, {
-        auth: {
-          persistSession: true,
-          autoRefreshToken: true,
-          detectSessionInUrl: false,
-        },
-      });
-
-      const sessionResult = await supabase.auth.getSession();
-      if (sessionResult.error) throw sessionResult.error;
-      user = sessionResult.data.session?.user || null;
-
-      if (!user) {
-        const signInResult = await supabase.auth.signInAnonymously();
-        if (signInResult.error) throw signInResult.error;
-        user = signInResult.data.user;
-      }
-
+      if (!accountClient) throw new Error('ONLINE_NOT_CONFIGURED');
+      const session = await accountClient.ensureOnlineIdentity();
+      supabase = session.supabase;
+      user = session.user;
+      playerName = session.identity.displayName;
       return user;
     }
 
@@ -275,6 +270,7 @@
             roomChannel.track({
               user_id: user.id,
               mark: currentGame?.playerMark,
+              display_name: playerName,
             }).catch(onError);
             return;
           }
@@ -297,7 +293,11 @@
     }
 
     async function createRoom(gameType = 'tic_tac_toe') {
-      const row = await callRpc('create_online_game', { p_game_type: gameType });
+      await connect();
+      const row = await callRpc('create_online_game', {
+        p_game_type: gameType,
+        p_guest_name: playerName,
+      });
       await subscribeToRoom(row);
       return currentGame;
     }
@@ -305,9 +305,11 @@
     async function joinRoom(roomCode, gameType = 'tic_tac_toe') {
       const normalized = normalizeRoomCode(roomCode);
       if (!isValidRoomCode(normalized)) throw new Error('INVALID_ROOM_CODE');
+      await connect();
       const row = await callRpc('join_online_game', {
         p_room_code: normalized,
         p_game_type: gameType,
+        p_guest_name: playerName,
       });
       await subscribeToRoom(row);
       return currentGame;

@@ -12,11 +12,20 @@
     <script src="tic-tac-toe.js" defer></script>
     <script src="gomoku.js" defer></script>
     <script src="online.js" defer></script>
+    <script src="account.js" defer></script>
     <script src="game.js" defer></script>
   </head>
   <body>
     <main class="site-shell">
       <section id="game-home" class="game-home" aria-labelledby="home-title">
+        <button id="account-button" class="account-button" type="button" aria-haspopup="dialog">
+          <span class="account-avatar" aria-hidden="true">游</span>
+          <span class="account-button-copy">
+            <small id="account-kind-label">游客身份</small>
+            <strong id="account-display-name">匿名玩家</strong>
+          </span>
+        </button>
+
         <header class="home-copy">
           <p class="home-mark" aria-hidden="true"><span>五</span><span>井</span></p>
           <div>
@@ -49,6 +58,119 @@
             </span>
           </button>
         </div>
+
+        <dialog id="account-dialog" class="account-dialog" aria-labelledby="account-dialog-title">
+          <div class="account-dialog-shell">
+            <button id="account-close-button" class="account-close-button" type="button">关闭</button>
+            <header class="account-dialog-header">
+              <p>玩家身份</p>
+              <h2 id="account-dialog-title">登录账号</h2>
+              <p id="account-dialog-description">登录后，游戏名会同步到其他设备。</p>
+            </header>
+
+            <div id="account-auth-view">
+              <div class="account-tabs" role="tablist" aria-label="登录或注册">
+                <button id="account-login-tab" type="button" role="tab" aria-selected="true">登录</button>
+                <button id="account-register-tab" type="button" role="tab" aria-selected="false">注册</button>
+              </div>
+
+              <form id="account-login-form" class="account-form">
+                <label class="account-field" for="login-username">
+                  <span>用户名</span>
+                  <input
+                    id="login-username"
+                    name="username"
+                    type="text"
+                    minlength="3"
+                    maxlength="20"
+                    pattern="[A-Za-z0-9_]{3,20}"
+                    autocomplete="username"
+                    spellcheck="false"
+                    required
+                  >
+                </label>
+                <label class="account-field" for="login-password">
+                  <span>密码</span>
+                  <input
+                    id="login-password"
+                    name="password"
+                    type="password"
+                    minlength="8"
+                    maxlength="64"
+                    autocomplete="current-password"
+                    required
+                  >
+                </label>
+                <button class="button primary" type="submit">登录账号</button>
+              </form>
+
+              <form id="account-register-form" class="account-form" hidden>
+                <label class="account-field" for="register-username">
+                  <span>登录用户名</span>
+                  <input
+                    id="register-username"
+                    name="username"
+                    type="text"
+                    minlength="3"
+                    maxlength="20"
+                    pattern="[A-Za-z0-9_]{3,20}"
+                    autocomplete="username"
+                    spellcheck="false"
+                    aria-describedby="username-hint"
+                    required
+                  >
+                  <small id="username-hint">3 至 20 位英文、数字或下划线</small>
+                </label>
+                <label class="account-field" for="register-password">
+                  <span>密码</span>
+                  <input
+                    id="register-password"
+                    name="password"
+                    type="password"
+                    minlength="8"
+                    maxlength="64"
+                    autocomplete="new-password"
+                    required
+                  >
+                </label>
+                <label class="account-field" for="register-game-name">
+                  <span>游戏名</span>
+                  <input
+                    id="register-game-name"
+                    name="gameName"
+                    type="text"
+                    maxlength="16"
+                    autocomplete="nickname"
+                    required
+                  >
+                </label>
+                <button class="button primary" type="submit">注册账号</button>
+              </form>
+            </div>
+
+            <form id="account-profile-form" class="account-form" hidden>
+              <p class="account-username">登录用户名 <strong id="profile-username"></strong></p>
+              <label class="account-field" for="profile-game-name">
+                <span>游戏名</span>
+                <input
+                  id="profile-game-name"
+                  name="gameName"
+                  type="text"
+                  maxlength="16"
+                  autocomplete="nickname"
+                  required
+                >
+              </label>
+              <div class="account-profile-actions">
+                <button class="button primary" type="submit">保存游戏名</button>
+                <button id="account-logout-button" class="button danger" type="button">退出账号</button>
+              </div>
+            </form>
+
+            <p id="account-message" class="account-message" aria-live="polite"></p>
+            <p class="account-footnote">游客也能在线对战，名称会显示为匿名玩家加随机码。</p>
+          </div>
+        </dialog>
       </section>
 
       <section id="game-view" class="app-shell" hidden>

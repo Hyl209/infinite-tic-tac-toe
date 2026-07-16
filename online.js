@@ -7,11 +7,18 @@
     INVALID_ROOM_CODE: '请输入正确的六位房间码',
     ROOM_NOT_FOUND: '房间不存在',
     ROOM_FULL: '房间已满',
+    ROOM_GAME_MISMATCH: '这个房间属于另一种游戏',
     ROOM_EXPIRED: '房间已过期',
     NOT_YOUR_TURN: '还没轮到你',
     CELL_OCCUPIED: '这个格子已经有棋子',
     GAME_NOT_PLAYING: '对局尚未开始或已经结束',
     NOT_A_PLAYER: '你不是这个房间的玩家',
+    UNDO_PENDING: '正在等待悔棋回应',
+    UNDO_NOT_PENDING: '当前没有待处理的悔棋请求',
+    UNDO_NOT_REQUESTER: '只有发起方可以取消悔棋',
+    UNDO_LIMIT_REACHED: '本局悔棋次数已经用完',
+    UNDO_EXPIRED: '悔棋请求已经超时',
+    NOTHING_TO_UNDO: '当前没有可以撤回的落子',
   };
 
   function normalizeRoomCode(value) {
@@ -37,6 +44,7 @@
 
     return {
       gameMode: 'online',
+      gameType: row.game_type,
       roomId: row.id,
       roomCode: row.room_code,
       playerMark,
@@ -46,27 +54,41 @@
         X: [...row.x_order],
         O: [...row.o_order],
       },
+      moveHistory: [...row.move_history],
       currentMark: row.current_mark,
       winningLine: [...row.winning_line],
       scores: { X: row.x_score, O: row.o_score },
       round: row.round,
       rematchReady: { X: row.x_rematch, O: row.o_rematch },
+      undoRemaining: {
+        X: row.x_undos_remaining,
+        O: row.o_undos_remaining,
+      },
+      undoRequest: row.undo_request_mark && row.undo_expires_at
+        ? {
+          requesterMark: row.undo_request_mark,
+          expiresAt: row.undo_expires_at,
+        }
+        : null,
       opponentOnline,
       version: row.version,
     };
   }
 
   function canOnlineMove(game, index, { connected, submitting }) {
+    const undoPending = game?.undoRequest?.expiresAt
+      && Date.parse(game.undoRequest.expiresAt) > Date.now();
     return Boolean(
       game
       && connected
       && !submitting
+      && !undoPending
       && game.status === 'playing'
       && game.playerMark
       && game.currentMark === game.playerMark
       && Number.isInteger(index)
       && index >= 0
-      && index < 9
+      && index < game.board.length
       && game.board[index] === null,
     );
   }
@@ -79,8 +101,9 @@
       : '线上服务暂时不可用，请稍后重试';
   }
 
-  function buildInviteUrl(currentUrl, roomCode) {
+  function buildInviteUrl(currentUrl, roomCode, gameType = 'tic_tac_toe') {
     const url = new URL(currentUrl);
+    url.searchParams.set('game', gameType);
     url.searchParams.set('room', normalizeRoomCode(roomCode));
     return url.toString();
   }
@@ -91,6 +114,7 @@
     connected = false,
     submitting = false,
     error = '',
+    displayMark = (mark) => mark,
   } = {}) {
     if (error) return error;
     if (submitting || phase === 'connecting') return '正在连接线上房间';
@@ -102,8 +126,8 @@
     if (game.status === 'playing') {
       if (!game.opponentOnline) return '对手离线，棋局已保留';
       return game.currentMark === game.playerMark
-        ? `轮到你落子，你是 ${game.playerMark}`
-        : `等待对手落子，你是 ${game.playerMark}`;
+        ? `轮到你落子，你是 ${displayMark(game.playerMark)}`
+        : `等待对手落子，你是 ${displayMark(game.playerMark)}`;
     }
 
     if (game.status === 'x_win' || game.status === 'o_win') {
@@ -115,6 +139,11 @@
       if (game.rematchReady?.[opponentMark]) return '对手已申请再来一局';
       const winner = game.status === 'x_win' ? 'X' : 'O';
       return winner === game.playerMark ? '你赢了！漂亮的一局' : '对手赢了，再来一局';
+    }
+
+    if (game.status === 'draw') {
+      if (game.rematchReady?.[game.playerMark]) return '等待对手确认再来一局';
+      return '本局平局，再来一局';
     }
 
     return '线上棋局状态已更新';
@@ -169,6 +198,7 @@
 
     function acceptRow(row) {
       if (!row) return currentGame;
+      if (currentRow && row.version < currentRow.version) return currentGame;
       currentRow = row;
       return emitState();
     }
@@ -266,16 +296,19 @@
       return firstRpcRow(result.data);
     }
 
-    async function createRoom() {
-      const row = await callRpc('create_online_game');
+    async function createRoom(gameType = 'tic_tac_toe') {
+      const row = await callRpc('create_online_game', { p_game_type: gameType });
       await subscribeToRoom(row);
       return currentGame;
     }
 
-    async function joinRoom(roomCode) {
+    async function joinRoom(roomCode, gameType = 'tic_tac_toe') {
       const normalized = normalizeRoomCode(roomCode);
       if (!isValidRoomCode(normalized)) throw new Error('INVALID_ROOM_CODE');
-      const row = await callRpc('join_online_game', { p_room_code: normalized });
+      const row = await callRpc('join_online_game', {
+        p_room_code: normalized,
+        p_game_type: gameType,
+      });
       await subscribeToRoom(row);
       return currentGame;
     }
@@ -297,6 +330,27 @@
       return acceptRow(row);
     }
 
+    async function requestUndo() {
+      if (!currentRow) throw new Error('ROOM_NOT_FOUND');
+      const row = await callRpc('request_online_undo', { p_game_id: currentRow.id });
+      return acceptRow(row);
+    }
+
+    async function respondUndo(accept) {
+      if (!currentRow) throw new Error('ROOM_NOT_FOUND');
+      const row = await callRpc('respond_online_undo', {
+        p_game_id: currentRow.id,
+        p_accept: Boolean(accept),
+      });
+      return acceptRow(row);
+    }
+
+    async function cancelUndo() {
+      if (!currentRow) throw new Error('ROOM_NOT_FOUND');
+      const row = await callRpc('cancel_online_undo', { p_game_id: currentRow.id });
+      return acceptRow(row);
+    }
+
     async function leaveRoom() {
       if (!currentRow) return;
       await callRpc('leave_online_game', { p_game_id: currentRow.id });
@@ -307,13 +361,16 @@
 
     return {
       connect,
+      cancelUndo,
       createRoom,
       disconnect,
       isConfigured,
       joinRoom,
       leaveRoom,
       makeMove,
+      requestUndo,
       requestRematch,
+      respondUndo,
     };
   }
 

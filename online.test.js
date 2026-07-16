@@ -26,10 +26,12 @@ test('mapOnlineGame 把数据库字段映射成页面状态并识别己方棋子
   const game = online.mapOnlineGame({
     id: 'game-1',
     room_code: 'ABC23D',
+    game_type: 'gomoku',
     status: 'playing',
-    board: ['X', null, null, null, null, null, null, null, null],
+    board: ['X', ...Array(224).fill(null)],
     x_order: [0],
     o_order: [],
+    move_history: [0],
     current_mark: 'O',
     winning_line: [],
     x_score: 2,
@@ -37,6 +39,10 @@ test('mapOnlineGame 把数据库字段映射成页面状态并识别己方棋子
     round: 4,
     x_rematch: true,
     o_rematch: false,
+    x_undos_remaining: 2,
+    o_undos_remaining: 1,
+    undo_request_mark: 'X',
+    undo_expires_at: '2026-07-16T12:00:15.000Z',
     version: 7,
     x_player: 'user-x',
     o_player: 'user-o',
@@ -44,17 +50,24 @@ test('mapOnlineGame 把数据库字段映射成页面状态并识别己方棋子
 
   assert.deepEqual(game, {
     gameMode: 'online',
+    gameType: 'gomoku',
     roomId: 'game-1',
     roomCode: 'ABC23D',
     playerMark: 'O',
     status: 'playing',
-    board: ['X', null, null, null, null, null, null, null, null],
+    board: ['X', ...Array(224).fill(null)],
     moveOrders: { X: [0], O: [] },
+    moveHistory: [0],
     currentMark: 'O',
     winningLine: [],
     scores: { X: 2, O: 1 },
     round: 4,
     rematchReady: { X: true, O: false },
+    undoRemaining: { X: 2, O: 1 },
+    undoRequest: {
+      requesterMark: 'X',
+      expiresAt: '2026-07-16T12:00:15.000Z',
+    },
     opponentOnline: true,
     version: 7,
   });
@@ -73,12 +86,27 @@ test('canOnlineMove 只允许在线且轮到自己的玩家点击空格', () => 
   assert.equal(online.canOnlineMove(game, 1, { connected: false, submitting: false }), false);
   assert.equal(online.canOnlineMove(game, 1, { connected: true, submitting: true }), false);
   assert.equal(online.canOnlineMove({ ...game, currentMark: 'X' }, 1, { connected: true, submitting: false }), false);
+  assert.equal(online.canOnlineMove({
+    ...game,
+    undoRequest: { requesterMark: 'X', expiresAt: '2999-01-01T00:00:00.000Z' },
+  }, 1, { connected: true, submitting: false }), false);
+
+  const gomoku = {
+    status: 'playing',
+    board: Array(225).fill(null),
+    currentMark: 'X',
+    playerMark: 'X',
+  };
+  assert.equal(online.canOnlineMove(gomoku, 224, { connected: true, submitting: false }), true);
+  assert.equal(online.canOnlineMove(gomoku, 225, { connected: true, submitting: false }), false);
 });
 
 test('mapOnlineError 把稳定错误码转换成中文提示', () => {
   assert.equal(online.mapOnlineError({ message: 'ROOM_NOT_FOUND' }), '房间不存在');
   assert.equal(online.mapOnlineError({ message: 'ROOM_FULL' }), '房间已满');
   assert.equal(online.mapOnlineError({ message: 'NOT_YOUR_TURN' }), '还没轮到你');
+  assert.equal(online.mapOnlineError({ message: 'ROOM_GAME_MISMATCH' }), '这个房间属于另一种游戏');
+  assert.equal(online.mapOnlineError({ message: 'UNDO_LIMIT_REACHED' }), '本局悔棋次数已经用完');
   assert.equal(online.mapOnlineError({ message: 'unexpected' }), '线上服务暂时不可用，请稍后重试');
 });
 
@@ -118,10 +146,10 @@ test('getOnlineStatusMessage 覆盖等待、回合、掉线和重赛状态', () 
   );
 });
 
-test('buildInviteUrl 生成包含标准房间码的邀请链接', () => {
+test('buildInviteUrl 生成包含游戏类型和标准房间码的邀请链接', () => {
   assert.equal(
-    online.buildInviteUrl('https://example.com/game/?foo=1', 'ab-c23d'),
-    'https://example.com/game/?foo=1&room=ABC23D',
+    online.buildInviteUrl('https://example.com/game/?foo=1', 'ab-c23d', 'gomoku'),
+    'https://example.com/game/?foo=1&game=gomoku&room=ABC23D',
   );
 });
 
@@ -159,10 +187,12 @@ function createFakeSupabase(rowOverrides = {}) {
   const row = {
     id: 'game-1',
     room_code: 'ABC23D',
+    game_type: 'tic_tac_toe',
     status: 'waiting',
     board: Array(9).fill(null),
     x_order: [],
     o_order: [],
+    move_history: [],
     current_mark: 'X',
     winning_line: [],
     x_score: 0,
@@ -170,6 +200,10 @@ function createFakeSupabase(rowOverrides = {}) {
     round: 1,
     x_rematch: false,
     o_rematch: false,
+    x_undos_remaining: 3,
+    o_undos_remaining: 3,
+    undo_request_mark: null,
+    undo_expires_at: null,
     version: 0,
     x_player: 'user-x',
     o_player: null,
@@ -245,13 +279,13 @@ test('createRoom 匿名登录、调用 RPC 并订阅私有房间频道', async (
     onConnection: (connected) => connections.push(connected),
   });
 
-  const game = await client.createRoom();
+  const game = await client.createRoom('gomoku');
 
   assert.equal(game.playerMark, 'X');
   assert.deepEqual(fake.calls.slice(0, 3), [
     ['getSession'],
     ['signInAnonymously'],
-    ['rpc', 'create_online_game', undefined],
+    ['rpc', 'create_online_game', { p_game_type: 'gomoku' }],
   ]);
   assert.deepEqual(fake.calls.find((call) => call[0] === 'channel'), [
     'channel',
@@ -262,7 +296,7 @@ test('createRoom 匿名登录、调用 RPC 并订阅私有房间频道', async (
   assert.equal(connections.at(-1), true);
 });
 
-test('joinRoom 标准化房间码，落子和重赛都携带当前房间 ID', async () => {
+test('joinRoom 携带游戏类型，落子、悔棋和重赛都携带当前房间 ID', async () => {
   const fake = createFakeSupabase({
     status: 'playing',
     o_player: 'user-o',
@@ -272,15 +306,77 @@ test('joinRoom 标准化房间码，落子和重赛都携带当前房间 ID', as
     loadSupabase: async () => ({ createClient: () => fake.client }),
   });
 
-  await client.joinRoom(' ab-c23d ');
+  await client.joinRoom(' ab-c23d ', 'tic_tac_toe');
   await client.makeMove(4);
+  await client.requestUndo();
+  await client.respondUndo(true);
+  await client.cancelUndo();
   await client.requestRematch();
 
   assert.deepEqual(fake.calls.filter((call) => call[0] === 'rpc'), [
-    ['rpc', 'join_online_game', { p_room_code: 'ABC23D' }],
+    ['rpc', 'join_online_game', { p_room_code: 'ABC23D', p_game_type: 'tic_tac_toe' }],
     ['rpc', 'play_online_move', { p_game_id: 'game-1', p_cell: 4 }],
+    ['rpc', 'request_online_undo', { p_game_id: 'game-1' }],
+    ['rpc', 'respond_online_undo', { p_game_id: 'game-1', p_accept: true }],
+    ['rpc', 'cancel_online_undo', { p_game_id: 'game-1' }],
     ['rpc', 'request_online_rematch', { p_game_id: 'game-1' }],
   ]);
+});
+
+test('较旧的 RPC 响应不能覆盖较新的 Realtime 状态', async () => {
+  const fake = createFakeSupabase({
+    status: 'playing',
+    o_player: 'user-o',
+  });
+  const states = [];
+  let resolveMove;
+  let markMoveStarted;
+  const moveStarted = new Promise((resolve) => {
+    markMoveStarted = resolve;
+  });
+  const originalRpc = fake.client.rpc.bind(fake.client);
+  fake.client.rpc = async (name, params) => {
+    if (name !== 'play_online_move') return originalRpc(name, params);
+    fake.calls.push(['rpc', name, params]);
+    markMoveStarted();
+    return new Promise((resolve) => {
+      resolveMove = resolve;
+    });
+  };
+
+  const client = online.createOnlineClient({
+    config: { supabaseUrl: 'https://example.supabase.co', supabaseAnonKey: 'anon-key' },
+    loadSupabase: async () => ({ createClient: () => fake.client }),
+    onState: (state) => states.push(state),
+  });
+
+  await client.joinRoom('ABC23D');
+  const pendingMove = client.makeMove(0);
+  await moveStarted;
+
+  fake.handlers['postgres_changes:UPDATE']({
+    new: {
+      ...fake.row,
+      board: ['X', 'O', null, null, null, null, null, null, null],
+      x_order: [0],
+      o_order: [1],
+      version: 2,
+    },
+  });
+  resolveMove({
+    data: [{
+      ...fake.row,
+      board: ['X', null, null, null, null, null, null, null, null],
+      x_order: [0],
+      current_mark: 'O',
+      version: 1,
+    }],
+    error: null,
+  });
+  await pendingMove;
+
+  assert.deepEqual(states.map((state) => state.version), [0, 2]);
+  assert.equal(states.at(-1).board[1], 'O');
 });
 
 test('disconnect 取消频道订阅但不调用退出房间 RPC', async () => {

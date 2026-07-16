@@ -15,11 +15,25 @@ test('Supabase 脚本创建线上棋局表和全部 RPC', () => {
     'create_online_game',
     'join_online_game',
     'play_online_move',
+    'request_online_undo',
+    'respond_online_undo',
+    'cancel_online_undo',
     'request_online_rematch',
     'leave_online_game',
   ]) {
     assert.match(sql, new RegExp(`create or replace function public\\.${name}`, 'i'));
   }
+});
+
+test('线上表支持两种游戏、落子历史和每人三次悔棋额度', () => {
+  const sql = readSetupSql();
+  assert.match(sql, /drop table if exists public\.online_games cascade/i);
+  assert.match(sql, /game_type\s+text\s+not null/i);
+  assert.match(sql, /game_type\s+in\s*\(\s*'tic_tac_toe'\s*,\s*'gomoku'\s*\)/i);
+  assert.match(sql, /move_history\s+smallint\[\]/i);
+  assert.match(sql, /x_undos_remaining\s+smallint\s+not null\s+default\s+3/i);
+  assert.match(sql, /o_undos_remaining\s+smallint\s+not null\s+default\s+3/i);
+  assert.match(sql, /jsonb_array_length\(board\)\s*=\s*225/i);
 });
 
 test('线上落子 RPC 使用行锁并包含稳定错误码', () => {
@@ -32,6 +46,41 @@ test('线上落子 RPC 使用行锁并包含稳定错误码', () => {
   assert.match(moveFunction, /CELL_OCCUPIED/);
   assert.match(moveFunction, /GAME_NOT_PLAYING/);
   assert.match(moveFunction, /array_length\([^)]*,\s*1\)\s*>\s*3/i);
+  assert.match(moveFunction, /UNDO_PENDING/);
+  assert.match(moveFunction, /p_cell\s*>\s*224/i);
+  assert.match(moveFunction, /move_history\s*=\s*array_append/i);
+  assert.match(moveFunction, /game_type\s*=\s*'gomoku'/i);
+});
+
+test('线上悔棋使用行锁、15 秒超时、发起即扣额度并重放历史', () => {
+  const sql = readSetupSql();
+  const requestStart = sql.indexOf('create or replace function public.request_online_undo');
+  const respondStart = sql.indexOf('create or replace function public.respond_online_undo');
+  const cancelStart = sql.indexOf('create or replace function public.cancel_online_undo');
+  const rematchStart = sql.indexOf('create or replace function public.request_online_rematch');
+  const requestFunction = sql.slice(requestStart, respondStart);
+  const respondFunction = sql.slice(respondStart, cancelStart);
+  const cancelFunction = sql.slice(cancelStart, rematchStart);
+
+  assert.match(requestFunction, /for update/i);
+  assert.match(requestFunction, /UNDO_LIMIT_REACHED/);
+  assert.match(requestFunction, /interval\s+'15 seconds'/i);
+  assert.match(requestFunction, /undos_remaining\s*=\s*[^,]+-\s*1/i);
+  assert.match(respondFunction, /for update/i);
+  assert.match(respondFunction, /array_remove_last|array_length\([^)]*move_history/i);
+  assert.match(respondFunction, /replay_online_history/i);
+  assert.match(cancelFunction, /UNDO_NOT_REQUESTER/);
+});
+
+test('重赛按游戏类型重建棋盘并重置悔棋历史和额度', () => {
+  const sql = readSetupSql();
+  const start = sql.indexOf('create or replace function public.request_online_rematch');
+  const end = sql.indexOf('create or replace function public.leave_online_game');
+  const rematchFunction = sql.slice(start, end);
+  assert.match(rematchFunction, /case\s+when\s+game_type\s*=\s*'gomoku'/i);
+  assert.match(rematchFunction, /move_history\s*=\s*'\{\}'::smallint\[\]/i);
+  assert.match(rematchFunction, /x_undos_remaining\s*=\s*3/i);
+  assert.match(rematchFunction, /o_undos_remaining\s*=\s*3/i);
 });
 
 test('Supabase 脚本启用 RLS、Realtime 和私有频道权限', () => {

@@ -21,6 +21,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 body {
   min-width: 320px;
   min-height: 100dvh;
@@ -41,6 +45,194 @@ button {
   color: inherit;
 }
 
+.site-shell {
+  min-height: 100dvh;
+}
+
+.game-home {
+  width: min(1040px, calc(100% - 32px));
+  min-height: 100dvh;
+  margin: 0 auto;
+  padding: clamp(32px, 7vw, 84px) 0;
+  display: grid;
+  align-content: center;
+  gap: clamp(36px, 7vw, 72px);
+}
+
+.home-copy {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(20px, 4vw, 44px);
+}
+
+.home-mark {
+  width: clamp(92px, 15vw, 150px);
+  aspect-ratio: 1;
+  margin: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) + 8px);
+  background: var(--surface);
+  box-shadow: var(--shadow), inset 0 1px 0 rgb(255 255 255 / 0.06);
+}
+
+.home-mark span {
+  display: grid;
+  place-items: center;
+  font-size: clamp(1.7rem, 5vw, 3.4rem);
+  font-weight: 850;
+}
+
+.home-mark span:first-child {
+  color: #101828;
+  background: var(--accent);
+}
+
+.home-mark span:last-child {
+  color: var(--x-color);
+}
+
+.home-kicker {
+  margin: 0 0 12px;
+  color: var(--accent);
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
+.home-copy h1 {
+  max-width: 13ch;
+  font-size: clamp(2.6rem, 7vw, 5.4rem);
+  line-height: 0.98;
+}
+
+.home-copy div > p:last-child {
+  max-width: 48ch;
+  margin: 18px 0 0;
+  color: var(--muted);
+  font-size: clamp(1rem, 2vw, 1.15rem);
+  line-height: 1.65;
+}
+
+.game-picker {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 18px;
+}
+
+.game-choice {
+  min-width: 0;
+  min-height: 250px;
+  padding: clamp(20px, 4vw, 32px);
+  display: grid;
+  grid-template-columns: minmax(120px, 0.8fr) minmax(150px, 1fr);
+  align-items: center;
+  gap: clamp(18px, 3vw, 34px);
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) + 4px);
+  text-align: left;
+  background: rgb(21 31 52 / 0.88);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06);
+  cursor: pointer;
+  transition: transform 180ms ease, border-color 180ms ease, background-color 180ms ease;
+}
+
+.game-choice:hover {
+  border-color: #52617f;
+  background: #19263e;
+  transform: translateY(-3px);
+}
+
+.game-choice:active {
+  transform: translateY(-1px) scale(0.99);
+}
+
+.game-choice:focus-visible,
+.back-button:focus-visible {
+  outline: 3px solid rgb(114 215 231 / 0.42);
+  outline-offset: 4px;
+}
+
+.choice-preview {
+  aspect-ratio: 1;
+  display: grid;
+}
+
+.tic-preview {
+  grid-template-columns: repeat(3, 1fr);
+  border: 1px solid #3b4c6d;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface-strong);
+}
+
+.tic-preview i {
+  display: grid;
+  place-items: center;
+  border: 1px solid #3b4c6d;
+  color: var(--x-color);
+  font-size: clamp(1.1rem, 3vw, 2.2rem);
+  font-style: normal;
+  font-weight: 850;
+}
+
+.tic-preview i:nth-child(3n) {
+  color: var(--o-color);
+}
+
+.gomoku-preview {
+  position: relative;
+  border: 1px solid #dab57d;
+  border-radius: var(--radius);
+  background:
+    linear-gradient(rgb(83 62 37 / 0.72) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(83 62 37 / 0.72) 1px, transparent 1px),
+    #c8a36a;
+  background-size: 16.666% 16.666%;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.28);
+}
+
+.gomoku-preview i {
+  position: absolute;
+  width: 16%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: #172033;
+  box-shadow: 0 3px 7px rgb(37 24 12 / 0.28);
+}
+
+.gomoku-preview i:nth-child(1) { left: 17%; top: 17%; }
+.gomoku-preview i:nth-child(2) { left: 33%; top: 33%; background: #edf1f4; }
+.gomoku-preview i:nth-child(3) { left: 49%; top: 33%; }
+.gomoku-preview i:nth-child(4) { left: 65%; top: 33%; background: #edf1f4; }
+.gomoku-preview i:nth-child(5) { left: 49%; top: 49%; }
+.gomoku-preview i:nth-child(6) { left: 49%; top: 65%; background: #edf1f4; }
+.gomoku-preview i:nth-child(7) { left: 65%; top: 65%; }
+
+.choice-copy {
+  display: grid;
+  align-content: center;
+  gap: 12px;
+}
+
+.choice-copy strong {
+  font-size: clamp(1.35rem, 3vw, 2rem);
+}
+
+.choice-copy small {
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.choice-copy > span {
+  color: var(--accent);
+  font-size: 0.88rem;
+  font-weight: 750;
+}
+
 .app-shell {
   width: min(1040px, calc(100% - 32px));
   min-height: 100dvh;
@@ -55,6 +247,21 @@ button {
 .control-panel {
   display: grid;
   gap: 24px;
+}
+
+.back-button {
+  width: max-content;
+  padding: 0;
+  border: 0;
+  color: var(--muted);
+  background: transparent;
+  font-size: 0.86rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.back-button:hover {
+  color: var(--accent);
 }
 
 .hero-copy {
@@ -82,6 +289,12 @@ button {
 
 .brand-mark span {
   color: var(--o-color);
+}
+
+.brand-mark.gomoku-brand {
+  color: #101828;
+  background: var(--accent);
+  letter-spacing: 0;
 }
 
 h1 {
@@ -115,12 +328,14 @@ h1 {
   border-color: rgb(255 128 111 / 0.55);
 }
 
-.status-card[data-result="x-win"] {
+.status-card[data-result="x-win"],
+.status-card[data-result="x_win"] {
   border-color: rgb(255 128 111 / 0.62);
   background: rgb(67 42 48 / 0.72);
 }
 
-.status-card[data-result="o-win"] {
+.status-card[data-result="o-win"],
+.status-card[data-result="o_win"] {
   border-color: rgb(114 215 231 / 0.62);
   background: rgb(31 64 75 / 0.72);
 }
@@ -198,6 +413,32 @@ h1 {
 .online-room-session p,
 .online-room-message {
   margin: 0;
+}
+
+.undo-request {
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid rgb(255 196 107 / 0.45);
+  border-radius: var(--radius);
+  background: rgb(71 52 25 / 0.5);
+}
+
+.undo-request p {
+  margin: 0 0 10px;
+  color: var(--warning);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.undo-request-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.undo-request-actions .button:only-child,
+.undo-request-actions .button:not([hidden]):last-child:first-child {
+  grid-column: 1 / -1;
 }
 
 #room-code-display {
@@ -320,7 +561,7 @@ legend {
 
 .actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 10px;
 }
 
@@ -443,6 +684,22 @@ legend {
   gap: clamp(8px, 1.7vw, 14px);
 }
 
+.board.gomoku-board {
+  grid-template-columns: repeat(15, 1fr);
+  grid-template-rows: repeat(15, minmax(0, 1fr));
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid #ddb77d;
+  border-radius: calc(var(--radius) - 3px);
+  background:
+    linear-gradient(rgb(81 60 35 / 0.72) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(81 60 35 / 0.72) 1px, transparent 1px),
+    #c8a36a;
+  background-position: calc(100% / 30) calc(100% / 30);
+  background-size: calc(100% / 15) calc(100% / 15);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.28);
+}
+
 .cell {
   position: relative;
   min-width: 0;
@@ -514,6 +771,105 @@ legend {
   animation-delay: calc(var(--win-order, 0) * 80ms);
 }
 
+.gomoku-cell {
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: 0;
+}
+
+.gomoku-cell:hover[aria-disabled="false"] {
+  border: 0;
+  background: rgb(255 255 255 / 0.16);
+}
+
+.gomoku-cell:active[aria-disabled="false"] {
+  background: rgb(255 255 255 / 0.24);
+}
+
+.gomoku-cell::before {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  width: 0;
+  height: 0;
+  inset: 50% auto auto 50%;
+  transform: translate(-50%, -50%);
+}
+
+.gomoku-cell.star-point::before {
+  width: clamp(3px, 0.7vw, 6px);
+  height: clamp(3px, 0.7vw, 6px);
+  border-radius: 50%;
+  background: rgb(77 54 30 / 0.88);
+}
+
+.gomoku-cell::after {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  inset: 9%;
+  border-radius: 50%;
+  opacity: 0;
+  transform: scale(0.82);
+  transition: opacity 120ms ease, transform 160ms ease;
+  pointer-events: none;
+}
+
+.gomoku-cell.mark-x,
+.gomoku-cell.mark-o {
+  --piece-color: #172033;
+}
+
+.gomoku-cell.mark-o {
+  --piece-color: #edf1f4;
+}
+
+.gomoku-cell.mark-x::after,
+.gomoku-cell.mark-o::after {
+  opacity: 1;
+  transform: scale(1);
+  background: var(--piece-color);
+  box-shadow: 0 2px 5px rgb(51 33 16 / 0.34), inset 0 1px 1px rgb(255 255 255 / 0.2);
+}
+
+.gomoku-cell.candidate::after {
+  opacity: 0.5;
+  transform: scale(0.82);
+  background: var(--piece-color);
+  box-shadow: 0 0 0 2px rgb(255 255 255 / 0.72);
+}
+
+.gomoku-cell.last-move::after {
+  background: radial-gradient(circle, #ff806f 0 12%, var(--piece-color) 14%);
+}
+
+.gomoku-cell.winner {
+  border: 0;
+  background: rgb(145 230 179 / 0.24);
+}
+
+.gomoku-cell.winner::after {
+  animation: winner-pop 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(var(--win-order, 0) * 45ms);
+}
+
+.gomoku-cell.just-played::before {
+  animation: none;
+}
+
+.gomoku-cell.just-played::after {
+  animation: place-mark 260ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.gomoku-note .expiry-swatch {
+  border: 0;
+  border-radius: 50%;
+  background: var(--x-color);
+}
+
 .game-note {
   margin: 18px 0 0;
   display: flex;
@@ -572,6 +928,32 @@ legend {
 }
 
 @media (max-width: 760px) {
+  .game-home {
+    width: min(560px, calc(100% - 28px));
+    align-content: start;
+    padding: 34px 0;
+  }
+
+  .home-copy {
+    grid-template-columns: 74px minmax(0, 1fr);
+  }
+
+  .home-mark {
+    width: 74px;
+  }
+
+  .home-copy h1 {
+    font-size: clamp(2.15rem, 10vw, 3.6rem);
+  }
+
+  .game-picker {
+    grid-template-columns: 1fr;
+  }
+
+  .game-choice {
+    min-height: 0;
+  }
+
   .app-shell {
     width: min(560px, calc(100% - 28px));
     padding: 26px 0 34px;
@@ -589,6 +971,24 @@ legend {
 }
 
 @media (max-width: 420px) {
+  .game-home {
+    width: min(100% - 20px, 400px);
+    padding-top: 22px;
+  }
+
+  .home-copy {
+    grid-template-columns: 1fr;
+  }
+
+  .home-mark {
+    width: 68px;
+  }
+
+  .game-choice {
+    grid-template-columns: 108px minmax(0, 1fr);
+    padding: 16px;
+  }
+
   .app-shell {
     width: min(100% - 20px, 400px);
     padding-top: 18px;
@@ -618,6 +1018,14 @@ legend {
 
   .cell {
     border-radius: calc(var(--radius) - 5px);
+  }
+
+  .gomoku-cell {
+    border-radius: 0;
+  }
+
+  .actions {
+    grid-template-columns: 1fr;
   }
 }
 

@@ -37,7 +37,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -60,10 +61,34 @@ button {
   gap: clamp(36px, 7vw, 72px);
 }
 
-.account-button {
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.home-actions {
   position: absolute;
   top: 28px;
   right: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.home-leaderboard-button {
+  min-height: 54px;
+  padding-inline: 18px;
+  background: rgb(21 31 52 / 0.82);
+}
+
+.account-button {
+  position: static;
   min-width: 190px;
   min-height: 54px;
   padding: 8px 12px 8px 9px;
@@ -299,6 +324,152 @@ button {
   line-height: 1.5;
 }
 
+.match-history-panel {
+  margin-top: 22px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
+.match-history-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.match-history-heading > div {
+  display: grid;
+  gap: 2px;
+}
+
+.match-history-heading small,
+.season-summary-title {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.match-history-heading h3 {
+  margin: 0;
+  font-size: 1.12rem;
+}
+
+.match-history-heading select,
+.leaderboard-toolbar select {
+  min-height: 40px;
+  padding: 0 34px 0 11px;
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) - 7px);
+  color: var(--text);
+  background: var(--surface-strong);
+}
+
+.match-history-heading select:focus-visible,
+.leaderboard-toolbar select:focus-visible,
+.leaderboard-game-tabs button:focus-visible {
+  outline: 3px solid rgb(114 215 231 / 0.42);
+  outline-offset: 2px;
+}
+
+.season-summary {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-block: 1px solid var(--line);
+}
+
+.season-summary-title,
+.history-empty-state {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 12px 0;
+}
+
+.season-summary-item {
+  min-width: 0;
+  padding: 12px 10px 14px 0;
+  display: grid;
+  gap: 3px;
+}
+
+.season-summary-item + .season-summary-item {
+  padding-left: 12px;
+  border-left: 1px solid var(--line);
+}
+
+.season-summary-item span,
+.season-summary-item small {
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.season-summary-item strong {
+  font-size: 1.15rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.match-history-list {
+  border-block: 1px solid var(--line);
+}
+
+.match-history-item {
+  padding: 14px 0;
+}
+
+.match-history-item + .match-history-item {
+  border-top: 1px solid var(--line);
+}
+
+.match-history-item-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.match-history-item-heading strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.match-history-item[data-result="win"] .match-history-item-heading strong {
+  color: var(--success);
+}
+
+.match-history-item[data-result="loss"] .match-history-item-heading strong {
+  color: var(--x-color);
+}
+
+.match-history-item-heading time,
+.match-history-item p,
+.match-history-values {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.match-history-item p {
+  margin: 7px 0 0;
+  line-height: 1.45;
+}
+
+.match-history-values {
+  margin-top: 8px;
+  display: flex;
+  gap: 12px;
+}
+
+.history-empty-state,
+.leaderboard-empty-state {
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  text-align: center;
+}
+
+#load-more-history-button {
+  width: 100%;
+  margin-top: 12px;
+}
+
 .wallet-panel {
   margin-top: 22px;
   padding-top: 20px;
@@ -352,6 +523,155 @@ button {
   padding: 40px 0 64px;
 }
 
+.leaderboard-shell {
+  width: min(920px, calc(100% - 32px));
+  min-height: 100dvh;
+  margin: 0 auto;
+  padding: 40px 0 64px;
+}
+
+.leaderboard-header {
+  margin: 34px 0 28px;
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 28px;
+}
+
+.leaderboard-header > div > p,
+.admin-season-section .admin-list-heading p,
+.admin-code-section > .admin-list-heading p {
+  margin: 0 0 7px;
+  color: var(--accent);
+  font-size: 0.8rem;
+  font-weight: 750;
+}
+
+.leaderboard-header h1 {
+  margin: 0;
+  font-size: 2.15rem;
+  letter-spacing: -0.04em;
+}
+
+.leaderboard-header > p {
+  max-width: 46ch;
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.leaderboard-toolbar {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.leaderboard-toolbar > label {
+  display: grid;
+  gap: 7px;
+}
+
+.leaderboard-toolbar > label > span {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.leaderboard-game-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgb(12 19 35 / 0.58);
+}
+
+.leaderboard-game-tabs button {
+  min-height: 40px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: calc(var(--radius) - 8px);
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  font-weight: 750;
+}
+
+.leaderboard-game-tabs button[aria-selected="true"] {
+  color: #07171c;
+  background: var(--accent);
+}
+
+.leaderboard-message {
+  min-height: 1.5em;
+  margin: 18px 0 8px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.leaderboard-message[data-state="error"] {
+  color: var(--x-color);
+}
+
+.leaderboard-list {
+  border-block: 1px solid var(--line);
+}
+
+.leaderboard-row {
+  min-height: 62px;
+  display: grid;
+  grid-template-columns: 72px minmax(160px, 1fr) 92px 140px 82px;
+  align-items: center;
+  gap: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.leaderboard-row + .leaderboard-row {
+  border-top: 1px solid var(--line);
+}
+
+.leaderboard-row > div,
+.leaderboard-row > span {
+  min-width: 0;
+}
+
+.leaderboard-row > div:nth-child(2) {
+  overflow-wrap: anywhere;
+  font-weight: 750;
+}
+
+.leaderboard-row-heading {
+  min-height: 44px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.leaderboard-row.is-podium > div:first-child {
+  color: var(--warning);
+  font-weight: 850;
+}
+
+.leaderboard-row.is-current-player {
+  padding-inline: 12px;
+  border-radius: calc(var(--radius) - 5px);
+  background: rgb(114 215 231 / 0.10);
+}
+
+.leaderboard-current-player {
+  margin-top: 22px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.leaderboard-current-player > p {
+  margin: 0 0 4px;
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
 .admin-header {
   margin: 34px 0 28px;
   display: flex;
@@ -378,6 +698,53 @@ button {
   margin: 0;
   font-size: 2.15rem;
   letter-spacing: -0.04em;
+}
+
+.admin-season-section {
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.admin-current-season {
+  margin-top: 16px;
+  padding-block: 14px;
+  display: grid;
+  gap: 4px;
+  border-block: 1px solid var(--line);
+}
+
+.admin-current-season span,
+.admin-season-row span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.admin-season-form {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+}
+
+.admin-season-list {
+  margin-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.admin-season-row {
+  padding: 12px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.admin-season-row + .admin-season-row {
+  border-top: 1px solid var(--line);
 }
 
 .admin-form {
@@ -1378,15 +1745,57 @@ legend {
 }
 
 @media (max-width: 760px) {
+  .leaderboard-shell,
   .admin-shell {
     width: min(560px, calc(100% - 28px));
     padding: 28px 0 44px;
   }
 
+  .leaderboard-header,
   .admin-header {
     align-items: start;
     flex-direction: column;
     gap: 12px;
+  }
+
+  .leaderboard-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .leaderboard-toolbar select,
+  .leaderboard-game-tabs {
+    width: 100%;
+  }
+
+  .leaderboard-game-tabs button {
+    flex: 1;
+  }
+
+  .leaderboard-row {
+    grid-template-columns: 52px minmax(120px, 1fr) 72px;
+    gap: 8px;
+  }
+
+  .leaderboard-row-heading {
+    display: none;
+  }
+
+  .leaderboard-row > :nth-child(4) {
+    grid-column: 2;
+    color: var(--muted);
+    font-size: 0.76rem;
+  }
+
+  .leaderboard-row > :nth-child(5) {
+    grid-column: 3;
+    grid-row: 2;
+    color: var(--muted);
+    font-size: 0.76rem;
+  }
+
+  .leaderboard-row:not(.leaderboard-row-heading) {
+    padding-block: 10px;
   }
 
   .admin-form {
@@ -1408,10 +1817,18 @@ legend {
     padding: 34px 0;
   }
 
+  .home-actions {
+    position: static;
+    justify-self: stretch;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    margin-bottom: -18px;
+  }
+
   .account-button {
     position: static;
-    justify-self: end;
-    margin-bottom: -18px;
+    width: 100%;
+    min-width: 0;
   }
 
   .account-dialog {
@@ -1461,10 +1878,15 @@ legend {
     padding-top: 22px;
   }
 
-  .account-button {
+  .home-actions {
+    grid-template-columns: 1fr;
+    margin-bottom: -8px;
+  }
+
+  .account-button,
+  .home-leaderboard-button {
     width: 100%;
     min-width: 0;
-    margin-bottom: -8px;
   }
 
   .account-dialog-shell {
@@ -1476,6 +1898,7 @@ legend {
   }
 
   .admin-form,
+  .admin-season-form,
   .admin-code-row,
   .room-preview-actions {
     grid-template-columns: 1fr;
@@ -1488,6 +1911,36 @@ legend {
   .admin-code-row {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .admin-season-row,
+  .match-history-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .match-history-heading select {
+    width: 100%;
+  }
+
+  .season-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .season-summary-item + .season-summary-item {
+    padding-left: 0;
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+
+  .match-history-item-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .leaderboard-row {
+    grid-template-columns: 44px minmax(90px, 1fr) 64px;
   }
 
   .segmented-control.four-options {

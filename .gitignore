@@ -1,3 +1,5 @@
 .playwright-cli/
 output/
 .wrangler/
+.env
+**/supabase/.temp/

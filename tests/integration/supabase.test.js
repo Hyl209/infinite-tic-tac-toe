@@ -78,6 +78,14 @@ test('经济系统使用独立钱包、不可变流水和受限兑换码表', ()
   assert.doesNotMatch(sql, /grant\s+(?:insert|update|delete)[^;]*player_wallets[^;]*authenticated/i);
 });
 
+test('兑换码函数从 extensions schema 调用 pgcrypto', () => {
+  for (const sql of [readSetupSql(), readEconomyMigration()]) {
+    assert.match(sql, /extensions\.gen_random_bytes\(1\)/i);
+    assert.match(sql, /extensions\.digest\(v_normalized,\s*'sha256'\)/i);
+    assert.match(sql, /extensions\.digest\(v_raw,\s*'sha256'\)/i);
+  }
+});
+
 test('注册资料自动创建 100 金币钱包并为老账号幂等补发', () => {
   const sql = readSetupSql();
   assert.match(sql, /create or replace function public\.ensure_profile_wallet/i);
@@ -303,5 +311,11 @@ test('Economy migration removes legacy online RPC overloads', () => {
   for (const sql of [readSetupSql(), readEconomyMigration()]) {
     assert.match(sql, /drop function if exists public\.create_online_game\(text\)/i);
     assert.match(sql, /drop function if exists public\.join_online_game\(text,\s*text\)/i);
+  }
+});
+
+test('Supabase SQL does not contain leading diff markers', () => {
+  for (const sql of [readSetupSql(), readEconomyMigration()]) {
+    assert.doesNotMatch(sql, /^\+\S/m);
   }
 });

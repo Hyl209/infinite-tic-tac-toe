@@ -15,19 +15,25 @@
     <script src="src/services/online.js" defer></script>
     <script src="src/services/account.js" defer></script>
     <script src="src/services/economy.js" defer></script>
+    <script src="src/services/stats.js" defer></script>
     <script src="src/routes/game.js" defer></script>
   </head>
   <body>
     <main class="site-shell">
       <section id="game-home" class="game-home" aria-labelledby="home-title">
-        <button id="account-button" class="account-button" type="button" aria-haspopup="dialog">
-          <span class="account-avatar" aria-hidden="true">游</span>
-          <span class="account-button-copy">
-            <small id="account-kind-label">游客身份</small>
-            <strong id="account-display-name">匿名玩家</strong>
-          </span>
-          <span id="account-coin-balance" class="coin-balance" hidden>金币 0</span>
-        </button>
+        <div class="home-actions">
+          <button id="open-leaderboard-button" class="button secondary home-leaderboard-button" type="button">
+            查看排行榜
+          </button>
+          <button id="account-button" class="account-button" type="button" aria-haspopup="dialog">
+            <span class="account-avatar" aria-hidden="true">游</span>
+            <span class="account-button-copy">
+              <small id="account-kind-label">游客身份</small>
+              <strong id="account-display-name">匿名玩家</strong>
+            </span>
+            <span id="account-coin-balance" class="coin-balance" hidden>金币 0</span>
+          </button>
+        </div>
 
         <header class="home-copy">
           <p class="home-mark" aria-hidden="true"><span>五</span><span>井</span></p>
@@ -176,7 +182,7 @@
                   <small>可用金币</small>
                   <strong id="wallet-balance">0</strong>
                 </div>
-                <button id="open-admin-button" class="button secondary" type="button" hidden>兑换码管理</button>
+                <button id="open-admin-button" class="button secondary" type="button" hidden>管理后台</button>
               </div>
               <form id="redeem-code-form" class="redeem-form">
                 <label class="account-field" for="redeem-code-input">
@@ -197,6 +203,29 @@
                 </label>
               </form>
               <p id="redeem-message" class="account-message" aria-live="polite"></p>
+            </section>
+
+            <section id="match-history-panel" class="match-history-panel" hidden aria-labelledby="match-history-title">
+              <div class="match-history-heading">
+                <div>
+                  <small>个人战绩</small>
+                  <h3 id="match-history-title">最近对局</h3>
+                </div>
+                <label for="match-history-filter">
+                  <span class="visually-hidden">筛选游戏</span>
+                  <select id="match-history-filter">
+                    <option value="">全部游戏</option>
+                    <option value="tic_tac_toe">无限井字棋</option>
+                    <option value="gomoku">五子棋</option>
+                  </select>
+                </label>
+              </div>
+              <div id="season-summary" class="season-summary" aria-live="polite"></div>
+              <p id="match-history-message" class="account-message" aria-live="polite"></p>
+              <div id="match-history-list" class="match-history-list"></div>
+              <button id="load-more-history-button" class="button secondary" type="button" hidden>
+                加载更多战绩
+              </button>
             </section>
 
             <p id="account-message" class="account-message" aria-live="polite"></p>
@@ -388,15 +417,69 @@
         </section>
       </section>
 
+      <section id="leaderboard-view" class="leaderboard-shell" hidden aria-labelledby="leaderboard-title">
+        <button id="leaderboard-back-button" class="back-button" type="button">返回游戏首页</button>
+        <header class="leaderboard-header">
+          <div>
+            <p>在线竞技</p>
+            <h1 id="leaderboard-title">赛季排行榜</h1>
+          </div>
+          <p>正式账号之间的在线对局计入积分，胜 3 分，平 1 分，负 0 分。</p>
+        </header>
+
+        <div class="leaderboard-toolbar">
+          <label for="leaderboard-season-select">
+            <span>赛季</span>
+            <select id="leaderboard-season-select"></select>
+          </label>
+          <div id="leaderboard-game-tabs" class="leaderboard-game-tabs" role="tablist" aria-label="排行榜游戏">
+            <button type="button" role="tab" aria-selected="true" data-leaderboard-game="tic_tac_toe">无限井字棋</button>
+            <button type="button" role="tab" aria-selected="false" data-leaderboard-game="gomoku">五子棋</button>
+          </div>
+        </div>
+
+        <p id="leaderboard-message" class="leaderboard-message" aria-live="polite"></p>
+        <div id="leaderboard-list" class="leaderboard-list" aria-live="polite"></div>
+        <aside id="leaderboard-current-player" class="leaderboard-current-player" hidden aria-label="我的当前排名"></aside>
+      </section>
+
       <section id="admin-view" class="admin-shell" hidden aria-labelledby="admin-title">
         <button id="admin-back-button" class="back-button" type="button">返回游戏首页</button>
         <header class="admin-header">
           <div>
-            <p>金币管理</p>
-            <h1 id="admin-title">兑换码管理</h1>
+            <p>站点管理</p>
+            <h1 id="admin-title">管理后台</h1>
           </div>
-          <p>创建兑换码后，完整代码只显示一次，请立即复制保存。</p>
+          <p>管理竞技赛季与金币兑换码。结束赛季后，新开的对局不再计入该赛季。</p>
         </header>
+
+        <section class="admin-season-section" aria-labelledby="admin-season-title">
+          <div class="admin-list-heading">
+            <div>
+              <p>竞技排行</p>
+              <h2 id="admin-season-title">赛季管理</h2>
+            </div>
+            <button id="end-current-season-button" class="button danger" type="button" hidden>结束当前赛季</button>
+          </div>
+          <div id="admin-current-season" class="admin-current-season"></div>
+          <form id="admin-season-form" class="admin-season-form">
+            <label class="account-field" for="admin-season-name">
+              <span>新赛季名称</span>
+              <input id="admin-season-name" name="seasonName" type="text" minlength="1" maxlength="40" required>
+            </label>
+            <button class="button primary" type="submit">开启新赛季</button>
+          </form>
+          <p id="admin-season-message" class="account-message" aria-live="polite"></p>
+          <div id="admin-season-list" class="admin-season-list"></div>
+        </section>
+
+        <section class="admin-code-section" aria-labelledby="admin-redeem-title">
+          <div class="admin-list-heading">
+            <div>
+              <p>金币管理</p>
+              <h2 id="admin-redeem-title">兑换码</h2>
+            </div>
+          </div>
 
         <form id="admin-redeem-form" class="admin-form">
           <label class="account-field" for="admin-code-amount">
@@ -427,6 +510,7 @@
             <button id="refresh-admin-codes-button" class="button secondary" type="button">刷新列表</button>
           </div>
           <div id="admin-redeem-list" class="admin-code-list"></div>
+        </section>
         </section>
       </section>
     </main>

@@ -56,3 +56,52 @@ export interface RedeemCodeSummary {
   active: boolean;
   createdAt: string;
 }
+
+export interface CompetitiveSeason {
+  id: string;
+  name: string;
+  status: 'active' | 'ended';
+  startedAt: string;
+  endedAt: string | null;
+  isCurrent: boolean;
+}
+
+export interface MatchHistoryItem {
+  id: string;
+  gameType: GameType;
+  opponentName: string;
+  result: 'win' | 'draw' | 'loss';
+  finishReason: Exclude<FinishReason, null>;
+  wagerAmount: number;
+  coinDelta: number;
+  pointsAwarded: number | null;
+  seasonId: string | null;
+  seasonName: string | null;
+  finishedAt: string;
+}
+
+export interface PlayerStanding {
+  seasonId: string;
+  gameType: GameType;
+  rank: number;
+  points: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  games: number;
+  winRate: number;
+}
+
+export interface LeaderboardEntry {
+  rank: number;
+  playerId: string;
+  displayName: string;
+  points: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  games: number;
+  winRate: number;
+  isCurrentPlayer: boolean;
+  isTopEntry: boolean;
+}

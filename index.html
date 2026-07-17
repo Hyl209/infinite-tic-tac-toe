@@ -1,13 +1,17 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#111827">
-    <meta name="description" content="支持三档 AI、本地双人和线上好友房间的井字棋与五子棋">
-    <title>棋局 - 井字棋与五子棋</title>
+    <meta name="theme-color" content="#08090d">
+    <meta name="description" content="HYL Space，收录工具、作品、游戏与近期动态的个人数字门户">
+    <title>HYL Space - 工具、作品与游戏</title>
     <link rel="icon" href="data:,">
     <link rel="stylesheet" href="assets/styles/game.css">
+    <link rel="stylesheet" href="assets/styles/portal.css">
+    <script src="assets/vendor/gsap/gsap.min.js" defer></script>
+    <script src="assets/vendor/gsap/ScrollTrigger.min.js" defer></script>
+    <script src="src/config/portal.js" defer></script>
     <script src="src/config/online.js" defer></script>
     <script src="src/domain/games/tic-tac-toe.js" defer></script>
     <script src="src/domain/games/gomoku.js" defer></script>
@@ -15,12 +19,38 @@
     <script src="src/services/online.js" defer></script>
     <script src="src/services/account.js" defer></script>
     <script src="src/services/economy.js" defer></script>
+    <script src="src/services/stats.js" defer></script>
     <script src="src/routes/game.js" defer></script>
+    <script src="src/routes/portal.js" defer></script>
   </head>
   <body>
-    <main class="site-shell">
-      <section id="game-home" class="game-home" aria-labelledby="home-title">
-        <button id="account-button" class="account-button" type="button" aria-haspopup="dialog">
+    <a class="skip-link" href="#site-main">跳到主要内容</a>
+    <header class="site-nav">
+      <div class="site-nav-inner">
+        <a class="site-brand" href="./" data-open-portal aria-label="返回 HYL Space 首页">
+          <span class="site-brand-mark" aria-hidden="true">H</span>
+          <span>HYL SPACE</span>
+        </a>
+
+        <button
+          id="site-menu-button"
+          class="site-menu-button"
+          type="button"
+          aria-expanded="false"
+          aria-controls="site-menu"
+        >
+          <span>菜单</span>
+          <i aria-hidden="true"></i>
+        </button>
+
+        <nav id="site-menu" class="site-menu" aria-label="全站导航">
+          <a href="#tools" data-portal-section="tools">工具</a>
+          <a href="#works" data-portal-section="works">作品</a>
+          <a href="#games" data-portal-section="games">游戏</a>
+          <a href="#updates" data-portal-section="updates">动态</a>
+        </nav>
+
+        <button id="account-button" class="account-button" type="button" aria-haspopup="dialog" aria-controls="account-dialog">
           <span class="account-avatar" aria-hidden="true">游</span>
           <span class="account-button-copy">
             <small id="account-kind-label">游客身份</small>
@@ -28,6 +58,131 @@
           </span>
           <span id="account-coin-balance" class="coin-balance" hidden>金币 0</span>
         </button>
+      </div>
+    </header>
+
+    <main id="site-main" class="site-shell" tabindex="-1">
+      <section id="portal-home" class="portal-home">
+        <section class="portal-hero" aria-labelledby="portal-main-title">
+          <div class="portal-hero-copy">
+            <p class="portal-signature">Personal digital index</p>
+            <h1 id="portal-main-title">HYL<br>SPACE</h1>
+            <p class="portal-intro">这里收着我正在使用、制作和反复打磨的东西。</p>
+            <div class="portal-hero-actions">
+              <a class="portal-action primary" href="#tools" data-portal-section="tools">打开工具集</a>
+              <button class="portal-action secondary" type="button" data-open-game-hub>进入游戏专区</button>
+            </div>
+            <p class="portal-index-note">TOOLS · WORKS · PLAY · NOTES</p>
+          </div>
+
+          <div class="obsidian-stage" aria-hidden="true">
+            <span class="obsidian-orbit orbit-one"></span>
+            <span class="obsidian-orbit orbit-two"></span>
+            <svg class="obsidian-object" viewBox="0 0 620 720" role="presentation">
+              <defs>
+                <linearGradient id="obsidian-face-a" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0" stop-color="#30364a"/>
+                  <stop offset="0.58" stop-color="#10131d"/>
+                  <stop offset="1" stop-color="#05060a"/>
+                </linearGradient>
+                <linearGradient id="obsidian-face-b" x1="0" y1="0" x2="0.8" y2="1">
+                  <stop offset="0" stop-color="#496dff"/>
+                  <stop offset="0.38" stop-color="#17245f"/>
+                  <stop offset="1" stop-color="#080a12"/>
+                </linearGradient>
+                <radialGradient id="obsidian-core">
+                  <stop offset="0" stop-color="#aebdff" stop-opacity="0.95"/>
+                  <stop offset="0.28" stop-color="#4469ff" stop-opacity="0.78"/>
+                  <stop offset="1" stop-color="#14245f" stop-opacity="0"/>
+                </radialGradient>
+              </defs>
+              <ellipse class="obsidian-glow" cx="315" cy="382" rx="190" ry="215" fill="url(#obsidian-core)"/>
+              <g class="obsidian-shard shard-back">
+                <path d="M322 48 520 190 480 550 310 680 134 530 92 202Z" fill="#080a10" stroke="#333a51" stroke-width="2"/>
+              </g>
+              <g class="obsidian-shard shard-main">
+                <path d="M322 48 520 190 314 338 92 202Z" fill="url(#obsidian-face-a)"/>
+                <path d="M92 202 314 338 310 680 134 530Z" fill="#0a0d14" stroke="#262c3d" stroke-width="2"/>
+                <path d="M314 338 520 190 480 550 310 680Z" fill="url(#obsidian-face-b)"/>
+                <path d="M205 251 315 177 423 252 313 329Z" fill="#07090f" stroke="#6e89ff" stroke-width="2"/>
+                <path d="M249 257 315 213 379 257 313 301Z" fill="#3155e9" fill-opacity="0.58"/>
+              </g>
+              <g class="obsidian-lines" fill="none" stroke="#8098ff" stroke-width="1" stroke-opacity="0.44">
+                <path d="M322 48 314 338 310 680"/>
+                <path d="M92 202 314 338 480 550"/>
+                <path d="M520 190 314 338 134 530"/>
+              </g>
+            </svg>
+            <span class="obsidian-caption">HYL / 2026</span>
+          </div>
+        </section>
+
+        <section id="tools" class="portal-section portal-tools" aria-labelledby="tools-title">
+          <header class="portal-section-heading">
+            <h2 id="tools-title">先把工具放在手边</h2>
+            <p>日常会反复用到的效率入口，整理完成后可从这里直接打开。</p>
+          </header>
+          <div id="portal-tools-list" class="portal-index-list" data-portal-list="tools">
+            <p class="portal-empty">工具内容正在整理。</p>
+          </div>
+        </section>
+
+        <section id="works" class="portal-section portal-works" aria-labelledby="works-title">
+          <header class="portal-section-heading">
+            <h2 id="works-title">正在做，也持续在改</h2>
+            <p>只陈列能够真实打开、真实使用或仍在推进的项目。</p>
+          </header>
+          <div id="portal-works-list" class="portal-work-gallery" data-portal-list="works">
+            <p class="portal-empty">作品内容正在整理。</p>
+          </div>
+        </section>
+
+        <section id="games" class="portal-section portal-games" aria-labelledby="games-title">
+          <header class="portal-section-heading">
+            <h2 id="games-title">需要放松时，下一盘</h2>
+            <p>游戏仍然完整保留，但它只是 HYL Space 的一部分。</p>
+          </header>
+          <div class="portal-game-stage">
+            <button class="portal-game-link" type="button" data-game-type="tic_tac_toe">
+              <span class="portal-game-board tic" aria-hidden="true">
+                <i>X</i><i></i><i>O</i><i></i><i>X</i><i></i><i>O</i><i></i><i>X</i>
+              </span>
+              <span><strong>无限井字棋</strong><small>动态消子 · AI · 双人 · 在线</small></span>
+            </button>
+            <button class="portal-game-link" type="button" data-game-type="gomoku">
+              <span class="portal-game-board gomoku" aria-hidden="true">
+                <i></i><i></i><i></i><i></i><i></i>
+              </span>
+              <span><strong>五子棋</strong><small>15×15 棋盘 · AI · 双人 · 在线</small></span>
+            </button>
+          </div>
+          <button class="portal-section-action" type="button" data-open-game-hub>查看游戏专区与排行榜</button>
+        </section>
+
+        <section id="updates" class="portal-section portal-updates" aria-labelledby="updates-title">
+          <header class="portal-section-heading">
+            <h2 id="updates-title">最近在做什么</h2>
+            <p>不做流水账，只保留值得回看的变化。</p>
+          </header>
+          <div id="portal-updates-list" class="portal-timeline" data-portal-list="updates">
+            <p class="portal-empty">动态内容正在整理。</p>
+          </div>
+        </section>
+
+        <footer class="portal-footer">
+          <strong>HYL SPACE</strong>
+          <p>工具、作品、游戏与持续发生的事。</p>
+          <a href="#portal-main-title">回到顶部</a>
+        </footer>
+      </section>
+
+      <section id="game-home" class="game-home" hidden aria-labelledby="home-title">
+        <div class="home-actions">
+          <button id="game-hub-back-button" class="button secondary" type="button">返回 HYL Space</button>
+          <button id="open-leaderboard-button" class="button secondary home-leaderboard-button" type="button">
+            查看排行榜
+          </button>
+        </div>
 
         <header class="home-copy">
           <p class="home-mark" aria-hidden="true"><span>五</span><span>井</span></p>
@@ -61,6 +216,8 @@
             </span>
           </button>
         </div>
+
+      </section>
 
         <dialog id="account-dialog" class="account-dialog" aria-labelledby="account-dialog-title">
           <div class="account-dialog-shell">
@@ -176,7 +333,7 @@
                   <small>可用金币</small>
                   <strong id="wallet-balance">0</strong>
                 </div>
-                <button id="open-admin-button" class="button secondary" type="button" hidden>兑换码管理</button>
+                <button id="open-admin-button" class="button secondary" type="button" hidden>管理后台</button>
               </div>
               <form id="redeem-code-form" class="redeem-form">
                 <label class="account-field" for="redeem-code-input">
@@ -199,15 +356,37 @@
               <p id="redeem-message" class="account-message" aria-live="polite"></p>
             </section>
 
+            <section id="match-history-panel" class="match-history-panel" hidden aria-labelledby="match-history-title">
+              <div class="match-history-heading">
+                <div>
+                  <small>个人战绩</small>
+                  <h3 id="match-history-title">最近对局</h3>
+                </div>
+                <label for="match-history-filter">
+                  <span class="visually-hidden">筛选游戏</span>
+                  <select id="match-history-filter">
+                    <option value="">全部游戏</option>
+                    <option value="tic_tac_toe">无限井字棋</option>
+                    <option value="gomoku">五子棋</option>
+                  </select>
+                </label>
+              </div>
+              <div id="season-summary" class="season-summary" aria-live="polite"></div>
+              <p id="match-history-message" class="account-message" aria-live="polite"></p>
+              <div id="match-history-list" class="match-history-list"></div>
+              <button id="load-more-history-button" class="button secondary" type="button" hidden>
+                加载更多战绩
+              </button>
+            </section>
+
             <p id="account-message" class="account-message" aria-live="polite"></p>
             <p class="account-footnote">游客也能在线对战，名称会显示为匿名玩家加随机码。</p>
           </div>
         </dialog>
-      </section>
 
       <section id="game-view" class="app-shell" hidden>
         <section class="control-panel" aria-labelledby="game-title">
-          <button id="back-home-button" class="back-button" type="button">返回游戏首页</button>
+          <button id="back-home-button" class="back-button" type="button">返回游戏专区</button>
 
           <header class="hero-copy">
             <p id="brand-mark" class="brand-mark" aria-hidden="true">X<span>O</span></p>
@@ -388,15 +567,69 @@
         </section>
       </section>
 
+      <section id="leaderboard-view" class="leaderboard-shell" hidden aria-labelledby="leaderboard-title">
+        <button id="leaderboard-back-button" class="back-button" type="button">返回游戏专区</button>
+        <header class="leaderboard-header">
+          <div>
+            <p>在线竞技</p>
+            <h1 id="leaderboard-title">赛季排行榜</h1>
+          </div>
+          <p>正式账号之间的在线对局计入积分，胜 3 分，平 1 分，负 0 分。</p>
+        </header>
+
+        <div class="leaderboard-toolbar">
+          <label for="leaderboard-season-select">
+            <span>赛季</span>
+            <select id="leaderboard-season-select"></select>
+          </label>
+          <div id="leaderboard-game-tabs" class="leaderboard-game-tabs" role="tablist" aria-label="排行榜游戏">
+            <button type="button" role="tab" aria-selected="true" data-leaderboard-game="tic_tac_toe">无限井字棋</button>
+            <button type="button" role="tab" aria-selected="false" data-leaderboard-game="gomoku">五子棋</button>
+          </div>
+        </div>
+
+        <p id="leaderboard-message" class="leaderboard-message" aria-live="polite"></p>
+        <div id="leaderboard-list" class="leaderboard-list" aria-live="polite"></div>
+        <aside id="leaderboard-current-player" class="leaderboard-current-player" hidden aria-label="我的当前排名"></aside>
+      </section>
+
       <section id="admin-view" class="admin-shell" hidden aria-labelledby="admin-title">
-        <button id="admin-back-button" class="back-button" type="button">返回游戏首页</button>
+        <button id="admin-back-button" class="back-button" type="button">返回游戏专区</button>
         <header class="admin-header">
           <div>
-            <p>金币管理</p>
-            <h1 id="admin-title">兑换码管理</h1>
+            <p>站点管理</p>
+            <h1 id="admin-title">管理后台</h1>
           </div>
-          <p>创建兑换码后，完整代码只显示一次，请立即复制保存。</p>
+          <p>管理竞技赛季与金币兑换码。结束赛季后，新开的对局不再计入该赛季。</p>
         </header>
+
+        <section class="admin-season-section" aria-labelledby="admin-season-title">
+          <div class="admin-list-heading">
+            <div>
+              <p>竞技排行</p>
+              <h2 id="admin-season-title">赛季管理</h2>
+            </div>
+            <button id="end-current-season-button" class="button danger" type="button" hidden>结束当前赛季</button>
+          </div>
+          <div id="admin-current-season" class="admin-current-season"></div>
+          <form id="admin-season-form" class="admin-season-form">
+            <label class="account-field" for="admin-season-name">
+              <span>新赛季名称</span>
+              <input id="admin-season-name" name="seasonName" type="text" minlength="1" maxlength="40" required>
+            </label>
+            <button class="button primary" type="submit">开启新赛季</button>
+          </form>
+          <p id="admin-season-message" class="account-message" aria-live="polite"></p>
+          <div id="admin-season-list" class="admin-season-list"></div>
+        </section>
+
+        <section class="admin-code-section" aria-labelledby="admin-redeem-title">
+          <div class="admin-list-heading">
+            <div>
+              <p>金币管理</p>
+              <h2 id="admin-redeem-title">兑换码</h2>
+            </div>
+          </div>
 
         <form id="admin-redeem-form" class="admin-form">
           <label class="account-field" for="admin-code-amount">
@@ -427,6 +660,7 @@
             <button id="refresh-admin-codes-button" class="button secondary" type="button">刷新列表</button>
           </div>
           <div id="admin-redeem-list" class="admin-code-list"></div>
+        </section>
         </section>
       </section>
     </main>

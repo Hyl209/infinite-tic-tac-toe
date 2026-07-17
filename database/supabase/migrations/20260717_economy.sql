@@ -321,7 +321,7 @@ begin
   for v_index in 0..11 loop
     v_code := v_code || substr(
       v_alphabet,
-      (get_byte(gen_random_bytes(1), 0) % length(v_alphabet)) + 1,
+      (get_byte(extensions.gen_random_bytes(1), 0) % length(v_alphabet)) + 1,
       1
     );
   end loop;
@@ -520,7 +520,7 @@ begin
 
   select * into v_code
   from public.redeem_codes
-  where code_digest = encode(digest(v_normalized, 'sha256'), 'hex')
+  where code_digest = encode(extensions.digest(v_normalized, 'sha256'), 'hex')
   for update;
   if not found then raise exception 'CODE_NOT_FOUND'; end if;
   if not v_code.is_active then raise exception 'CODE_DISABLED'; end if;
@@ -572,7 +572,7 @@ begin
       insert into public.redeem_codes (
         code_digest, code_hint, amount, max_claims, expires_at, created_by
       ) values (
-        encode(digest(v_raw, 'sha256'), 'hex'),
+        encode(extensions.digest(v_raw, 'sha256'), 'hex'),
         substr(v_raw, 1, 4) || '-****-' || substr(v_raw, 9, 4),
         p_amount,
         p_max_claims,
@@ -944,7 +944,7 @@ revoke all on function public.lock_online_stake(uuid, uuid, integer, integer) fr
 revoke all on function public.settle_online_wager(uuid, text, uuid, text) from public;
 revoke all on function public.refund_expired_online_wagers(uuid) from public;
 
-+revoke execute on function public.get_economy_snapshot() from public, anon;
+revoke execute on function public.get_economy_snapshot() from public, anon;
 revoke execute on function public.redeem_coin_code(text) from public, anon;
 revoke execute on function public.create_redeem_code(integer, integer, timestamptz) from public, anon;
 revoke execute on function public.list_redeem_codes() from public, anon;

@@ -23,6 +23,47 @@
     },
   };
 
+  const ROUTE_ROOM_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+  function normalizeRouteRoomCode(value) {
+    return String(value || '')
+      .toUpperCase()
+      .split('')
+      .filter((character) => ROUTE_ROOM_ALPHABET.includes(character))
+      .join('')
+      .slice(0, 6);
+  }
+
+  function resolveAppRoute(urlLike) {
+    const url = new URL(urlLike, 'https://hyl.space/');
+    const roomCandidate = normalizeRouteRoomCode(url.searchParams.get('room'));
+    const roomCode = roomCandidate.length === 6 ? roomCandidate : null;
+    const requestedGame = url.searchParams.get('game');
+    const gameType = GAME_TYPES.includes(requestedGame)
+      ? requestedGame
+      : (roomCode ? 'tic_tac_toe' : null);
+
+    if (gameType) return { view: 'game', gameType, roomCode };
+    if (url.searchParams.get('view') === 'games') {
+      return { view: 'games', gameType: null, roomCode: null };
+    }
+    return { view: 'portal', gameType: null, roomCode: null };
+  }
+
+  function buildAppUrl(currentUrl, { view, gameType = null, roomCode = null } = {}) {
+    const url = new URL(currentUrl, 'https://hyl.space/');
+    url.searchParams.delete('view');
+    url.searchParams.delete('game');
+    url.searchParams.delete('room');
+
+    if (view === 'games') url.searchParams.set('view', 'games');
+    if (view === 'game' && GAME_TYPES.includes(gameType)) {
+      url.searchParams.set('game', gameType);
+      if (roomCode) url.searchParams.set('room', normalizeRouteRoomCode(roomCode));
+    }
+    return url.toString();
+  }
+
   function getDefaultPlacementMode(pointerCoarse, storedMode) {
     if (storedMode === 'single' || storedMode === 'confirm') return storedMode;
     return pointerCoarse ? 'confirm' : 'single';
@@ -49,6 +90,31 @@
     return `${date.toISOString().slice(0, 16).replace('T', ' ')} UTC`;
   }
 
+  function formatMatchResult(result) {
+    return { win: '胜利', draw: '平局', loss: '失败' }[result] || '结果未知';
+  }
+
+  function formatFinishReason(reason, result) {
+    if (reason === 'active_exit') return result === 'win' ? '对手主动退出' : '主动退出判负';
+    if (reason === 'disconnect') return result === 'win' ? '对手断线' : '断线判负';
+    if (reason === 'draw') return '棋盘平局';
+    if (reason === 'expired') return '房间超时';
+    return '正常结束';
+  }
+
+  function formatWinRate(value) {
+    const rate = Number(value);
+    return `${(Number.isFinite(rate) ? rate : 0).toFixed(1)}%`;
+  }
+
+  function selectPreferredSeason(items = []) {
+    return items.find((season) => season.status === 'active') || items[0] || null;
+  }
+
+  function shouldShowLeaderboardEmpty({ busy, error, entries, hasSeason }) {
+    return hasSeason && !busy && !error && entries.length === 0;
+  }
+
   function getLocalUndoCount(state) {
     const history = state?.moveHistory || [];
     if (history.length === 0 || state?.gameMode === 'online') return 0;
@@ -64,19 +130,29 @@
   }
 
   const exported = {
+    buildAppUrl,
     getDefaultPlacementMode,
     getLocalUndoCount,
     getScoreKey,
+    resolveAppRoute,
     formatAdminCodeExpiry,
+    formatFinishReason,
+    formatMatchResult,
     formatOnlineScoreName,
+    formatWinRate,
     resolvePlacementSelection,
+    selectPreferredSeason,
+    shouldShowLeaderboardEmpty,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = exported;
 
   function mountGame() {
+    const portalHome = document.querySelector('#portal-home');
     const home = document.querySelector('#game-home');
     const gameView = document.querySelector('#game-view');
+    const leaderboardView = document.querySelector('#leaderboard-view');
     const backHomeButton = document.querySelector('#back-home-button');
+    const gameHubBackButton = document.querySelector('#game-hub-back-button');
     const boardElement = document.querySelector('#board');
     if (!home || !gameView || !boardElement) return;
 
@@ -166,15 +242,36 @@
     const adminMessage = document.querySelector('#admin-message');
     const adminRedeemList = document.querySelector('#admin-redeem-list');
     const refreshAdminCodesButton = document.querySelector('#refresh-admin-codes-button');
+    const openLeaderboardButton = document.querySelector('#open-leaderboard-button');
+    const leaderboardBackButton = document.querySelector('#leaderboard-back-button');
+    const leaderboardSeasonSelect = document.querySelector('#leaderboard-season-select');
+    const leaderboardGameTabs = document.querySelector('#leaderboard-game-tabs');
+    const leaderboardList = document.querySelector('#leaderboard-list');
+    const leaderboardCurrentPlayer = document.querySelector('#leaderboard-current-player');
+    const leaderboardMessage = document.querySelector('#leaderboard-message');
+    const matchHistoryPanel = document.querySelector('#match-history-panel');
+    const matchHistoryFilter = document.querySelector('#match-history-filter');
+    const matchHistoryList = document.querySelector('#match-history-list');
+    const matchHistoryMessage = document.querySelector('#match-history-message');
+    const loadMoreHistoryButton = document.querySelector('#load-more-history-button');
+    const seasonSummary = document.querySelector('#season-summary');
+    const adminSeasonForm = document.querySelector('#admin-season-form');
+    const adminSeasonName = document.querySelector('#admin-season-name');
+    const adminCurrentSeason = document.querySelector('#admin-current-season');
+    const endCurrentSeasonButton = document.querySelector('#end-current-season-button');
+    const adminSeasonList = document.querySelector('#admin-season-list');
+    const adminSeasonMessage = document.querySelector('#admin-season-message');
 
     const onlineApi = globalScope.OnlineGame;
     const accountApi = globalScope.PlayerAccount;
     const economyApi = globalScope.PlayerEconomy;
+    const statsApi = globalScope.PlayerStats;
     const accountClient = accountApi?.createAccountClient({
       config: globalScope.ONLINE_GAME_CONFIG,
       loadSupabase: onlineApi?.loadSupabaseSdk,
     });
     const economyClient = economyApi?.createEconomyClient({ accountClient });
+    const statsClient = statsApi?.createStatsClient({ accountClient });
     const sessionScores = new Map();
     let gameType = null;
     let engine = null;
@@ -212,6 +309,19 @@
       loaded: false,
     };
     let adminCodes = [];
+    let seasons = [];
+    let selectedSeasonId = null;
+    let leaderboardGameType = 'tic_tac_toe';
+    let leaderboardEntries = [];
+    let leaderboardBusy = false;
+    let leaderboardError = '';
+    let leaderboardRequestId = 0;
+    let matchHistory = [];
+    let matchHistoryCursor = null;
+    let matchHistoryHasMore = false;
+    let matchHistoryBusy = false;
+    let matchHistoryRequestId = 0;
+    let playerStandings = [];
 
     function setAccountMessage(message = '', stateName = '') {
       if (!accountMessage) return;
@@ -229,6 +339,287 @@
       if (!adminMessage) return;
       adminMessage.textContent = message;
       adminMessage.dataset.state = stateName;
+    }
+
+    function setStatsMessage(element, message = '', stateName = '') {
+      if (!element) return;
+      element.textContent = message;
+      element.dataset.state = stateName;
+    }
+
+    function gameTypeLabel(type) {
+      return type === 'gomoku' ? '五子棋' : '无限井字棋';
+    }
+
+    function formatMatchTime(value) {
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return '时间未知';
+      return new Intl.DateTimeFormat('zh-CN', {
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      }).format(date);
+    }
+
+    function preferredSeason() {
+      return selectPreferredSeason(seasons);
+    }
+
+    function renderSeasonControls() {
+      if (!leaderboardSeasonSelect) return;
+      const stillExists = seasons.some((season) => season.id === selectedSeasonId);
+      if (!stillExists) selectedSeasonId = preferredSeason()?.id || null;
+      leaderboardSeasonSelect.textContent = '';
+      if (seasons.length === 0) {
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = '暂无赛季';
+        leaderboardSeasonSelect.append(option);
+        leaderboardSeasonSelect.disabled = true;
+        return;
+      }
+      seasons.forEach((season) => {
+        const option = document.createElement('option');
+        option.value = season.id;
+        option.textContent = season.status === 'active' ? `${season.name}（进行中）` : season.name;
+        leaderboardSeasonSelect.append(option);
+      });
+      leaderboardSeasonSelect.disabled = false;
+      leaderboardSeasonSelect.value = selectedSeasonId;
+    }
+
+    function renderSeasonSummary() {
+      if (!seasonSummary) return;
+      seasonSummary.textContent = '';
+      const season = preferredSeason();
+      if (!season) {
+        const empty = document.createElement('p');
+        empty.className = 'history-empty-state';
+        empty.textContent = '暂无赛季，在线对局仍会保留在历史中。';
+        seasonSummary.append(empty);
+        return;
+      }
+
+      const title = document.createElement('p');
+      title.className = 'season-summary-title';
+      title.textContent = season.status === 'active' ? `${season.name} · 进行中` : season.name;
+      seasonSummary.append(title);
+      ['tic_tac_toe', 'gomoku'].forEach((type) => {
+        const standing = playerStandings.find((item) => item.gameType === type);
+        const item = document.createElement('article');
+        item.className = 'season-summary-item';
+        const name = document.createElement('span');
+        name.textContent = gameTypeLabel(type);
+        const points = document.createElement('strong');
+        points.textContent = `${standing?.points || 0} 分`;
+        const meta = document.createElement('small');
+        meta.textContent = standing
+          ? `第 ${standing.rank} 名 · ${standing.wins}胜 ${standing.draws}平 ${standing.losses}负`
+          : '暂未上榜';
+        item.append(name, points, meta);
+        seasonSummary.append(item);
+      });
+    }
+
+    function renderMatchHistory() {
+      if (!matchHistoryList) return;
+      matchHistoryList.textContent = '';
+      if (matchHistory.length === 0 && !matchHistoryBusy) {
+        const empty = document.createElement('p');
+        empty.className = 'history-empty-state';
+        empty.textContent = '还没有在线战绩，完成一局后会显示在这里。';
+        matchHistoryList.append(empty);
+      } else {
+        const fragment = document.createDocumentFragment();
+        matchHistory.forEach((match) => {
+          const item = document.createElement('article');
+          item.className = 'match-history-item';
+          item.dataset.result = match.result;
+
+          const heading = document.createElement('div');
+          heading.className = 'match-history-item-heading';
+          const opponent = document.createElement('strong');
+          opponent.textContent = `${formatMatchResult(match.result)} · ${match.opponentName}`;
+          const time = document.createElement('time');
+          time.dateTime = match.finishedAt;
+          time.textContent = formatMatchTime(match.finishedAt);
+          heading.append(opponent, time);
+
+          const meta = document.createElement('p');
+          meta.textContent = `${gameTypeLabel(match.gameType)} · ${formatFinishReason(match.finishReason, match.result)} · ${match.seasonName || '不计分对局'}`;
+
+          const values = document.createElement('div');
+          values.className = 'match-history-values';
+          const points = document.createElement('span');
+          points.textContent = match.pointsAwarded === null ? '不计分' : `积分 +${match.pointsAwarded}`;
+          const wager = document.createElement('span');
+          wager.textContent = match.wagerAmount === 0
+            ? '无彩头'
+            : `彩头 ${match.coinDelta > 0 ? '+' : ''}${match.coinDelta}`;
+          values.append(points, wager);
+          item.append(heading, meta, values);
+          fragment.append(item);
+        });
+        matchHistoryList.append(fragment);
+      }
+      loadMoreHistoryButton.hidden = !matchHistoryHasMore;
+      loadMoreHistoryButton.disabled = matchHistoryBusy;
+      matchHistoryFilter.disabled = matchHistoryBusy;
+    }
+
+    async function refreshSeasons() {
+      if (!statsClient) return [];
+      seasons = await statsClient.listSeasons();
+      renderSeasonControls();
+      return seasons;
+    }
+
+    async function loadMatchHistory({ reset = false } = {}) {
+      if (
+        !statsClient
+        || accountIdentity.kind !== 'registered'
+        || (matchHistoryBusy && !reset)
+      ) return;
+      const requestId = ++matchHistoryRequestId;
+      matchHistoryBusy = true;
+      if (reset) {
+        matchHistory = [];
+        matchHistoryCursor = null;
+        matchHistoryHasMore = false;
+      }
+      setStatsMessage(matchHistoryMessage, reset ? '正在加载个人战绩' : '正在加载更多战绩');
+      renderMatchHistory();
+      try {
+        if (seasons.length === 0) await refreshSeasons();
+        if (requestId !== matchHistoryRequestId) return;
+        if (reset) {
+          const summarySeason = preferredSeason();
+          const standings = summarySeason
+            ? await statsClient.getMyStandings(summarySeason.id)
+            : [];
+          if (requestId !== matchHistoryRequestId) return;
+          playerStandings = standings;
+          renderSeasonSummary();
+        }
+        const items = await statsClient.getHistory({
+          gameType: matchHistoryFilter.value || null,
+          beforeFinishedAt: matchHistoryCursor?.finishedAt || null,
+          beforeId: matchHistoryCursor?.id || null,
+          limit: 20,
+        });
+        if (requestId !== matchHistoryRequestId) return;
+        matchHistory.push(...items);
+        const last = items.at(-1);
+        matchHistoryCursor = last ? { finishedAt: last.finishedAt, id: last.id } : matchHistoryCursor;
+        matchHistoryHasMore = items.length === 20;
+        setStatsMessage(matchHistoryMessage);
+      } catch (error) {
+        if (requestId !== matchHistoryRequestId) return;
+        setStatsMessage(matchHistoryMessage, statsApi.mapStatsError(error), 'error');
+      } finally {
+        if (requestId !== matchHistoryRequestId) return;
+        matchHistoryBusy = false;
+        renderMatchHistory();
+      }
+    }
+
+    function createLeaderboardRow(entry, { heading = false } = {}) {
+      const row = document.createElement(heading ? 'div' : 'article');
+      row.className = `leaderboard-row${heading ? ' leaderboard-row-heading' : ''}`;
+      if (!heading) {
+        row.classList.toggle('is-current-player', entry.isCurrentPlayer);
+        row.classList.toggle('is-podium', entry.rank <= 3);
+      }
+      const values = heading
+        ? ['名次', '玩家', '积分', '胜 / 平 / 负', '胜率']
+        : [`#${entry.rank}`, entry.displayName, `${entry.points} 分`, `${entry.wins} / ${entry.draws} / ${entry.losses}`, formatWinRate(entry.winRate)];
+      values.forEach((value) => {
+        const cell = document.createElement(heading ? 'span' : 'div');
+        cell.textContent = value;
+        row.append(cell);
+      });
+      return row;
+    }
+
+    function renderLeaderboard() {
+      if (!leaderboardList) return;
+      leaderboardList.textContent = '';
+      leaderboardCurrentPlayer.textContent = '';
+      leaderboardCurrentPlayer.hidden = true;
+      const topEntries = leaderboardEntries.filter((entry) => entry.isTopEntry);
+      if (shouldShowLeaderboardEmpty({
+        busy: leaderboardBusy,
+        error: leaderboardError,
+        entries: topEntries,
+        hasSeason: Boolean(selectedSeasonId),
+      })) {
+        const empty = document.createElement('p');
+        empty.className = 'leaderboard-empty-state';
+        empty.textContent = '这个分榜还没有玩家，完成正式账号对局后即可上榜。';
+        leaderboardList.append(empty);
+      } else if (topEntries.length > 0) {
+        leaderboardList.append(createLeaderboardRow({}, { heading: true }));
+        topEntries.forEach((entry) => leaderboardList.append(createLeaderboardRow(entry)));
+      }
+
+      const current = leaderboardEntries.find((entry) => entry.isCurrentPlayer && !entry.isTopEntry);
+      if (current) {
+        const label = document.createElement('p');
+        label.textContent = '我的排名';
+        leaderboardCurrentPlayer.append(label, createLeaderboardRow(current));
+        leaderboardCurrentPlayer.hidden = false;
+      }
+    }
+
+    async function loadLeaderboard() {
+      if (!statsClient) return;
+      const requestId = ++leaderboardRequestId;
+      leaderboardBusy = true;
+      leaderboardError = '';
+      setStatsMessage(leaderboardMessage, '正在加载排行榜');
+      renderLeaderboard();
+      try {
+        const loadedSeasons = await statsClient.listSeasons();
+        if (requestId !== leaderboardRequestId) return;
+        seasons = loadedSeasons;
+        renderSeasonControls();
+        if (!selectedSeasonId) {
+          leaderboardEntries = [];
+          setStatsMessage(leaderboardMessage, '暂无赛季，管理员开启赛季后即可计分。');
+          return;
+        }
+        const entries = await statsClient.getLeaderboard({
+          seasonId: selectedSeasonId,
+          gameType: leaderboardGameType,
+          limit: 100,
+        });
+        if (requestId !== leaderboardRequestId) return;
+        leaderboardEntries = entries;
+        setStatsMessage(leaderboardMessage);
+      } catch (error) {
+        if (requestId !== leaderboardRequestId) return;
+        leaderboardEntries = [];
+        leaderboardError = statsApi.mapStatsError(error);
+        setStatsMessage(leaderboardMessage, leaderboardError, 'error');
+      } finally {
+        if (requestId !== leaderboardRequestId) return;
+        leaderboardBusy = false;
+        renderLeaderboard();
+      }
+    }
+
+    async function showLeaderboardView() {
+      if (accountDialog?.open) accountDialog.close();
+      portalHome.hidden = true;
+      home.hidden = true;
+      gameView.hidden = true;
+      adminView.hidden = true;
+      leaderboardView.hidden = false;
+      document.body.dataset.view = 'leaderboard';
+      globalScope.HYLPortal?.deactivate?.();
+      await loadLeaderboard();
     }
 
     async function refreshEconomy({ reportError = false } = {}) {
@@ -281,6 +672,7 @@
       accountAuthView.hidden = registered;
       accountProfileForm.hidden = !registered;
       walletPanel.hidden = !registered;
+      matchHistoryPanel.hidden = !registered;
       walletBalance.textContent = String(economySnapshot.balance);
       openAdminButton.hidden = !registered || !economySnapshot.isAdmin;
       if (registered) {
@@ -291,6 +683,12 @@
           profileGameName.value = accountIdentity.displayName;
         }
       } else {
+        matchHistory = [];
+        matchHistoryCursor = null;
+        matchHistoryHasMore = false;
+        playerStandings = [];
+        renderMatchHistory();
+        renderSeasonSummary();
         setAccountMode(accountMode, { clearMessage: false });
         document.querySelector('input[name="online-wager"][value="0"]').checked = true;
       }
@@ -510,13 +908,20 @@
       cells = [...boardElement.querySelectorAll('.cell')];
     }
 
-    function updateUrl(roomCode = null, replace = true) {
+    function updateGameUrl(roomCode = null, replace = true) {
       if (!globalScope.history?.pushState) return;
-      const url = new URL(globalScope.location.href);
-      if (gameType) url.searchParams.set('game', gameType);
-      else url.searchParams.delete('game');
-      if (roomCode) url.searchParams.set('room', roomCode);
-      else url.searchParams.delete('room');
+      const url = buildAppUrl(globalScope.location.href, {
+        view: 'game',
+        gameType,
+        roomCode,
+      });
+      const method = replace ? 'replaceState' : 'pushState';
+      globalScope.history[method](null, '', url);
+    }
+
+    function updateViewUrl(view, replace = true) {
+      if (!globalScope.history?.pushState) return;
+      const url = buildAppUrl(globalScope.location.href, { view });
       const method = replace ? 'replaceState' : 'pushState';
       globalScope.history[method](null, '', url);
     }
@@ -959,6 +1364,10 @@
         onlineError = '';
         syncOnlineRuntime();
         if (isOnlineFinished(game) && (previousStatus !== game.status || previousRound !== game.round)) {
+          seasons = [];
+          leaderboardEntries = [];
+          matchHistory = [];
+          matchHistoryCursor = null;
           void refreshEconomy();
         }
         render();
@@ -993,7 +1402,7 @@
         const game = await onlineClient.createRoom(gameType, wagerAmount);
         pendingRoomPreview = null;
         await refreshEconomy();
-        updateUrl(game.roomCode);
+        updateGameUrl(game.roomCode);
       } catch (error) {
         onlineError = onlineApi.mapOnlineError(error);
       } finally {
@@ -1039,7 +1448,7 @@
         const game = await onlineClient.joinRoom(normalized, gameType);
         pendingRoomPreview = null;
         await refreshEconomy();
-        updateUrl(game.roomCode);
+        updateGameUrl(game.roomCode);
       } catch (error) {
         onlineError = onlineApi.mapOnlineError(error);
       } finally {
@@ -1083,7 +1492,7 @@
         });
         pendingRoomPreview = null;
         await refreshEconomy();
-        updateUrl(null);
+        updateGameUrl(null);
       } catch (error) {
         onlineError = onlineApi.mapOnlineError(error);
       } finally {
@@ -1139,6 +1548,80 @@
       adminRedeemList.append(fragment);
     }
 
+    function renderAdminSeasons() {
+      if (!adminCurrentSeason || !adminSeasonList) return;
+      const current = seasons.find((season) => season.status === 'active') || null;
+      adminCurrentSeason.textContent = '';
+      const currentTitle = document.createElement('strong');
+      currentTitle.textContent = current ? current.name : '当前没有进行中的赛季';
+      const currentMeta = document.createElement('span');
+      currentMeta.textContent = current
+        ? `开始于 ${formatMatchTime(current.startedAt)}，已开局的对局在结束后仍计入本赛季。`
+        : '空窗期的对局会保留个人历史，但不产生排行榜积分。';
+      adminCurrentSeason.append(currentTitle, currentMeta);
+      endCurrentSeasonButton.hidden = !current;
+      adminSeasonForm.hidden = Boolean(current);
+
+      adminSeasonList.textContent = '';
+      const ended = seasons.filter((season) => season.status === 'ended');
+      if (ended.length === 0) {
+        const empty = document.createElement('p');
+        empty.className = 'admin-empty-state';
+        empty.textContent = '还没有历史赛季。';
+        adminSeasonList.append(empty);
+        return;
+      }
+      ended.forEach((season) => {
+        const row = document.createElement('article');
+        row.className = 'admin-season-row';
+        const name = document.createElement('strong');
+        name.textContent = season.name;
+        const time = document.createElement('span');
+        time.textContent = `${formatMatchTime(season.startedAt)} 至 ${formatMatchTime(season.endedAt)}`;
+        row.append(name, time);
+        adminSeasonList.append(row);
+      });
+    }
+
+    async function loadAdminSeasons() {
+      if (!statsClient || !economySnapshot.isAdmin) return;
+      setStatsMessage(adminSeasonMessage, '正在加载赛季');
+      try {
+        await refreshSeasons();
+        renderAdminSeasons();
+        setStatsMessage(adminSeasonMessage);
+      } catch (error) {
+        setStatsMessage(adminSeasonMessage, statsApi.mapStatsError(error), 'error');
+      }
+    }
+
+    async function createAdminSeason() {
+      if (!statsClient || !economySnapshot.isAdmin) return;
+      setStatsMessage(adminSeasonMessage, '正在开启赛季');
+      try {
+        await statsClient.startSeason(adminSeasonName.value);
+        adminSeasonForm.reset();
+        await loadAdminSeasons();
+        setStatsMessage(adminSeasonMessage, '新赛季已开启', 'success');
+      } catch (error) {
+        setStatsMessage(adminSeasonMessage, statsApi.mapStatsError(error), 'error');
+      }
+    }
+
+    async function endAdminSeason() {
+      const current = seasons.find((season) => season.status === 'active');
+      if (!statsClient || !economySnapshot.isAdmin || !current) return;
+      if (!globalScope.confirm(`确认结束“${current.name}”？已开局的对局仍会计入本赛季。`)) return;
+      setStatsMessage(adminSeasonMessage, '正在结束赛季');
+      try {
+        await statsClient.endSeason(current.id);
+        await loadAdminSeasons();
+        setStatsMessage(adminSeasonMessage, '赛季已结束', 'success');
+      } catch (error) {
+        setStatsMessage(adminSeasonMessage, statsApi.mapStatsError(error), 'error');
+      }
+    }
+
     async function loadAdminCodes() {
       if (!economyClient || !economySnapshot.isAdmin) return;
       setAdminMessage('正在加载兑换码');
@@ -1154,10 +1637,15 @@
     function showAdminView() {
       if (!economySnapshot.isAdmin) return;
       if (accountDialog?.open) accountDialog.close();
+      portalHome.hidden = true;
       home.hidden = true;
       gameView.hidden = true;
+      leaderboardView.hidden = true;
       adminView.hidden = false;
+      document.body.dataset.view = 'admin';
+      globalScope.HYLPortal?.deactivate?.();
       void loadAdminCodes();
+      void loadAdminSeasons();
     }
 
     async function createAdminRedeemCode() {
@@ -1234,9 +1722,13 @@
       engine = engineFor(type);
       if (!engine) return;
       if (accountDialog?.open) accountDialog.close();
+      portalHome.hidden = true;
       adminView.hidden = true;
+      leaderboardView.hidden = true;
       home.hidden = true;
       gameView.hidden = false;
+      document.body.dataset.view = 'game';
+      globalScope.HYLPortal?.deactivate?.();
       document.querySelector('input[name="game-mode"][value="ai"]').checked = true;
       const storedMode = globalScope.localStorage?.getItem(PLACEMENT_STORAGE_KEY);
       placementMode = getDefaultPlacementMode(
@@ -1248,7 +1740,7 @@
       );
       if (placementInput) placementInput.checked = true;
       makeBoardCells();
-      updateUrl(roomCode, replaceUrl);
+      updateGameUrl(roomCode, replaceUrl);
       if (roomCode) {
         document.querySelector('input[name="game-mode"][value="online"]').checked = true;
         roomCodeInput.value = roomCode;
@@ -1257,7 +1749,7 @@
       if (roomCode) void previewOnlineRoom(roomCode);
     }
 
-    async function showHome({ replaceUrl = false } = {}) {
+    async function resetGameSession() {
       cancelAI();
       stopOnlineRuntime();
       if (onlineGame && onlineClient) {
@@ -1272,18 +1764,47 @@
       gameType = null;
       state = null;
       selectedCandidate = null;
+    }
+
+    async function showGameHome({ replaceUrl = false } = {}) {
+      await resetGameSession();
+      portalHome.hidden = true;
       gameView.hidden = true;
       adminView.hidden = true;
+      leaderboardView.hidden = true;
       home.hidden = false;
-      updateUrl(null, replaceUrl);
+      document.body.dataset.view = 'games';
+      globalScope.HYLPortal?.deactivate?.();
+      updateViewUrl('games', replaceUrl);
     }
+
+    async function showPortal({ replaceUrl = false } = {}) {
+      await resetGameSession();
+      gameView.hidden = true;
+      adminView.hidden = true;
+      leaderboardView.hidden = true;
+      home.hidden = true;
+      portalHome.hidden = false;
+      document.body.dataset.view = 'portal';
+      updateViewUrl('portal', replaceUrl);
+      globalScope.HYLPortal?.activate?.();
+    }
+
+    Object.assign(exported, {
+      enterGame,
+      openGameHome: showGameHome,
+      openPortal: showPortal,
+    });
 
     document.querySelectorAll('[data-game-type]').forEach((button) => {
       button.addEventListener('click', () => enterGame(button.dataset.gameType));
     });
     accountButton?.addEventListener('click', () => {
       renderAccount();
-      if (accountIdentity.kind === 'registered') void refreshEconomy({ reportError: true });
+      if (accountIdentity.kind === 'registered') {
+        void refreshEconomy({ reportError: true });
+        void loadMatchHistory({ reset: true });
+      }
       if (!accountClient?.isConfigured()) {
         setAccountMessage('账号服务尚未配置，游客仍可使用本地模式', 'error');
       }
@@ -1329,10 +1850,33 @@
       setRedeemMessage();
     });
     openAdminButton?.addEventListener('click', showAdminView);
+    openLeaderboardButton?.addEventListener('click', () => void showLeaderboardView());
     accountDialog?.addEventListener('click', (event) => {
       if (event.target === accountDialog) accountDialog.close();
     });
-    adminBackButton?.addEventListener('click', () => void showHome());
+    adminBackButton?.addEventListener('click', () => void showGameHome());
+    leaderboardBackButton?.addEventListener('click', () => void showGameHome());
+    gameHubBackButton?.addEventListener('click', () => void showPortal());
+    leaderboardSeasonSelect?.addEventListener('change', () => {
+      selectedSeasonId = leaderboardSeasonSelect.value || null;
+      void loadLeaderboard();
+    });
+    leaderboardGameTabs?.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-leaderboard-game]');
+      if (!button || button.dataset.leaderboardGame === leaderboardGameType) return;
+      leaderboardGameType = button.dataset.leaderboardGame;
+      leaderboardGameTabs.querySelectorAll('[data-leaderboard-game]').forEach((tab) => {
+        tab.setAttribute('aria-selected', String(tab === button));
+      });
+      void loadLeaderboard();
+    });
+    matchHistoryFilter?.addEventListener('change', () => void loadMatchHistory({ reset: true }));
+    loadMoreHistoryButton?.addEventListener('click', () => void loadMatchHistory());
+    adminSeasonForm?.addEventListener('submit', (event) => {
+      event.preventDefault();
+      void createAdminSeason();
+    });
+    endCurrentSeasonButton?.addEventListener('click', () => void endAdminSeason());
     adminRedeemForm?.addEventListener('submit', (event) => {
       event.preventDefault();
       void createAdminRedeemCode();
@@ -1352,7 +1896,7 @@
       const button = event.target.closest('[data-disable-code]');
       if (button) void disableAdminRedeemCode(button.dataset.disableCode);
     });
-    backHomeButton.addEventListener('click', () => void showHome());
+    backHomeButton.addEventListener('click', () => void showGameHome());
     document.querySelectorAll('input[name="difficulty"], input[name="first-player"]')
       .forEach((input) => input.addEventListener('change', () => newRound()));
     document.querySelectorAll('input[name="game-mode"]')
@@ -1425,25 +1969,38 @@
     clearScoreButton.addEventListener('click', () => newRound({ clearScores: true }));
 
     globalScope.addEventListener('popstate', () => {
-      const url = new URL(globalScope.location.href);
-      const requestedGame = url.searchParams.get('game');
-      if (GAME_TYPES.includes(requestedGame)) enterGame(requestedGame, { replaceUrl: true });
-      else void showHome({ replaceUrl: true });
+      const route = resolveAppRoute(globalScope.location.href);
+      if (route.view === 'game') {
+        enterGame(route.gameType, { replaceUrl: true, roomCode: route.roomCode });
+      } else if (route.view === 'games') {
+        void showGameHome({ replaceUrl: true });
+      } else {
+        void showPortal({ replaceUrl: true });
+      }
     });
 
-    const initialUrl = new URL(globalScope.location.href);
-    const requestedRoom = onlineApi?.normalizeRoomCode(initialUrl.searchParams.get('room'));
-    const requestedGame = initialUrl.searchParams.get('game') || (requestedRoom ? 'tic_tac_toe' : null);
-    if (GAME_TYPES.includes(requestedGame)) {
-      enterGame(requestedGame, {
+    const initialRoute = resolveAppRoute(globalScope.location.href);
+    if (initialRoute.view === 'game') {
+      enterGame(initialRoute.gameType, {
         replaceUrl: true,
-        roomCode: onlineApi?.isValidRoomCode(requestedRoom) ? requestedRoom : null,
+        roomCode: initialRoute.roomCode,
       });
+    } else if (initialRoute.view === 'games') {
+      void showGameHome({ replaceUrl: true });
+    } else {
+      void showPortal({ replaceUrl: true });
     }
     accountClient?.subscribe((identity) => {
       accountIdentity = identity;
+      matchHistoryRequestId += 1;
+      matchHistoryBusy = false;
+      matchHistory = [];
+      matchHistoryCursor = null;
+      matchHistoryHasMore = false;
+      playerStandings = [];
       renderAccount();
       void refreshEconomy();
+      if (identity.kind === 'registered') void loadMatchHistory({ reset: true });
     });
     economyClient?.subscribe((snapshot) => {
       economySnapshot = snapshot;

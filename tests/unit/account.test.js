@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 
 let account = {};
 try {
-  account = require('./account.js');
+  account = require('../../src/services/account.js');
 } catch {
   account = {};
 }

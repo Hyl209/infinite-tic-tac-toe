@@ -6,13 +6,13 @@ let engine = {};
 let app = {};
 
 try {
-  engine = require('./tic-tac-toe.js');
+  engine = require('../../src/domain/games/tic-tac-toe.js');
 } catch {
   engine = {};
 }
 
 try {
-  app = require('./game.js');
+  app = require('../../src/routes/game.js');
 } catch {
   app = {};
 }
@@ -216,8 +216,8 @@ test('页面提供线上房间入口和在线操作控件', () => {
   assert.match(html, /id="copy-room-button"/);
   assert.match(html, /id="leave-room-button"/);
   assert.match(html, /id="middle-score-name"/);
-  assert.match(html, /src="online-config\.js"[^>]*defer/);
-  assert.match(html, /src="online\.js"[^>]*defer/);
+  assert.match(html, /src="src\/config\/online\.js"[^>]*defer/);
+  assert.match(html, /src="src\/services\/online\.js"[^>]*defer/);
 });
 
 test('房间码输入先接收常见分隔符再由脚本清洗，不能提前截断第六位', () => {
@@ -227,7 +227,7 @@ test('房间码输入先接收常见分隔符再由脚本清洗，不能提前�
 });
 
 test('页面控制器通过 OnlineGame 客户端提交线上操作而不是本地落子', () => {
-  const source = fs.readFileSync('./game.js', 'utf8');
+  const source = fs.readFileSync('./src/routes/game.js', 'utf8');
   assert.match(source, /createOnlineClient\(\{/);
   assert.match(source, /onlineApi\?\.canOnlineMove/);
   assert.match(source, /onlineClient\.makeMove/);
@@ -237,7 +237,7 @@ test('页面控制器通过 OnlineGame 客户端提交线上操作而不是本�
 });
 
 test('线上胜利状态使用数据库状态名也能命中结果样式', () => {
-  const css = fs.readFileSync('./style.css', 'utf8');
+  const css = fs.readFileSync('./assets/styles/game.css', 'utf8');
   assert.match(css, /\.status-card\[data-result="x_win"\]/);
   assert.match(css, /\.status-card\[data-result="o_win"\]/);
 });
@@ -309,7 +309,7 @@ test('getExpiringPieces 分别返回 X 和 O 即将消除的棋子', () => {
 });
 
 test('棋盘固定为三行等高，棋子内容不能拉伸格子', () => {
-  const css = fs.readFileSync('./style.css', 'utf8');
+  const css = fs.readFileSync('./assets/styles/game.css', 'utf8');
   const boardBlock = css.match(/(?:^|\n)\.board\s*\{([^}]*)\}/)?.[1] || '';
   assert.match(
     boardBlock,
@@ -318,7 +318,7 @@ test('棋盘固定为三行等高，棋子内容不能拉伸格子', () => {
 });
 
 test('线上房间控件在窄屏下使用可收缩网格避免横向溢出', () => {
-  const css = fs.readFileSync('./style.css', 'utf8');
+  const css = fs.readFileSync('./assets/styles/game.css', 'utf8');
   const joinBlock = css.match(/\.room-join-row\s*\{([^}]*)\}/)?.[1] || '';
   const inputBlock = css.match(/#room-code-input\s*\{([^}]*)\}/)?.[1] || '';
   assert.match(joinBlock, /grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto/);
@@ -326,7 +326,7 @@ test('线上房间控件在窄屏下使用可收缩网格避免横向溢出', ()
 });
 
 test('线上会话区的网格样式不能覆盖 hidden 属性', () => {
-  const css = fs.readFileSync('./style.css', 'utf8');
+  const css = fs.readFileSync('./assets/styles/game.css', 'utf8');
   assert.match(
     css,
     /\.online-room-session\[hidden\]\s*\{[^}]*display:\s*none\s*!important/s,
@@ -334,7 +334,7 @@ test('线上会话区的网格样式不能覆盖 hidden 属性', () => {
 });
 
 test('落子、胜利和按压反馈不能缩放格子容器', () => {
-  const css = fs.readFileSync('./style.css', 'utf8');
+  const css = fs.readFileSync('./assets/styles/game.css', 'utf8');
   const selectors = [
     '.cell:hover[aria-disabled="false"]',
     '.cell:active[aria-disabled="false"]',
@@ -352,8 +352,8 @@ test('落子、胜利和按压反馈不能缩放格子容器', () => {
 });
 
 test('AI 回合必须原生禁用格子并锁定棋盘点击', () => {
-  const source = fs.readFileSync('./game.js', 'utf8');
-  const css = fs.readFileSync('./style.css', 'utf8');
+  const source = fs.readFileSync('./src/routes/game.js', 'utf8');
+  const css = fs.readFileSync('./assets/styles/game.css', 'utf8');
   const thinkingBoardBlock = css.match(
     /\.game-panel\.is-thinking\s+\.board\s*\{([^}]*)\}/,
   )?.[1] || '';
@@ -370,7 +370,7 @@ test('AI 回合必须原生禁用格子并锁定棋盘点击', () => {
 });
 
 test('落子动画第一帧必须可见，不能用透明度隐藏棋子', () => {
-  const css = fs.readFileSync('./style.css', 'utf8');
+  const css = fs.readFileSync('./assets/styles/game.css', 'utf8');
   const start = css.indexOf('@keyframes place-mark');
   const end = css.indexOf('@keyframes winner-pop');
   const placeMarkKeyframes = css.slice(start, end);
@@ -389,7 +389,7 @@ test('页面先显示双游戏首页并按顺序加载两个规则引擎', () =>
   assert.match(html, /id="back-home-button"/);
   assert.match(
     html,
-    /src="tic-tac-toe\.js"[^>]*defer[\s\S]*src="gomoku\.js"[^>]*defer[\s\S]*src="game\.js"[^>]*defer/,
+    /src="src\/domain\/games\/tic-tac-toe\.js"[^>]*defer[\s\S]*src="src\/domain\/games\/gomoku\.js"[^>]*defer[\s\S]*src="src\/routes\/game\.js"[^>]*defer/,
   );
 });
 
@@ -409,12 +409,87 @@ test('首页提供个人资料入口、登录注册表单并在游戏脚本前�
   assert.match(html, /id="register-game-name"[^>]*maxlength="16"/);
   assert.match(
     html,
-    /src="online\.js"[^>]*defer[\s\S]*src="account\.js"[^>]*defer[\s\S]*src="game\.js"[^>]*defer/,
+    /src="src\/services\/online\.js"[^>]*defer[\s\S]*src="src\/services\/account\.js"[^>]*defer[\s\S]*src="src\/routes\/game\.js"[^>]*defer/,
+  );
+});
+
+test('页面加载经济服务并提供余额、兑换码和彩头控件', () => {
+  const html = fs.readFileSync('./index.html', 'utf8');
+  assert.match(
+    html,
+    /src="src\/services\/account\.js"[^>]*defer[\s\S]*src="src\/services\/economy\.js"[^>]*defer[\s\S]*src="src\/routes\/game\.js"[^>]*defer/,
+  );
+  for (const id of [
+    'account-coin-balance',
+    'wallet-panel',
+    'redeem-code-form',
+    'redeem-code-input',
+    'online-wager-picker',
+    'room-preview',
+    'room-preview-game',
+    'confirm-join-button',
+    'admin-view',
+    'admin-redeem-form',
+    'admin-redeem-list',
+  ]) {
+    assert.match(html, new RegExp(`id="${id}"`));
+  }
+  for (const amount of [0, 10, 50, 100]) {
+    assert.match(html, new RegExp(`name="online-wager"\\s+value="${amount}"`));
+  }
+});
+
+test('页面控制器接入经济客户端、房间预览、心跳和管理员操作', () => {
+  const source = fs.readFileSync('./src/routes/game.js', 'utf8');
+  assert.match(source, /PlayerEconomy/);
+  assert.match(source, /createEconomyClient\(\{[\s\S]*accountClient/);
+  assert.match(source, /economyClient\.refresh/);
+  assert.match(source, /economyClient\.redeemCode/);
+  assert.match(source, /economyClient\.createRedeemCode/);
+  assert.match(source, /economyClient\.listRedeemCodes/);
+  assert.match(source, /economyClient\.disableRedeemCode/);
+  assert.match(source, /onlineClient\.createRoom\(gameType,\s*wagerAmount\)/);
+  assert.match(source, /onlineClient\.previewRoom/);
+  assert.match(source, /onlineClient\.heartbeat/);
+  assert.match(source, /onlineClient\.claimDisconnect/);
+  assert.match(source, /10_000/);
+  assert.match(source, /30_000/);
+});
+
+test('经济和管理员界面沿用现有控件并支持窄屏布局', () => {
+  const css = fs.readFileSync('./assets/styles/game.css', 'utf8');
+  assert.match(css, /\.coin-balance/);
+  assert.match(css, /\.wallet-panel/);
+  assert.match(css, /\.wager-picker/);
+  assert.match(css, /\.room-preview/);
+  assert.match(css, /\.admin-shell/);
+  assert.match(css, /\.admin-code-list/);
+  const mobileStyles = css.slice(css.indexOf('@media (max-width: 760px)'));
+  assert.match(mobileStyles, /\.admin-shell/);
+  assert.match(mobileStyles, /\.redeem-row/);
+});
+
+test('线上状态类型包含彩头、结算和心跳字段', () => {
+  const types = fs.readFileSync('./src/types/game.d.ts', 'utf8');
+  assert.match(types, /wagerAmount:\s*number/);
+  assert.match(types, /stakeLocked:\s*Record<Mark, boolean>/);
+  assert.match(types, /wagerSettledAt:\s*string \| null/);
+  assert.match(types, /finishReason:/);
+  assert.match(types, /lastSeenAt:\s*Record<Mark, string \| null>/);
+  assert.match(types, /interface EconomySnapshot/);
+  assert.match(types, /interface RoomPreview/);
+});
+
+test('管理员兑换码有效期使用稳定易读格式', () => {
+  assert.equal(app.formatAdminCodeExpiry(null), '永久有效');
+  assert.equal(
+    app.formatAdminCodeExpiry('2026-12-31T08:30:00.000Z'),
+    '2026-12-31 08:30 UTC',
   );
 });
 
 test('页面控制器共享账号客户端并处理注册、登录、改名和退出', () => {
-  const source = fs.readFileSync('./game.js', 'utf8');
+  const source = fs.readFileSync('./src/routes/game.js', 'utf8');
   assert.match(source, /PlayerAccount/);
   assert.match(source, /createAccountClient/);
   assert.match(source, /createOnlineClient\(\{[\s\S]*accountClient/);
@@ -425,7 +500,7 @@ test('页面控制器共享账号客户端并处理注册、登录、改名和�
 });
 
 test('账号重绘不能清除刚产生的成功或错误提示', () => {
-  const source = fs.readFileSync('./game.js', 'utf8');
+  const source = fs.readFileSync('./src/routes/game.js', 'utf8');
   assert.match(source, /function setAccountMode\(mode, \{ clearMessage = true \} = \{\}\)/);
   assert.match(source, /setAccountMode\(accountMode, \{ clearMessage: false \}\)/);
 });
@@ -436,7 +511,7 @@ test('在线比分标签组合游戏名和棋子，缺少名称时保留棋子',
 });
 
 test('个人资料弹窗使用固定层并在窄屏改为安全边距布局', () => {
-  const css = fs.readFileSync('./style.css', 'utf8');
+  const css = fs.readFileSync('./assets/styles/game.css', 'utf8');
   assert.match(css, /\.account-dialog\s*\{[^}]*position:\s*fixed/s);
   assert.match(css, /\.account-dialog::backdrop/);
   assert.match(css, /\.account-field\s+input:focus-visible/);
@@ -489,7 +564,7 @@ test('比分按游戏和模式隔离，切换模式时不清空本次会话比�
   assert.equal(app.getScoreKey('tic_tac_toe', 'pvp'), 'tic_tac_toe:pvp');
   assert.equal(app.getScoreKey('gomoku', 'ai'), 'gomoku:ai');
 
-  const source = fs.readFileSync('./game.js', 'utf8');
+  const source = fs.readFileSync('./src/routes/game.js', 'utf8');
   assert.match(
     source,
     /document\.querySelectorAll\('input\[name="game-mode"\]'\)\s*\.forEach\(\(input\) => input\.addEventListener\('change', \(\) => newRound\(\)\)\);/,
@@ -526,7 +601,7 @@ test('本地悔棋按模式和 AI 阶段返回正确撤回步数', () => {
 });
 
 test('五子棋棋盘使用 15 列交叉点布局并提供候选落点样式', () => {
-  const css = fs.readFileSync('./style.css', 'utf8');
+  const css = fs.readFileSync('./assets/styles/game.css', 'utf8');
   assert.match(css, /\.board\.gomoku-board\s*\{[^}]*grid-template-columns:\s*repeat\(15,\s*1fr\)/s);
   assert.match(css, /\.gomoku-cell\.candidate::after/);
   assert.match(css, /\.gomoku-cell\.star-point::before/);
@@ -534,15 +609,15 @@ test('五子棋棋盘使用 15 列交叉点布局并提供候选落点样式', (
 });
 
 test('困难五子棋 AI 通过 Worker 执行并带有过期请求保护', () => {
-  const source = fs.readFileSync('./game.js', 'utf8');
-  const worker = fs.readFileSync('./gomoku-ai-worker.js', 'utf8');
-  assert.match(source, /const worker = new Worker\(['"]gomoku-ai-worker\.js['"]\)/);
+  const source = fs.readFileSync('./src/routes/game.js', 'utf8');
+  const worker = fs.readFileSync('./src/workers/gomoku-ai-worker.js', 'utf8');
+  assert.match(source, /const worker = new Worker\(['"]src\/workers\/gomoku-ai-worker\.js['"]\)/);
   assert.match(source, /aiRequestId/);
   assert.match(source, /event\.data\?\.error[\s\S]*chooseAIMove\(state, 'normal'/);
   assert.match(
     source,
     /worker\.onerror = \(\) => \{\s*if \(requestId !== aiRequestId \|\| aiWorker !== worker\) return;/,
   );
-  assert.match(worker, /importScripts\(['"]gomoku\.js['"]\)/);
+  assert.match(worker, /importScripts\(['"]\.\.\/domain\/games\/gomoku\.js['"]\)/);
   assert.match(worker, /timeLimitMs:\s*1200/);
 });

@@ -1,0 +1,36 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+
+const expectedFiles = [
+  'src/routes/game.js',
+  'src/services/account.js',
+  'src/services/online.js',
+  'src/domain/games/tic-tac-toe.js',
+  'src/domain/games/gomoku.js',
+  'src/utils/room-code.js',
+  'src/config/online.js',
+  'src/types/game.d.ts',
+  'src/workers/gomoku-ai-worker.js',
+  'assets/styles/game.css',
+  'tests/unit/account.test.js',
+  'tests/unit/online.test.js',
+  'tests/unit/tic-tac-toe.test.js',
+  'tests/unit/gomoku.test.js',
+  'tests/integration/game.test.js',
+  'tests/integration/supabase.test.js',
+  'tests/integration/structure.test.js',
+  'database/supabase/setup.sql',
+];
+
+test('源码、测试和数据库文件按职责归档', () => {
+  for (const file of expectedFiles) {
+    assert.equal(fs.existsSync(file), true, `缺少 ${file}`);
+  }
+});
+
+test('根目录只保留静态入口，不再散落 JavaScript 和 CSS 源码', () => {
+  const rootCodeFiles = fs.readdirSync('.')
+    .filter((file) => /\.(?:js|css)$/.test(file));
+  assert.deepEqual(rootCodeFiles, []);
+});

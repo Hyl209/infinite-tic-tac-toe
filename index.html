@@ -7,13 +7,15 @@
     <meta name="description" content="支持三档 AI、本地双人和线上好友房间的井字棋与五子棋">
     <title>棋局 - 井字棋与五子棋</title>
     <link rel="icon" href="data:,">
-    <link rel="stylesheet" href="style.css">
-    <script src="online-config.js" defer></script>
-    <script src="tic-tac-toe.js" defer></script>
-    <script src="gomoku.js" defer></script>
-    <script src="online.js" defer></script>
-    <script src="account.js" defer></script>
-    <script src="game.js" defer></script>
+    <link rel="stylesheet" href="assets/styles/game.css">
+    <script src="src/config/online.js" defer></script>
+    <script src="src/domain/games/tic-tac-toe.js" defer></script>
+    <script src="src/domain/games/gomoku.js" defer></script>
+    <script src="src/utils/room-code.js" defer></script>
+    <script src="src/services/online.js" defer></script>
+    <script src="src/services/account.js" defer></script>
+    <script src="src/services/economy.js" defer></script>
+    <script src="src/routes/game.js" defer></script>
   </head>
   <body>
     <main class="site-shell">
@@ -24,6 +26,7 @@
             <small id="account-kind-label">游客身份</small>
             <strong id="account-display-name">匿名玩家</strong>
           </span>
+          <span id="account-coin-balance" class="coin-balance" hidden>金币 0</span>
         </button>
 
         <header class="home-copy">
@@ -167,6 +170,35 @@
               </div>
             </form>
 
+            <section id="wallet-panel" class="wallet-panel" hidden aria-labelledby="wallet-title">
+              <div class="wallet-heading">
+                <div>
+                  <small>可用金币</small>
+                  <strong id="wallet-balance">0</strong>
+                </div>
+                <button id="open-admin-button" class="button secondary" type="button" hidden>兑换码管理</button>
+              </div>
+              <form id="redeem-code-form" class="redeem-form">
+                <label class="account-field" for="redeem-code-input">
+                  <span id="wallet-title">兑换码</span>
+                  <div class="redeem-row">
+                    <input
+                      id="redeem-code-input"
+                      name="code"
+                      type="text"
+                      maxlength="16"
+                      autocomplete="off"
+                      spellcheck="false"
+                      placeholder="XXXX-XXXX-XXXX"
+                      required
+                    >
+                    <button class="button primary" type="submit">领取金币</button>
+                  </div>
+                </label>
+              </form>
+              <p id="redeem-message" class="account-message" aria-live="polite"></p>
+            </section>
+
             <p id="account-message" class="account-message" aria-live="polite"></p>
             <p class="account-footnote">游客也能在线对战，名称会显示为匿名玩家加随机码。</p>
           </div>
@@ -213,6 +245,16 @@
             <fieldset id="online-room-panel" hidden>
               <legend>好友房间</legend>
               <div class="online-room-actions">
+                <fieldset id="online-wager-picker" class="wager-picker">
+                  <legend>每人彩头</legend>
+                  <div class="segmented-control four-options">
+                    <label><input type="radio" name="online-wager" value="0" checked><span>免费</span></label>
+                    <label><input type="radio" name="online-wager" value="10"><span>10</span></label>
+                    <label><input type="radio" name="online-wager" value="50"><span>50</span></label>
+                    <label><input type="radio" name="online-wager" value="100"><span>100</span></label>
+                  </div>
+                  <p id="wager-balance-note" class="wager-balance-note">登录后可使用金币彩头</p>
+                </fieldset>
                 <button id="create-room-button" class="button primary" type="button">创建房间</button>
                 <div class="room-join-row">
                   <input
@@ -225,11 +267,23 @@
                     aria-label="六位房间码"
                     placeholder="输入房间码"
                   >
-                  <button id="join-room-button" class="button secondary" type="button">加入</button>
+                  <button id="join-room-button" class="button secondary" type="button">查看</button>
+                </div>
+                <div id="room-preview" class="room-preview" hidden>
+                  <p id="room-preview-game">线上对战</p>
+                  <p><strong id="room-preview-host">好友房间</strong></p>
+                  <p id="room-preview-wager">每人彩头 0 金币</p>
+                  <div class="room-preview-actions">
+                    <button id="confirm-join-button" class="button primary" type="button">确认加入</button>
+                    <button id="cancel-join-button" class="button secondary" type="button">取消</button>
+                  </div>
                 </div>
               </div>
               <div id="online-room-session" class="online-room-session" hidden>
                 <p>房间码 <strong id="room-code-display">------</strong></p>
+                <p id="room-wager-display" class="room-wager-display">本局无彩头</p>
+                <p id="disconnect-countdown" class="disconnect-countdown" hidden></p>
+                <p id="room-settlement-message" class="room-settlement-message" hidden></p>
                 <div class="room-session-actions">
                   <button id="copy-room-button" class="button secondary" type="button">复制邀请</button>
                   <button id="leave-room-button" class="button danger" type="button">退出房间</button>
@@ -331,6 +385,48 @@
             <span class="expiry-swatch" aria-hidden="true"></span>
             <span id="game-note-text">高亮棋子会在该方下次落子时消失</span>
           </p>
+        </section>
+      </section>
+
+      <section id="admin-view" class="admin-shell" hidden aria-labelledby="admin-title">
+        <button id="admin-back-button" class="back-button" type="button">返回游戏首页</button>
+        <header class="admin-header">
+          <div>
+            <p>金币管理</p>
+            <h1 id="admin-title">兑换码管理</h1>
+          </div>
+          <p>创建兑换码后，完整代码只显示一次，请立即复制保存。</p>
+        </header>
+
+        <form id="admin-redeem-form" class="admin-form">
+          <label class="account-field" for="admin-code-amount">
+            <span>每次领取金币</span>
+            <input id="admin-code-amount" name="amount" type="number" min="1" max="1000000" value="100" required>
+          </label>
+          <label class="account-field" for="admin-code-limit">
+            <span>总领取人数</span>
+            <input id="admin-code-limit" name="maxClaims" type="number" min="1" max="100000" value="1" required>
+          </label>
+          <label class="account-field" for="admin-code-expiry">
+            <span>有效期（可不填）</span>
+            <input id="admin-code-expiry" name="expiresAt" type="datetime-local">
+          </label>
+          <button class="button primary" type="submit">生成兑换码</button>
+        </form>
+
+        <section id="admin-generated-code" class="generated-code" hidden aria-live="polite">
+          <span>新兑换码</span>
+          <strong id="admin-generated-code-value"></strong>
+          <button id="copy-generated-code-button" class="button secondary" type="button">复制兑换码</button>
+        </section>
+
+        <p id="admin-message" class="account-message" aria-live="polite"></p>
+        <section class="admin-code-section" aria-labelledby="admin-code-list-title">
+          <div class="admin-list-heading">
+            <h2 id="admin-code-list-title">最近创建</h2>
+            <button id="refresh-admin-codes-button" class="button secondary" type="button">刷新列表</button>
+          </div>
+          <div id="admin-redeem-list" class="admin-code-list"></div>
         </section>
       </section>
     </main>

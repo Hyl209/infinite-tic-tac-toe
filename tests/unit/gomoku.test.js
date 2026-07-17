@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 
 let engine = {};
 try {
-  engine = require('./gomoku.js');
+  engine = require('../../src/domain/games/gomoku.js');
 } catch {
   engine = {};
 }

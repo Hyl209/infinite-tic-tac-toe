@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 
 let engine = {};
 try {
-  engine = require('./tic-tac-toe.js');
+  engine = require('../../src/domain/games/tic-tac-toe.js');
 } catch {
   engine = {};
 }

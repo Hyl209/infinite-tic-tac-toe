@@ -1,7 +1,10 @@
 (function initOnlineGame(globalScope) {
   'use strict';
 
-  const ROOM_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const roomCodeUtils = typeof module !== 'undefined' && module.exports
+    ? require('../utils/room-code.js')
+    : globalScope.RoomCodeUtils;
+  const { ROOM_ALPHABET, isValidRoomCode, normalizeRoomCode } = roomCodeUtils;
   const ERROR_MESSAGES = {
     ONLINE_NOT_CONFIGURED: '线上服务尚未配置',
     INVALID_ROOM_CODE: '请输入正确的六位房间码',
@@ -19,21 +22,11 @@
     UNDO_LIMIT_REACHED: '本局悔棋次数已经用完',
     UNDO_EXPIRED: '悔棋请求已经超时',
     NOTHING_TO_UNDO: '当前没有可以撤回的落子',
+    REGISTERED_ACCOUNT_REQUIRED: '有彩头的房间仅限注册玩家',
+    INVALID_WAGER: '请选择正确的彩头金额',
+    INSUFFICIENT_COINS: '金币不足',
+    OPPONENT_STILL_ONLINE: '对手仍在线，暂时不能判负',
   };
-
-  function normalizeRoomCode(value) {
-    return String(value || '')
-      .toUpperCase()
-      .split('')
-      .filter((character) => ROOM_ALPHABET.includes(character))
-      .join('')
-      .slice(0, 6);
-  }
-
-  function isValidRoomCode(value) {
-    const normalized = normalizeRoomCode(value);
-    return normalized.length === 6 && normalized === String(value || '').toUpperCase();
-  }
 
   function mapOnlineGame(row, userId, { opponentOnline = false } = {}) {
     const playerMark = row.x_player === userId
@@ -74,8 +67,28 @@
           expiresAt: row.undo_expires_at,
         }
         : null,
+      wagerAmount: Number(row.wager_amount || 0),
+      stakeLocked: {
+        X: Boolean(row.x_stake_locked),
+        O: Boolean(row.o_stake_locked),
+      },
+      wagerSettledAt: row.wager_settled_at || null,
+      finishReason: row.finish_reason || null,
+      lastSeenAt: {
+        X: row.x_last_seen_at || null,
+        O: row.o_last_seen_at || null,
+      },
       opponentOnline,
       version: row.version,
+    };
+  }
+
+  function mapRoomPreview(row) {
+    return {
+      gameType: row.game_type,
+      hostName: row.host_name,
+      wagerAmount: Number(row.wager_amount || 0),
+      status: row.status,
     };
   }
 
@@ -147,6 +160,8 @@
       if (game.rematchReady?.[opponentMark]) return `${opponentName}已申请再来一局`;
       const winner = game.status === 'x_win' ? 'X' : 'O';
       const winnerName = game.playerNames?.[winner] || (winner === game.playerMark ? ownName : opponentName);
+      if (game.finishReason === 'disconnect') return `${winnerName}因对手掉线获胜`;
+      if (game.finishReason === 'active_exit') return `${winnerName}因对手退出获胜`;
       return winner === game.playerMark
         ? `${winnerName}获胜，漂亮的一局`
         : `${winnerName}获胜，再来一局`;
@@ -292,14 +307,25 @@
       return firstRpcRow(result.data);
     }
 
-    async function createRoom(gameType = 'tic_tac_toe') {
+    async function createRoom(gameType = 'tic_tac_toe', wagerAmount = 0) {
       await connect();
       const row = await callRpc('create_online_game', {
         p_game_type: gameType,
         p_guest_name: playerName,
+        p_wager_amount: Number(wagerAmount),
       });
       await subscribeToRoom(row);
       return currentGame;
+    }
+
+    async function previewRoom(roomCode, gameType = 'tic_tac_toe') {
+      const normalized = normalizeRoomCode(roomCode);
+      if (!isValidRoomCode(normalized)) throw new Error('INVALID_ROOM_CODE');
+      const row = await callRpc('preview_online_game', {
+        p_room_code: normalized,
+        p_game_type: gameType,
+      });
+      return mapRoomPreview(row);
     }
 
     async function joinRoom(roomCode, gameType = 'tic_tac_toe') {
@@ -353,6 +379,18 @@
       return acceptRow(row);
     }
 
+    async function heartbeat() {
+      if (!currentRow) throw new Error('ROOM_NOT_FOUND');
+      const row = await callRpc('heartbeat_online_game', { p_game_id: currentRow.id });
+      return acceptRow(row);
+    }
+
+    async function claimDisconnect() {
+      if (!currentRow) throw new Error('ROOM_NOT_FOUND');
+      const row = await callRpc('claim_online_disconnect', { p_game_id: currentRow.id });
+      return acceptRow(row);
+    }
+
     async function leaveRoom() {
       if (!currentRow) return;
       await callRpc('leave_online_game', { p_game_id: currentRow.id });
@@ -364,12 +402,15 @@
     return {
       connect,
       cancelUndo,
+      claimDisconnect,
       createRoom,
       disconnect,
+      heartbeat,
       isConfigured,
       joinRoom,
       leaveRoom,
       makeMove,
+      previewRoom,
       requestUndo,
       requestRematch,
       respondUndo,
@@ -386,6 +427,7 @@
     loadSupabaseSdk,
     mapOnlineError,
     mapOnlineGame,
+    mapRoomPreview,
     normalizeRoomCode,
   };
 

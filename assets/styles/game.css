@@ -117,6 +117,17 @@ button {
   white-space: nowrap;
 }
 
+.coin-balance {
+  margin-left: auto;
+  padding: 5px 8px;
+  border-radius: 999px;
+  color: var(--warning);
+  background: rgb(255 196 107 / 0.12);
+  font-size: 0.74rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
 .account-dialog {
   position: fixed;
   inset: 0;
@@ -286,6 +297,170 @@ button {
   color: var(--muted);
   font-size: 0.76rem;
   line-height: 1.5;
+}
+
+.wallet-panel {
+  margin-top: 22px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
+.wallet-heading,
+.admin-list-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.wallet-heading > div {
+  display: grid;
+  gap: 2px;
+}
+
+.wallet-heading small {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.wallet-heading strong {
+  color: var(--warning);
+  font-size: 1.65rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.redeem-form {
+  margin-top: 16px;
+}
+
+.redeem-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.redeem-row input {
+  min-width: 0;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.admin-shell {
+  width: min(920px, calc(100% - 32px));
+  min-height: 100dvh;
+  margin: 0 auto;
+  padding: 40px 0 64px;
+}
+
+.admin-header {
+  margin: 34px 0 28px;
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 28px;
+}
+
+.admin-header p {
+  max-width: 46ch;
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.admin-header > div > p {
+  margin-bottom: 7px;
+  color: var(--accent);
+  font-size: 0.8rem;
+  font-weight: 750;
+}
+
+.admin-header h1 {
+  margin: 0;
+  font-size: 2.15rem;
+  letter-spacing: -0.04em;
+}
+
+.admin-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  align-items: end;
+  gap: 12px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.generated-code {
+  margin-top: 16px;
+  padding: 18px 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  border: 1px solid rgb(145 230 179 / 0.42);
+  border-radius: var(--radius);
+  background: rgb(35 71 59 / 0.54);
+}
+
+.generated-code span {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.generated-code strong {
+  margin-right: auto;
+  color: var(--success);
+  font-size: 1.25rem;
+  letter-spacing: 0.08em;
+}
+
+.admin-code-section {
+  margin-top: 30px;
+}
+
+.admin-list-heading h2 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.admin-code-list {
+  margin-top: 12px;
+  border-block: 1px solid var(--line);
+}
+
+.admin-code-row {
+  min-height: 72px;
+  padding: 12px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.admin-code-row + .admin-code-row {
+  border-top: 1px solid var(--line);
+}
+
+.admin-code-row > div {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.admin-code-row strong {
+  letter-spacing: 0.06em;
+}
+
+.admin-code-row span,
+.admin-empty-state {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.admin-empty-state {
+  margin: 0;
+  padding: 28px 0;
+  text-align: center;
 }
 
 .home-copy {
@@ -657,6 +832,51 @@ h1 {
   color: var(--warning);
   font-size: 0.84rem;
   line-height: 1.45;
+}
+
+.wager-picker {
+  display: grid;
+  gap: 8px;
+}
+
+.segmented-control.four-options {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.wager-balance-note,
+.room-wager-display,
+.room-settlement-message,
+.disconnect-countdown,
+.room-preview p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.room-preview {
+  padding-top: 12px;
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.room-preview p:first-child {
+  color: var(--text);
+}
+
+.room-preview-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.room-settlement-message {
+  color: var(--success);
+}
+
+.disconnect-countdown {
+  color: var(--warning);
 }
 
 .undo-request-actions {
@@ -1158,6 +1378,30 @@ legend {
 }
 
 @media (max-width: 760px) {
+  .admin-shell {
+    width: min(560px, calc(100% - 28px));
+    padding: 28px 0 44px;
+  }
+
+  .admin-header {
+    align-items: start;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .admin-form {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .redeem-row {
+    grid-template-columns: 1fr;
+  }
+
+  .generated-code {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
   .game-home {
     width: min(560px, calc(100% - 28px));
     align-content: start;
@@ -1229,6 +1473,25 @@ legend {
 
   .account-profile-actions {
     grid-template-columns: 1fr;
+  }
+
+  .admin-form,
+  .admin-code-row,
+  .room-preview-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-form {
+    display: grid;
+  }
+
+  .admin-code-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .segmented-control.four-options {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .home-copy {

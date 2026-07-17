@@ -1,6 +1,6 @@
 'use strict';
 
-importScripts('gomoku.js');
+importScripts('../domain/games/gomoku.js');
 
 self.onmessage = (event) => {
   const { requestId, position, aiMark } = event.data || {};

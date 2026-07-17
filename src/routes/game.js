@@ -42,6 +42,13 @@
     return name ? `${name} · ${mark}` : mark;
   }
 
+  function formatAdminCodeExpiry(value) {
+    if (!value) return '永久有效';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '时间无效';
+    return `${date.toISOString().slice(0, 16).replace('T', ' ')} UTC`;
+  }
+
   function getLocalUndoCount(state) {
     const history = state?.moveHistory || [];
     if (history.length === 0 || state?.gameMode === 'online') return 0;
@@ -60,6 +67,7 @@
     getDefaultPlacementMode,
     getLocalUndoCount,
     getScoreKey,
+    formatAdminCodeExpiry,
     formatOnlineScoreName,
     resolvePlacementSelection,
   };
@@ -117,6 +125,7 @@
     const accountAvatar = document.querySelector('.account-avatar');
     const accountKindLabel = document.querySelector('#account-kind-label');
     const accountDisplayName = document.querySelector('#account-display-name');
+    const accountCoinBalance = document.querySelector('#account-coin-balance');
     const accountDialog = document.querySelector('#account-dialog');
     const accountCloseButton = document.querySelector('#account-close-button');
     const accountDialogTitle = document.querySelector('#account-dialog-title');
@@ -131,13 +140,41 @@
     const accountMessage = document.querySelector('#account-message');
     const profileUsername = document.querySelector('#profile-username');
     const profileGameName = document.querySelector('#profile-game-name');
+    const walletPanel = document.querySelector('#wallet-panel');
+    const walletBalance = document.querySelector('#wallet-balance');
+    const redeemCodeForm = document.querySelector('#redeem-code-form');
+    const redeemCodeInput = document.querySelector('#redeem-code-input');
+    const redeemMessage = document.querySelector('#redeem-message');
+    const openAdminButton = document.querySelector('#open-admin-button');
+    const onlineWagerPicker = document.querySelector('#online-wager-picker');
+    const wagerBalanceNote = document.querySelector('#wager-balance-note');
+    const roomPreviewElement = document.querySelector('#room-preview');
+    const roomPreviewGame = document.querySelector('#room-preview-game');
+    const roomPreviewHost = document.querySelector('#room-preview-host');
+    const roomPreviewWager = document.querySelector('#room-preview-wager');
+    const confirmJoinButton = document.querySelector('#confirm-join-button');
+    const cancelJoinButton = document.querySelector('#cancel-join-button');
+    const roomWagerDisplay = document.querySelector('#room-wager-display');
+    const roomSettlementMessage = document.querySelector('#room-settlement-message');
+    const disconnectCountdown = document.querySelector('#disconnect-countdown');
+    const adminView = document.querySelector('#admin-view');
+    const adminBackButton = document.querySelector('#admin-back-button');
+    const adminRedeemForm = document.querySelector('#admin-redeem-form');
+    const adminGeneratedCode = document.querySelector('#admin-generated-code');
+    const adminGeneratedCodeValue = document.querySelector('#admin-generated-code-value');
+    const copyGeneratedCodeButton = document.querySelector('#copy-generated-code-button');
+    const adminMessage = document.querySelector('#admin-message');
+    const adminRedeemList = document.querySelector('#admin-redeem-list');
+    const refreshAdminCodesButton = document.querySelector('#refresh-admin-codes-button');
 
     const onlineApi = globalScope.OnlineGame;
     const accountApi = globalScope.PlayerAccount;
+    const economyApi = globalScope.PlayerEconomy;
     const accountClient = accountApi?.createAccountClient({
       config: globalScope.ONLINE_GAME_CONFIG,
       loadSupabase: onlineApi?.loadSupabaseSdk,
     });
+    const economyClient = economyApi?.createEconomyClient({ accountClient });
     const sessionScores = new Map();
     let gameType = null;
     let engine = null;
@@ -156,6 +193,11 @@
     let onlineConnected = false;
     let onlineSubmitting = false;
     let onlineError = '';
+    let pendingRoomPreview = null;
+    let heartbeatTimer = null;
+    let disconnectTimer = null;
+    let disconnectDeadline = 0;
+    let claimingDisconnect = false;
     let accountIdentity = accountClient?.getIdentity() || {
       kind: 'guest',
       username: null,
@@ -164,11 +206,46 @@
     };
     let accountBusy = false;
     let accountMode = 'login';
+    let economySnapshot = economyClient?.getSnapshot() || {
+      balance: 0,
+      isAdmin: false,
+      loaded: false,
+    };
+    let adminCodes = [];
 
     function setAccountMessage(message = '', stateName = '') {
       if (!accountMessage) return;
       accountMessage.textContent = message;
       accountMessage.dataset.state = stateName;
+    }
+
+    function setRedeemMessage(message = '', stateName = '') {
+      if (!redeemMessage) return;
+      redeemMessage.textContent = message;
+      redeemMessage.dataset.state = stateName;
+    }
+
+    function setAdminMessage(message = '', stateName = '') {
+      if (!adminMessage) return;
+      adminMessage.textContent = message;
+      adminMessage.dataset.state = stateName;
+    }
+
+    async function refreshEconomy({ reportError = false } = {}) {
+      if (!economyClient) return economySnapshot;
+      try {
+        economySnapshot = await economyClient.refresh();
+      } catch (error) {
+        economySnapshot = {
+          balance: 0,
+          isAdmin: false,
+          loaded: false,
+        };
+        if (reportError) setRedeemMessage(economyApi.mapEconomyError(error), 'error');
+      }
+      renderAccount();
+      if (state) render();
+      return economySnapshot;
     }
 
     function setAccountMode(mode, { clearMessage = true } = {}) {
@@ -199,8 +276,13 @@
       accountAvatar.textContent = registered ? accountIdentity.displayName.slice(0, 1) : '游';
       accountKindLabel.textContent = registered ? '个人资料' : '游客身份';
       accountDisplayName.textContent = accountIdentity.displayName;
+      accountCoinBalance.hidden = !registered;
+      accountCoinBalance.textContent = `金币 ${economySnapshot.balance}`;
       accountAuthView.hidden = registered;
       accountProfileForm.hidden = !registered;
+      walletPanel.hidden = !registered;
+      walletBalance.textContent = String(economySnapshot.balance);
+      openAdminButton.hidden = !registered || !economySnapshot.isAdmin;
       if (registered) {
         accountDialogTitle.textContent = '个人资料';
         accountDialogDescription.textContent = '修改后的游戏名会用于之后加入的在线房间。';
@@ -210,7 +292,11 @@
         }
       } else {
         setAccountMode(accountMode, { clearMessage: false });
+        document.querySelector('input[name="online-wager"][value="0"]').checked = true;
       }
+      document.querySelectorAll('input[name="online-wager"]').forEach((input) => {
+        input.disabled = !registered && input.value !== '0';
+      });
       accountButton.disabled = accountBusy;
     }
 
@@ -220,6 +306,7 @@
       setAccountMessage();
       try {
         accountIdentity = await action();
+        await refreshEconomy();
         renderAccount();
         setAccountMessage(successMessage, 'success');
       } catch (error) {
@@ -258,6 +345,83 @@
       const request = game?.undoRequest;
       if (!request?.requesterMark || !request?.expiresAt) return null;
       return Date.parse(request.expiresAt) > Date.now() ? request : null;
+    }
+
+    function isOnlineFinished(game = onlineGame) {
+      return ['x_win', 'o_win', 'draw'].includes(game?.status);
+    }
+
+    function stopOnlineRuntime() {
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+      if (disconnectTimer) clearTimeout(disconnectTimer);
+      heartbeatTimer = null;
+      disconnectTimer = null;
+      disconnectDeadline = 0;
+      claimingDisconnect = false;
+    }
+
+    async function claimDisconnectedOpponent() {
+      if (!onlineClient || !onlineGame || claimingDisconnect) return;
+      claimingDisconnect = true;
+      try {
+        await onlineClient.claimDisconnect();
+        await refreshEconomy();
+      } catch (error) {
+        if (!String(error?.message || error).includes('OPPONENT_STILL_ONLINE')) {
+          onlineError = onlineApi.mapOnlineError(error);
+        }
+      } finally {
+        claimingDisconnect = false;
+        scheduleDisconnectClaim();
+        render();
+      }
+    }
+
+    function scheduleDisconnectClaim() {
+      if (disconnectTimer) clearTimeout(disconnectTimer);
+      disconnectTimer = null;
+      disconnectDeadline = 0;
+      const shouldClaim = onlineGame?.status === 'playing'
+        && onlineGame.wagerAmount > 0
+        && onlineConnected
+        && !onlineGame.opponentOnline;
+      if (!shouldClaim) return;
+
+      const opponentMark = onlineGame.playerMark === 'X' ? 'O' : 'X';
+      const lastSeen = Date.parse(onlineGame.lastSeenAt?.[opponentMark] || '') || Date.now();
+      disconnectDeadline = lastSeen + 30_000;
+
+      const tick = () => {
+        if (!onlineGame || onlineGame.status !== 'playing' || onlineGame.opponentOnline) {
+          scheduleDisconnectClaim();
+          return;
+        }
+        const remaining = disconnectDeadline - Date.now();
+        render();
+        if (remaining <= 0) {
+          void claimDisconnectedOpponent();
+          return;
+        }
+        disconnectTimer = setTimeout(tick, Math.min(1000, remaining));
+      };
+      tick();
+    }
+
+    function syncOnlineRuntime() {
+      const shouldHeartbeat = Boolean(onlineClient && onlineGame?.roomId && onlineConnected);
+      if (shouldHeartbeat && !heartbeatTimer) {
+        void onlineClient.heartbeat().catch((error) => {
+          onlineError = onlineApi.mapOnlineError(error);
+          render();
+        });
+        heartbeatTimer = setInterval(() => {
+          void onlineClient.heartbeat().catch(() => {});
+        }, 10_000);
+      } else if (!shouldHeartbeat && heartbeatTimer) {
+        clearInterval(heartbeatTimer);
+        heartbeatTimer = null;
+      }
+      scheduleDisconnectClaim();
     }
 
     function cancelAI() {
@@ -427,6 +591,10 @@
         && state.currentTurn === 'ai';
       const onlineBusy = isOnline && (onlineSubmitting || onlinePhase === 'connecting');
       const hasOnlineRoom = Boolean(onlineGame?.roomId);
+      const wagerAmount = Number(selectedValue('online-wager') || 0);
+      const registered = accountIdentity.kind === 'registered';
+      const wagerAllowed = wagerAmount === 0
+        || (registered && economySnapshot.loaded && economySnapshot.balance >= wagerAmount);
       const undoRequest = activeUndoRequest();
       const expiringPieces = gameType === 'tic_tac_toe'
         ? engine.getExpiringPieces(state.moveOrders || { X: [], O: [] })
@@ -445,7 +613,7 @@
       statusCard.dataset.result = state.status;
       markInfo.textContent = isOnline
         ? hasOnlineRoom
-          ? `你是${onlineGame.playerNames?.[onlineGame.playerMark] || '玩家'}，执${displayMark(onlineGame.playerMark)}，房间 ${onlineGame.roomCode}`
+          ? `你是${onlineGame.playerNames?.[onlineGame.playerMark] || '玩家'}，执${displayMark(onlineGame.playerMark)}，${onlineGame.wagerAmount > 0 ? `每人彩头 ${onlineGame.wagerAmount} 金币` : '本局无彩头'}`
           : '创建房间或输入房间码，邀请好友加入'
         : isPvp
           ? `${displayMark('X')}和${displayMark('O')}轮流落子，${displayMark('X')}先手`
@@ -460,16 +628,53 @@
       onlineRoomPanel.hidden = !isOnline;
       onlineRoomActions.hidden = hasOnlineRoom;
       onlineRoomSession.hidden = !hasOnlineRoom;
+      roomPreviewElement.hidden = !pendingRoomPreview || hasOnlineRoom;
+      if (pendingRoomPreview) {
+        roomPreviewGame.textContent = GAME_COPY[pendingRoomPreview.gameType]?.title || '线上对战';
+        roomPreviewHost.textContent = `${pendingRoomPreview.hostName}的房间`;
+        roomPreviewWager.textContent = pendingRoomPreview.wagerAmount > 0
+          ? `每人彩头 ${pendingRoomPreview.wagerAmount} 金币，胜者获得 ${pendingRoomPreview.wagerAmount * 2}`
+          : '本局不使用金币彩头';
+      }
       onlineRoomMessage.textContent = onlineError || (
         isOnline && !onlineClient?.isConfigured()
           ? '线上服务尚未配置，AI 和本地双人仍可使用'
           : ''
       );
       roomCodeDisplay.textContent = onlineGame?.roomCode || '------';
-      createRoomButton.disabled = onlineBusy || !onlineClient?.isConfigured();
+      roomWagerDisplay.textContent = onlineGame?.wagerAmount > 0
+        ? `每人彩头 ${onlineGame.wagerAmount} 金币，奖池 ${onlineGame.wagerAmount * 2}`
+        : '本局无彩头';
+      const ownWon = onlineGame?.status === `${onlineGame?.playerMark?.toLowerCase()}_win`;
+      const settled = isOnlineFinished();
+      roomSettlementMessage.hidden = !settled || !onlineGame?.wagerAmount;
+      roomSettlementMessage.textContent = onlineGame?.status === 'draw'
+        ? `平局，已退回 ${onlineGame.wagerAmount} 金币`
+        : ownWon
+          ? `你获得 ${onlineGame.wagerAmount * 2} 金币`
+          : `本局扣除 ${onlineGame?.wagerAmount || 0} 金币`;
+      const disconnectSeconds = disconnectDeadline
+        ? Math.max(0, Math.ceil((disconnectDeadline - Date.now()) / 1000))
+        : 0;
+      disconnectCountdown.hidden = !disconnectDeadline || isOnlineFinished();
+      disconnectCountdown.textContent = claimingDisconnect
+        ? '正在确认对手掉线'
+        : `对手掉线，${disconnectSeconds} 秒后判负`;
+      wagerBalanceNote.textContent = registered
+        ? `当前余额 ${economySnapshot.balance} 金币`
+        : '登录后可使用金币彩头';
+      document.querySelectorAll('input[name="online-wager"]').forEach((input) => {
+        input.disabled = hasOnlineRoom || (!registered && input.value !== '0');
+      });
+      createRoomButton.disabled = onlineBusy || !onlineClient?.isConfigured() || !wagerAllowed;
       joinRoomButton.disabled = onlineBusy
         || !onlineClient?.isConfigured()
         || !onlineApi?.isValidRoomCode(roomCodeInput.value);
+      confirmJoinButton.disabled = onlineBusy
+        || !pendingRoomPreview
+        || (pendingRoomPreview.wagerAmount > 0 && (
+          !registered || !economySnapshot.loaded || economySnapshot.balance < pendingRoomPreview.wagerAmount
+        ));
       copyRoomButton.disabled = onlineBusy || !hasOnlineRoom;
       leaveRoomButton.disabled = onlineBusy || !hasOnlineRoom;
       document.querySelectorAll('input[name="game-mode"]').forEach((input) => {
@@ -578,7 +783,7 @@
       const requestId = ++aiRequestId;
       if (gameType === 'gomoku' && state.difficulty === 'hard' && typeof Worker !== 'undefined') {
         if (aiWorker) aiWorker.terminate();
-        const worker = new Worker('gomoku-ai-worker.js');
+        const worker = new Worker('src/workers/gomoku-ai-worker.js');
         aiWorker = worker;
         return new Promise((resolve) => {
           worker.onmessage = (event) => {
@@ -738,6 +943,8 @@
       accountClient,
       onState: (game) => {
         if (state?.gameMode !== 'online' || game.gameType !== gameType) return;
+        const previousRound = onlineGame?.round;
+        const previousStatus = onlineGame?.status;
         onlineGame = game;
         state = {
           ...state,
@@ -750,10 +957,15 @@
         selectedCandidate = null;
         onlinePhase = game.status === 'waiting' ? 'waiting' : 'active';
         onlineError = '';
+        syncOnlineRuntime();
+        if (isOnlineFinished(game) && (previousStatus !== game.status || previousRound !== game.round)) {
+          void refreshEconomy();
+        }
         render();
       },
       onConnection: (connected) => {
         onlineConnected = connected;
+        syncOnlineRuntime();
         render();
       },
       onPresence: (opponentOnline) => {
@@ -761,6 +973,7 @@
           onlineGame = { ...onlineGame, opponentOnline };
           state = { ...state, opponentOnline };
         }
+        syncOnlineRuntime();
         render();
       },
       onError: (error) => {
@@ -776,7 +989,10 @@
       onlineError = '';
       render();
       try {
-        const game = await onlineClient.createRoom(gameType);
+        const wagerAmount = Number(selectedValue('online-wager') || 0);
+        const game = await onlineClient.createRoom(gameType, wagerAmount);
+        pendingRoomPreview = null;
+        await refreshEconomy();
         updateUrl(game.roomCode);
       } catch (error) {
         onlineError = onlineApi.mapOnlineError(error);
@@ -787,7 +1003,7 @@
       }
     }
 
-    async function joinOnlineRoom(roomCode = roomCodeInput.value) {
+    async function previewOnlineRoom(roomCode = roomCodeInput.value) {
       if (!onlineClient || onlineSubmitting) return;
       const normalized = onlineApi.normalizeRoomCode(roomCode);
       roomCodeInput.value = normalized;
@@ -799,9 +1015,30 @@
       onlineSubmitting = true;
       onlinePhase = 'connecting';
       onlineError = '';
+      pendingRoomPreview = null;
+      render();
+      try {
+        pendingRoomPreview = await onlineClient.previewRoom(normalized, gameType);
+      } catch (error) {
+        onlineError = onlineApi.mapOnlineError(error);
+      } finally {
+        onlineSubmitting = false;
+        onlinePhase = onlineGame ? onlineGame.status === 'waiting' ? 'waiting' : 'active' : 'idle';
+        render();
+      }
+    }
+
+    async function joinOnlineRoom(roomCode = roomCodeInput.value) {
+      if (!onlineClient || onlineSubmitting || !pendingRoomPreview) return;
+      const normalized = onlineApi.normalizeRoomCode(roomCode);
+      onlineSubmitting = true;
+      onlinePhase = 'connecting';
+      onlineError = '';
       render();
       try {
         const game = await onlineClient.joinRoom(normalized, gameType);
+        pendingRoomPreview = null;
+        await refreshEconomy();
         updateUrl(game.roomCode);
       } catch (error) {
         onlineError = onlineApi.mapOnlineError(error);
@@ -819,6 +1056,7 @@
       render();
       try {
         await onlineClient.requestRematch();
+        await refreshEconomy();
       } catch (error) {
         onlineError = onlineApi.mapOnlineError(error);
       } finally {
@@ -834,6 +1072,7 @@
       render();
       try {
         await onlineClient.leaveRoom();
+        stopOnlineRuntime();
         onlineGame = null;
         onlineConnected = false;
         onlinePhase = 'idle';
@@ -842,6 +1081,8 @@
           difficulty: selectedValue('difficulty') || 'normal',
           firstPlayer: 'player',
         });
+        pendingRoomPreview = null;
+        await refreshEconomy();
         updateUrl(null);
       } catch (error) {
         onlineError = onlineApi.mapOnlineError(error);
@@ -859,6 +1100,113 @@
         onlineRoomMessage.textContent = '邀请链接已复制';
       } catch {
         onlineRoomMessage.textContent = `房间码：${onlineGame.roomCode}`;
+      }
+    }
+
+    function renderAdminCodes() {
+      adminRedeemList.textContent = '';
+      if (adminCodes.length === 0) {
+        const empty = document.createElement('p');
+        empty.className = 'admin-empty-state';
+        empty.textContent = '还没有兑换码，先生成一个。';
+        adminRedeemList.append(empty);
+        return;
+      }
+      const fragment = document.createDocumentFragment();
+      adminCodes.forEach((code) => {
+        const row = document.createElement('article');
+        row.className = 'admin-code-row';
+        const expired = code.expiresAt && Date.parse(code.expiresAt) <= Date.now();
+        const exhausted = code.claimCount >= code.maxClaims;
+        const status = !code.active ? '已停用' : expired ? '已过期' : exhausted ? '已领完' : '可领取';
+
+        const main = document.createElement('div');
+        const hint = document.createElement('strong');
+        hint.textContent = code.codeHint;
+        const meta = document.createElement('span');
+        meta.textContent = `${code.amount} 金币 · ${code.claimCount}/${code.maxClaims} 人 · ${formatAdminCodeExpiry(code.expiresAt)} · ${status}`;
+        main.append(hint, meta);
+
+        const disableButton = document.createElement('button');
+        disableButton.type = 'button';
+        disableButton.className = 'button secondary';
+        disableButton.dataset.disableCode = code.id;
+        disableButton.textContent = '停用';
+        disableButton.disabled = !code.active;
+        row.append(main, disableButton);
+        fragment.append(row);
+      });
+      adminRedeemList.append(fragment);
+    }
+
+    async function loadAdminCodes() {
+      if (!economyClient || !economySnapshot.isAdmin) return;
+      setAdminMessage('正在加载兑换码');
+      try {
+        adminCodes = await economyClient.listRedeemCodes();
+        setAdminMessage();
+        renderAdminCodes();
+      } catch (error) {
+        setAdminMessage(economyApi.mapEconomyError(error), 'error');
+      }
+    }
+
+    function showAdminView() {
+      if (!economySnapshot.isAdmin) return;
+      if (accountDialog?.open) accountDialog.close();
+      home.hidden = true;
+      gameView.hidden = true;
+      adminView.hidden = false;
+      void loadAdminCodes();
+    }
+
+    async function createAdminRedeemCode() {
+      if (!economyClient || !economySnapshot.isAdmin) return;
+      const data = new FormData(adminRedeemForm);
+      const expiryValue = String(data.get('expiresAt') || '');
+      const expiresAt = expiryValue ? new Date(expiryValue).toISOString() : null;
+      setAdminMessage('正在生成兑换码');
+      try {
+        const code = await economyClient.createRedeemCode({
+          amount: Number(data.get('amount')),
+          maxClaims: Number(data.get('maxClaims')),
+          expiresAt,
+        });
+        adminGeneratedCodeValue.textContent = code.code;
+        adminGeneratedCode.hidden = false;
+        setAdminMessage('兑换码已生成，请立即复制保存', 'success');
+        await loadAdminCodes();
+      } catch (error) {
+        setAdminMessage(economyApi.mapEconomyError(error), 'error');
+      }
+    }
+
+    async function disableAdminRedeemCode(id) {
+      if (!economyClient || !economySnapshot.isAdmin) return;
+      try {
+        await economyClient.disableRedeemCode(id);
+        setAdminMessage('兑换码已停用', 'success');
+        await loadAdminCodes();
+      } catch (error) {
+        setAdminMessage(economyApi.mapEconomyError(error), 'error');
+      }
+    }
+
+    async function redeemCoins() {
+      if (!economyClient || accountBusy) return;
+      setAccountBusy(true);
+      setRedeemMessage();
+      try {
+        const result = await economyClient.redeemCode(redeemCodeInput.value);
+        economySnapshot = { ...economySnapshot, balance: result.balance, loaded: true };
+        redeemCodeInput.value = '';
+        setRedeemMessage(`已领取 ${result.grantedAmount} 金币`, 'success');
+      } catch (error) {
+        setRedeemMessage(economyApi.mapEconomyError(error), 'error');
+      } finally {
+        setAccountBusy(false);
+        renderAccount();
+        if (state) render();
       }
     }
 
@@ -886,6 +1234,7 @@
       engine = engineFor(type);
       if (!engine) return;
       if (accountDialog?.open) accountDialog.close();
+      adminView.hidden = true;
       home.hidden = true;
       gameView.hidden = false;
       document.querySelector('input[name="game-mode"][value="ai"]').checked = true;
@@ -905,11 +1254,12 @@
         roomCodeInput.value = roomCode;
       }
       newRound();
-      if (roomCode) void joinOnlineRoom(roomCode);
+      if (roomCode) void previewOnlineRoom(roomCode);
     }
 
     async function showHome({ replaceUrl = false } = {}) {
       cancelAI();
+      stopOnlineRuntime();
       if (onlineGame && onlineClient) {
         try {
           await onlineClient.leaveRoom();
@@ -918,10 +1268,12 @@
         }
       }
       onlineGame = null;
+      pendingRoomPreview = null;
       gameType = null;
       state = null;
       selectedCandidate = null;
       gameView.hidden = true;
+      adminView.hidden = true;
       home.hidden = false;
       updateUrl(null, replaceUrl);
     }
@@ -931,6 +1283,7 @@
     });
     accountButton?.addEventListener('click', () => {
       renderAccount();
+      if (accountIdentity.kind === 'registered') void refreshEconomy({ reportError: true });
       if (!accountClient?.isConfigured()) {
         setAccountMessage('账号服务尚未配置，游客仍可使用本地模式', 'error');
       }
@@ -967,8 +1320,37 @@
     accountLogoutButton?.addEventListener('click', () => {
       void runAccountAction(() => accountClient.logout(), '已退出账号');
     });
+    redeemCodeForm?.addEventListener('submit', (event) => {
+      event.preventDefault();
+      void redeemCoins();
+    });
+    redeemCodeInput?.addEventListener('input', () => {
+      redeemCodeInput.value = economyApi.formatRedeemCode(redeemCodeInput.value);
+      setRedeemMessage();
+    });
+    openAdminButton?.addEventListener('click', showAdminView);
     accountDialog?.addEventListener('click', (event) => {
       if (event.target === accountDialog) accountDialog.close();
+    });
+    adminBackButton?.addEventListener('click', () => void showHome());
+    adminRedeemForm?.addEventListener('submit', (event) => {
+      event.preventDefault();
+      void createAdminRedeemCode();
+    });
+    copyGeneratedCodeButton?.addEventListener('click', async () => {
+      const code = adminGeneratedCodeValue.textContent;
+      if (!code) return;
+      try {
+        await globalScope.navigator.clipboard.writeText(code);
+        setAdminMessage('兑换码已复制', 'success');
+      } catch {
+        setAdminMessage(`请手动复制：${code}`, 'error');
+      }
+    });
+    refreshAdminCodesButton?.addEventListener('click', () => void loadAdminCodes());
+    adminRedeemList?.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-disable-code]');
+      if (button) void disableAdminRedeemCode(button.dataset.disableCode);
     });
     backHomeButton.addEventListener('click', () => void showHome());
     document.querySelectorAll('input[name="difficulty"], input[name="first-player"]')
@@ -1007,14 +1389,26 @@
 
     roomCodeInput.addEventListener('input', () => {
       roomCodeInput.value = onlineApi.normalizeRoomCode(roomCodeInput.value);
+      pendingRoomPreview = null;
       onlineError = '';
       render();
     });
     roomCodeInput.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') void joinOnlineRoom();
+      if (event.key === 'Enter') void previewOnlineRoom();
     });
+    document.querySelectorAll('input[name="online-wager"]')
+      .forEach((input) => input.addEventListener('change', () => {
+        onlineError = '';
+        render();
+      }));
     createRoomButton.addEventListener('click', () => void createOnlineRoom());
-    joinRoomButton.addEventListener('click', () => void joinOnlineRoom());
+    joinRoomButton.addEventListener('click', () => void previewOnlineRoom());
+    confirmJoinButton.addEventListener('click', () => void joinOnlineRoom());
+    cancelJoinButton.addEventListener('click', () => {
+      pendingRoomPreview = null;
+      onlineError = '';
+      render();
+    });
     copyRoomButton.addEventListener('click', () => void copyInvitation());
     leaveRoomButton.addEventListener('click', () => void leaveOnlineRoom());
     acceptUndoButton.addEventListener('click', () => void submitOnlineUndo('accept'));
@@ -1049,12 +1443,19 @@
     accountClient?.subscribe((identity) => {
       accountIdentity = identity;
       renderAccount();
+      void refreshEconomy();
+    });
+    economyClient?.subscribe((snapshot) => {
+      economySnapshot = snapshot;
+      renderAccount();
+      if (state) render();
     });
     renderAccount();
     if (accountClient?.isConfigured()) {
       void accountClient.initialize().then((identity) => {
         accountIdentity = identity;
         renderAccount();
+        return refreshEconomy();
       }).catch((error) => {
         setAccountMessage(accountApi.mapAccountError(error), 'error');
       });

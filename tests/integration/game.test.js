@@ -380,30 +380,32 @@ test('落子动画第一帧必须可见，不能用透明度隐藏棋子', () =>
   assert.match(placeMarkKeyframes, /transform:\s*scale\(0\.[89]/);
 });
 
-test('页面先显示双游戏首页并按顺序加载两个规则引擎', () => {
+test('页面默认显示门户并保留独立游戏专区和双游戏入口', () => {
   const html = fs.readFileSync('./index.html', 'utf8');
-  assert.match(html, /id="game-home"/);
+  assert.match(html, /id="portal-home"/);
+  assert.match(html, /id="game-home"[^>]*hidden/);
   assert.match(html, /data-game-type="tic_tac_toe"/);
   assert.match(html, /data-game-type="gomoku"/);
   assert.match(html, /id="game-view"[^>]*hidden/);
   assert.match(html, /id="back-home-button"/);
+  assert.match(html, /id="game-hub-back-button"/);
   assert.match(
     html,
     /src="src\/domain\/games\/tic-tac-toe\.js"[^>]*defer[\s\S]*src="src\/domain\/games\/gomoku\.js"[^>]*defer[\s\S]*src="src\/routes\/game\.js"[^>]*defer/,
   );
 });
 
-test('首页提供个人资料入口、登录注册表单并在游戏脚本前加载账号服务', () => {
+test('全站导航提供统一身份入口并在游戏脚本前加载账号服务', () => {
   const html = fs.readFileSync('./index.html', 'utf8');
-  const homeStart = html.indexOf('id="game-home"');
-  const gameViewStart = html.indexOf('id="game-view"');
-  const homeMarkup = html.slice(homeStart, gameViewStart);
+  const navStart = html.indexOf('class="site-nav"');
+  const portalStart = html.indexOf('id="portal-home"');
+  const navMarkup = html.slice(navStart, portalStart);
 
-  assert.match(homeMarkup, /id="account-button"/);
-  assert.match(homeMarkup, /id="account-dialog"/);
-  assert.match(homeMarkup, /id="account-login-form"/);
-  assert.match(homeMarkup, /id="account-register-form"/);
-  assert.match(homeMarkup, /id="account-profile-form"/);
+  assert.match(navMarkup, /id="account-button"/);
+  assert.match(html, /id="account-dialog"/);
+  assert.match(html, /id="account-login-form"/);
+  assert.match(html, /id="account-register-form"/);
+  assert.match(html, /id="account-profile-form"/);
   assert.match(html, /id="register-username"[^>]*autocomplete="username"/);
   assert.match(html, /id="register-password"[^>]*autocomplete="new-password"/);
   assert.match(html, /id="register-game-name"[^>]*maxlength="16"/);
@@ -485,6 +487,36 @@ test('管理员兑换码有效期使用稳定易读格式', () => {
   assert.equal(
     app.formatAdminCodeExpiry('2026-12-31T08:30:00.000Z'),
     '2026-12-31 08:30 UTC',
+  );
+});
+
+test('应用路由优先解析棋局和房间，其次游戏专区，最后门户', () => {
+  assert.deepEqual(app.resolveAppRoute('https://example.com/'), {
+    view: 'portal', gameType: null, roomCode: null,
+  });
+  assert.deepEqual(app.resolveAppRoute('https://example.com/?view=games'), {
+    view: 'games', gameType: null, roomCode: null,
+  });
+  assert.deepEqual(app.resolveAppRoute('https://example.com/?game=gomoku'), {
+    view: 'game', gameType: 'gomoku', roomCode: null,
+  });
+  assert.deepEqual(app.resolveAppRoute('https://example.com/?room=abc23d'), {
+    view: 'game', gameType: 'tic_tac_toe', roomCode: 'ABC23D',
+  });
+});
+
+test('应用 URL 构造会清理冲突参数并保留无关查询参数', () => {
+  assert.equal(
+    app.buildAppUrl('https://example.com/?foo=1&game=gomoku&room=ABC23D', { view: 'portal' }),
+    'https://example.com/?foo=1',
+  );
+  assert.equal(
+    app.buildAppUrl('https://example.com/?foo=1', { view: 'games' }),
+    'https://example.com/?foo=1&view=games',
+  );
+  assert.equal(
+    app.buildAppUrl('https://example.com/?view=games', { view: 'game', gameType: 'gomoku' }),
+    'https://example.com/?game=gomoku',
   );
 });
 

@@ -23,6 +23,47 @@
     },
   };
 
+  const ROUTE_ROOM_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+  function normalizeRouteRoomCode(value) {
+    return String(value || '')
+      .toUpperCase()
+      .split('')
+      .filter((character) => ROUTE_ROOM_ALPHABET.includes(character))
+      .join('')
+      .slice(0, 6);
+  }
+
+  function resolveAppRoute(urlLike) {
+    const url = new URL(urlLike, 'https://hyl.space/');
+    const roomCandidate = normalizeRouteRoomCode(url.searchParams.get('room'));
+    const roomCode = roomCandidate.length === 6 ? roomCandidate : null;
+    const requestedGame = url.searchParams.get('game');
+    const gameType = GAME_TYPES.includes(requestedGame)
+      ? requestedGame
+      : (roomCode ? 'tic_tac_toe' : null);
+
+    if (gameType) return { view: 'game', gameType, roomCode };
+    if (url.searchParams.get('view') === 'games') {
+      return { view: 'games', gameType: null, roomCode: null };
+    }
+    return { view: 'portal', gameType: null, roomCode: null };
+  }
+
+  function buildAppUrl(currentUrl, { view, gameType = null, roomCode = null } = {}) {
+    const url = new URL(currentUrl, 'https://hyl.space/');
+    url.searchParams.delete('view');
+    url.searchParams.delete('game');
+    url.searchParams.delete('room');
+
+    if (view === 'games') url.searchParams.set('view', 'games');
+    if (view === 'game' && GAME_TYPES.includes(gameType)) {
+      url.searchParams.set('game', gameType);
+      if (roomCode) url.searchParams.set('room', normalizeRouteRoomCode(roomCode));
+    }
+    return url.toString();
+  }
+
   function getDefaultPlacementMode(pointerCoarse, storedMode) {
     if (storedMode === 'single' || storedMode === 'confirm') return storedMode;
     return pointerCoarse ? 'confirm' : 'single';
@@ -89,9 +130,11 @@
   }
 
   const exported = {
+    buildAppUrl,
     getDefaultPlacementMode,
     getLocalUndoCount,
     getScoreKey,
+    resolveAppRoute,
     formatAdminCodeExpiry,
     formatFinishReason,
     formatMatchResult,
@@ -104,10 +147,12 @@
   if (typeof module !== 'undefined' && module.exports) module.exports = exported;
 
   function mountGame() {
+    const portalHome = document.querySelector('#portal-home');
     const home = document.querySelector('#game-home');
     const gameView = document.querySelector('#game-view');
     const leaderboardView = document.querySelector('#leaderboard-view');
     const backHomeButton = document.querySelector('#back-home-button');
+    const gameHubBackButton = document.querySelector('#game-hub-back-button');
     const boardElement = document.querySelector('#board');
     if (!home || !gameView || !boardElement) return;
 
@@ -567,10 +612,13 @@
 
     async function showLeaderboardView() {
       if (accountDialog?.open) accountDialog.close();
+      portalHome.hidden = true;
       home.hidden = true;
       gameView.hidden = true;
       adminView.hidden = true;
       leaderboardView.hidden = false;
+      document.body.dataset.view = 'leaderboard';
+      globalScope.HYLPortal?.deactivate?.();
       await loadLeaderboard();
     }
 
@@ -860,13 +908,20 @@
       cells = [...boardElement.querySelectorAll('.cell')];
     }
 
-    function updateUrl(roomCode = null, replace = true) {
+    function updateGameUrl(roomCode = null, replace = true) {
       if (!globalScope.history?.pushState) return;
-      const url = new URL(globalScope.location.href);
-      if (gameType) url.searchParams.set('game', gameType);
-      else url.searchParams.delete('game');
-      if (roomCode) url.searchParams.set('room', roomCode);
-      else url.searchParams.delete('room');
+      const url = buildAppUrl(globalScope.location.href, {
+        view: 'game',
+        gameType,
+        roomCode,
+      });
+      const method = replace ? 'replaceState' : 'pushState';
+      globalScope.history[method](null, '', url);
+    }
+
+    function updateViewUrl(view, replace = true) {
+      if (!globalScope.history?.pushState) return;
+      const url = buildAppUrl(globalScope.location.href, { view });
       const method = replace ? 'replaceState' : 'pushState';
       globalScope.history[method](null, '', url);
     }
@@ -1347,7 +1402,7 @@
         const game = await onlineClient.createRoom(gameType, wagerAmount);
         pendingRoomPreview = null;
         await refreshEconomy();
-        updateUrl(game.roomCode);
+        updateGameUrl(game.roomCode);
       } catch (error) {
         onlineError = onlineApi.mapOnlineError(error);
       } finally {
@@ -1393,7 +1448,7 @@
         const game = await onlineClient.joinRoom(normalized, gameType);
         pendingRoomPreview = null;
         await refreshEconomy();
-        updateUrl(game.roomCode);
+        updateGameUrl(game.roomCode);
       } catch (error) {
         onlineError = onlineApi.mapOnlineError(error);
       } finally {
@@ -1437,7 +1492,7 @@
         });
         pendingRoomPreview = null;
         await refreshEconomy();
-        updateUrl(null);
+        updateGameUrl(null);
       } catch (error) {
         onlineError = onlineApi.mapOnlineError(error);
       } finally {
@@ -1582,10 +1637,13 @@
     function showAdminView() {
       if (!economySnapshot.isAdmin) return;
       if (accountDialog?.open) accountDialog.close();
+      portalHome.hidden = true;
       home.hidden = true;
       gameView.hidden = true;
       leaderboardView.hidden = true;
       adminView.hidden = false;
+      document.body.dataset.view = 'admin';
+      globalScope.HYLPortal?.deactivate?.();
       void loadAdminCodes();
       void loadAdminSeasons();
     }
@@ -1664,10 +1722,13 @@
       engine = engineFor(type);
       if (!engine) return;
       if (accountDialog?.open) accountDialog.close();
+      portalHome.hidden = true;
       adminView.hidden = true;
       leaderboardView.hidden = true;
       home.hidden = true;
       gameView.hidden = false;
+      document.body.dataset.view = 'game';
+      globalScope.HYLPortal?.deactivate?.();
       document.querySelector('input[name="game-mode"][value="ai"]').checked = true;
       const storedMode = globalScope.localStorage?.getItem(PLACEMENT_STORAGE_KEY);
       placementMode = getDefaultPlacementMode(
@@ -1679,7 +1740,7 @@
       );
       if (placementInput) placementInput.checked = true;
       makeBoardCells();
-      updateUrl(roomCode, replaceUrl);
+      updateGameUrl(roomCode, replaceUrl);
       if (roomCode) {
         document.querySelector('input[name="game-mode"][value="online"]').checked = true;
         roomCodeInput.value = roomCode;
@@ -1688,7 +1749,7 @@
       if (roomCode) void previewOnlineRoom(roomCode);
     }
 
-    async function showHome({ replaceUrl = false } = {}) {
+    async function resetGameSession() {
       cancelAI();
       stopOnlineRuntime();
       if (onlineGame && onlineClient) {
@@ -1703,12 +1764,37 @@
       gameType = null;
       state = null;
       selectedCandidate = null;
+    }
+
+    async function showGameHome({ replaceUrl = false } = {}) {
+      await resetGameSession();
+      portalHome.hidden = true;
       gameView.hidden = true;
       adminView.hidden = true;
       leaderboardView.hidden = true;
       home.hidden = false;
-      updateUrl(null, replaceUrl);
+      document.body.dataset.view = 'games';
+      globalScope.HYLPortal?.deactivate?.();
+      updateViewUrl('games', replaceUrl);
     }
+
+    async function showPortal({ replaceUrl = false } = {}) {
+      await resetGameSession();
+      gameView.hidden = true;
+      adminView.hidden = true;
+      leaderboardView.hidden = true;
+      home.hidden = true;
+      portalHome.hidden = false;
+      document.body.dataset.view = 'portal';
+      updateViewUrl('portal', replaceUrl);
+      globalScope.HYLPortal?.activate?.();
+    }
+
+    Object.assign(exported, {
+      enterGame,
+      openGameHome: showGameHome,
+      openPortal: showPortal,
+    });
 
     document.querySelectorAll('[data-game-type]').forEach((button) => {
       button.addEventListener('click', () => enterGame(button.dataset.gameType));
@@ -1768,8 +1854,9 @@
     accountDialog?.addEventListener('click', (event) => {
       if (event.target === accountDialog) accountDialog.close();
     });
-    adminBackButton?.addEventListener('click', () => void showHome());
-    leaderboardBackButton?.addEventListener('click', () => void showHome());
+    adminBackButton?.addEventListener('click', () => void showGameHome());
+    leaderboardBackButton?.addEventListener('click', () => void showGameHome());
+    gameHubBackButton?.addEventListener('click', () => void showPortal());
     leaderboardSeasonSelect?.addEventListener('change', () => {
       selectedSeasonId = leaderboardSeasonSelect.value || null;
       void loadLeaderboard();
@@ -1809,7 +1896,7 @@
       const button = event.target.closest('[data-disable-code]');
       if (button) void disableAdminRedeemCode(button.dataset.disableCode);
     });
-    backHomeButton.addEventListener('click', () => void showHome());
+    backHomeButton.addEventListener('click', () => void showGameHome());
     document.querySelectorAll('input[name="difficulty"], input[name="first-player"]')
       .forEach((input) => input.addEventListener('change', () => newRound()));
     document.querySelectorAll('input[name="game-mode"]')
@@ -1882,20 +1969,26 @@
     clearScoreButton.addEventListener('click', () => newRound({ clearScores: true }));
 
     globalScope.addEventListener('popstate', () => {
-      const url = new URL(globalScope.location.href);
-      const requestedGame = url.searchParams.get('game');
-      if (GAME_TYPES.includes(requestedGame)) enterGame(requestedGame, { replaceUrl: true });
-      else void showHome({ replaceUrl: true });
+      const route = resolveAppRoute(globalScope.location.href);
+      if (route.view === 'game') {
+        enterGame(route.gameType, { replaceUrl: true, roomCode: route.roomCode });
+      } else if (route.view === 'games') {
+        void showGameHome({ replaceUrl: true });
+      } else {
+        void showPortal({ replaceUrl: true });
+      }
     });
 
-    const initialUrl = new URL(globalScope.location.href);
-    const requestedRoom = onlineApi?.normalizeRoomCode(initialUrl.searchParams.get('room'));
-    const requestedGame = initialUrl.searchParams.get('game') || (requestedRoom ? 'tic_tac_toe' : null);
-    if (GAME_TYPES.includes(requestedGame)) {
-      enterGame(requestedGame, {
+    const initialRoute = resolveAppRoute(globalScope.location.href);
+    if (initialRoute.view === 'game') {
+      enterGame(initialRoute.gameType, {
         replaceUrl: true,
-        roomCode: onlineApi?.isValidRoomCode(requestedRoom) ? requestedRoom : null,
+        roomCode: initialRoute.roomCode,
       });
+    } else if (initialRoute.view === 'games') {
+      void showGameHome({ replaceUrl: true });
+    } else {
+      void showPortal({ replaceUrl: true });
     }
     accountClient?.subscribe((identity) => {
       accountIdentity = identity;

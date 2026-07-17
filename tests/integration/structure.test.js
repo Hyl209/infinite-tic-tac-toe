@@ -3,7 +3,9 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
 const expectedFiles = [
+  'src/config/portal.js',
   'src/routes/game.js',
+  'src/routes/portal.js',
   'src/services/account.js',
   'src/services/online.js',
   'src/domain/games/tic-tac-toe.js',
@@ -13,11 +15,15 @@ const expectedFiles = [
   'src/types/game.d.ts',
   'src/workers/gomoku-ai-worker.js',
   'assets/styles/game.css',
+  'assets/styles/portal.css',
+  'assets/vendor/gsap/gsap.min.js',
+  'assets/vendor/gsap/ScrollTrigger.min.js',
   'tests/unit/account.test.js',
   'tests/unit/online.test.js',
   'tests/unit/tic-tac-toe.test.js',
   'tests/unit/gomoku.test.js',
   'tests/integration/game.test.js',
+  'tests/integration/portal.test.js',
   'tests/integration/supabase.test.js',
   'tests/integration/structure.test.js',
   'database/supabase/setup.sql',

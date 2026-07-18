@@ -84,6 +84,7 @@ function createSocialInboxHarness({
   identity = { kind: 'guest', username: null },
   listRequests = async () => [],
   listInvites = async () => [],
+  onSubscribe = null,
 } = {}) {
   const region = new FakeSocialElement();
   const document = new EventTarget();
@@ -123,6 +124,7 @@ function createSocialInboxHarness({
         async subscribe(listener) {
           this.subscriptions += 1;
           realtimeListener = listener;
+          onSubscribe?.(listener, identityKey);
           let active = true;
           return async () => {
             if (!active) return;
@@ -183,6 +185,10 @@ function createNotificationBellHarness({ identity, unreadCounts = [] }) {
     },
     removeEventListener(type, listener) {
       if (listeners.get(type) === listener) listeners.delete(type);
+    },
+    dispatchEvent(event) {
+      listeners.get(event.type)?.(event);
+      return true;
     },
   };
   let currentIdentity = identity;
@@ -647,4 +653,102 @@ test('social inbox isolates late account refreshes and clears subscriptions, toa
 
   controller.destroy();
   assert.equal(harness.socialCounts.at(-1), 0);
+});
+
+test('social inbox cannot let a later silent baseline swallow an event refresh', async () => {
+  let resolveEventRequests;
+  const eventRequests = new Promise((resolve) => { resolveEventRequests = resolve; });
+  let requestCalls = 0;
+  const newRequest = {
+    id: 'request-new', direction: 'incoming', player: { displayName: '新玩家' },
+  };
+  const harness = createSocialInboxHarness({
+    identity: { kind: 'registered', username: 'player-a' },
+    listRequests: async () => {
+      requestCalls += 1;
+      return requestCalls === 1 ? eventRequests : [newRequest];
+    },
+    onSubscribe(listener) {
+      listener({ type: 'changed' });
+    },
+  });
+  const controller = socialInbox.mount({
+    document: harness.document,
+    accountPanel: harness.accountPanel,
+    friendsApi: harness.friendsApi,
+  });
+
+  await flushAsyncWork();
+  assert.equal(harness.socialCounts.at(-1), 0);
+  assert.equal(harness.region.children.length, 0);
+  resolveEventRequests([newRequest]);
+  await flushAsyncWork();
+  assert.equal(harness.socialCounts.at(-1), 1);
+  assert.equal(harness.region.children.length, 1);
+  controller.destroy();
+});
+
+test('social inbox ignores an older silent baseline after a realtime database refresh commits', async () => {
+  let resolveInitialRequests;
+  const initialRequests = new Promise((resolve) => { resolveInitialRequests = resolve; });
+  let requestCalls = 0;
+  const newRequest = {
+    id: 'request-during-load', direction: 'incoming', player: { displayName: '实时玩家' },
+  };
+  const harness = createSocialInboxHarness({
+    identity: { kind: 'registered', username: 'player-a' },
+    listRequests: async () => {
+      requestCalls += 1;
+      return requestCalls === 1 ? initialRequests : [newRequest];
+    },
+  });
+  const controller = socialInbox.mount({
+    document: harness.document,
+    accountPanel: harness.accountPanel,
+    friendsApi: harness.friendsApi,
+  });
+
+  await flushAsyncWork();
+  harness.clients[0].emitRealtime();
+  await flushAsyncWork();
+  assert.equal(harness.socialCounts.at(-1), 1);
+  assert.equal(harness.region.children.length, 1);
+
+  resolveInitialRequests([]);
+  await flushAsyncWork();
+  assert.equal(harness.socialCounts.at(-1), 1);
+  assert.equal(harness.region.children.length, 1);
+  controller.destroy();
+});
+
+test('notification bell keeps a newer social event count when an older database load finishes', async () => {
+  let resolveOldRequests;
+  const oldRequests = new Promise((resolve) => { resolveOldRequests = resolve; });
+  const harness = createNotificationBellHarness({
+    identity: { kind: 'registered', username: 'player-a' },
+  });
+  const controller = notificationBell.mount({
+    document: harness.document,
+    accountPanel: harness.accountPanel,
+    notificationsApi: {
+      createNotificationsClient: () => ({
+        list: async () => [],
+        countUnread: async () => 4,
+      }),
+    },
+    friendsApi: {
+      createFriendsClient: () => ({
+        listRequests: async () => oldRequests,
+        listInvites: async () => [],
+        disconnect: async () => {},
+      }),
+    },
+  });
+
+  harness.document.dispatchEvent(new CustomEvent('hyl:social-count', { detail: { count: 7 } }));
+  assert.equal(harness.badge.textContent, '7');
+  resolveOldRequests([{ id: 'old-request', direction: 'incoming' }]);
+  await controller.refresh();
+  assert.equal(harness.badge.textContent, '11');
+  controller.destroy();
 });

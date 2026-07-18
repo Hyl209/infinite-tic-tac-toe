@@ -32,6 +32,7 @@
     let pendingRefresh = null;
     let siteUnreadCount = 0;
     let socialPendingCount = 0;
+    let socialCountVersion = 0;
     let destroyed = false;
 
     function clearBadge() {
@@ -63,6 +64,7 @@
     function refresh() {
       if (destroyed) return Promise.resolve();
       const version = requestVersion;
+      const socialVersion = socialCountVersion;
       if (pendingRefresh?.version === version) return pendingRefresh.promise;
 
       const currentIdentity = identity;
@@ -79,7 +81,9 @@
             ]);
             if (!destroyed && version === requestVersion) {
               siteUnreadCount = Math.max(0, Math.floor(Number(unreadCount) || 0));
-              socialPendingCount = Math.max(0, Math.floor(Number(socialCount) || 0));
+              if (socialVersion === socialCountVersion) {
+                socialPendingCount = Math.max(0, Math.floor(Number(socialCount) || 0));
+              }
               renderUnread(siteUnreadCount + socialPendingCount);
             }
           } else {
@@ -113,6 +117,7 @@
 
     function handleSocialCount(event) {
       if (destroyed || identity.kind !== 'registered') return;
+      socialCountVersion += 1;
       socialPendingCount = Math.max(0, Math.floor(Number(event?.detail?.count) || 0));
       renderUnread(siteUnreadCount + socialPendingCount);
     }

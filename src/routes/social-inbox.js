@@ -31,6 +31,7 @@
     let identity = accountPanel.getIdentity?.() || accountClient.getIdentity?.() || { kind: 'guest' };
     let lifecycleVersion = 0;
     let refreshVersion = 0;
+    let realtimeVersion = 0;
     let friendsClient = null;
     let unsubscribeRealtime = null;
     let destroyed = false;
@@ -112,7 +113,9 @@
       }
       friendsClient = client;
       try {
+        const baselineRealtimeVersion = realtimeVersion;
         const cleanup = await client.subscribe(() => {
+          realtimeVersion += 1;
           void refresh({ notifyNew: true, version, client });
         });
         if (destroyed || version !== lifecycleVersion || client !== friendsClient) {
@@ -121,7 +124,7 @@
           return;
         }
         unsubscribeRealtime = cleanup;
-        await refresh({ version, client });
+        if (realtimeVersion === baselineRealtimeVersion) await refresh({ version, client });
       } catch {
         if (!destroyed && version === lifecycleVersion && client === friendsClient) emitCount(0);
       }
@@ -133,6 +136,7 @@
       identity = { ...nextIdentity };
       lifecycleVersion += 1;
       refreshVersion += 1;
+      realtimeVersion += 1;
       stopClient();
       clearToasts();
       emitCount(0);
@@ -151,6 +155,7 @@
         destroyed = true;
         lifecycleVersion += 1;
         refreshVersion += 1;
+        realtimeVersion += 1;
         unsubscribeAccount();
         stopClient();
         clearToasts();

@@ -242,6 +242,10 @@ body[data-view="player"] {
 .checkin-weekdays,
 .checkin-grid {
   min-width: 620px;
+}
+
+.checkin-weekdays,
+.checkin-week {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
 }
@@ -262,6 +266,8 @@ body[data-view="player"] {
 }
 
 .checkin-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   border-top: 1px solid var(--portal-line);
   border-left: 1px solid var(--portal-line);
 }

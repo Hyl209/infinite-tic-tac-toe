@@ -272,12 +272,18 @@
       grid.setAttribute('role', 'grid');
       grid.setAttribute('aria-label', `${monthLabel}签到月历`);
 
-      cells.forEach((cell) => {
+      let weekRow = null;
+      cells.forEach((cell, index) => {
+        if (index % 7 === 0) {
+          weekRow = createNode('div', 'checkin-week');
+          weekRow.setAttribute('role', 'row');
+          grid.append(weekRow);
+        }
         if (cell.kind === 'empty') {
           const empty = createNode('span', 'checkin-day checkin-day--empty');
           empty.dataset.calendarEmpty = '';
           empty.setAttribute('aria-hidden', 'true');
-          grid.append(empty);
+          weekRow.append(empty);
           return;
         }
 
@@ -309,7 +315,7 @@
           }
           dayNode.append(button);
         }
-        grid.append(dayNode);
+        weekRow.append(dayNode);
       });
 
       checkinCalendar.className = 'checkin-calendar';

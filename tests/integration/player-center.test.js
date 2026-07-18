@@ -440,6 +440,41 @@ test('calendar exposes signed, makeup, available, and future states as visible a
   }
 });
 
+test('calendar groups each week in a row and keeps gridcells out of the grid root', async () => {
+  const harness = createPlayerRuntimeHarness({
+    identity: { kind: 'registered', displayName: '立哥' },
+    month: createMonthSnapshot(2026, 8, {
+      '2026-08-04': { isToday: true },
+    }),
+  });
+  let instance;
+  try {
+    instance = player.mount();
+    await flushPromises();
+    const grid = harness.calendar.querySelector('.checkin-grid');
+    assert.ok(grid);
+    assert.ok(grid.children.length > 0);
+    assert.ok(grid.children.every((row) => row.getAttribute('role') === 'row'));
+    assert.equal(grid.children[0].children.length, 7);
+
+    const dayCells = harness.calendar.querySelectorAll('[data-checkin-status]');
+    assert.ok(dayCells.length > 0);
+    assert.ok(dayCells.every((cell) => (
+      cell.getAttribute('role') === 'gridcell'
+      && cell.parentElement?.getAttribute('role') === 'row'
+    )));
+    const emptyCells = harness.calendar.querySelectorAll('[data-calendar-empty]');
+    assert.equal(emptyCells.length, 5);
+    assert.ok(emptyCells.every((cell) => (
+      cell.parentElement?.getAttribute('role') === 'row'
+      && cell.getAttribute('aria-hidden') === 'true'
+    )));
+  } finally {
+    instance?.destroy();
+    harness.restore();
+  }
+});
+
 test('failed daily check-in is retryable without refreshing local wallet state', async () => {
   let attempts = 0;
   const today = new Intl.DateTimeFormat('en-CA', {

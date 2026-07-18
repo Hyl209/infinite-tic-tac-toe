@@ -3,3 +3,4 @@ output/
 .wrangler/
 .env
 **/supabase/.temp/
+docs/superpowers/plans/

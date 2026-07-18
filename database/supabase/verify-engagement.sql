@@ -8,6 +8,8 @@ declare
   v_name text;
   v_role text;
   v_privilege text;
+  v_actual_tables text[];
+  v_realtime_tables text[] := array['online_games','site_notifications','notification_reads'];
   v_tables text[] := array[
     'activities','activity_claims','site_notifications','notification_reads',
     'notification_claims','checkin_rule_versions','player_checkins'
@@ -31,6 +33,15 @@ declare
     'notification_claims.claimed_at','checkin_rule_versions.created_at','player_checkins.created_at'
   ];
 begin
+  select coalesce(array_agg(tablename::text), array[]::text[])
+  into v_actual_tables
+  from pg_publication_tables
+  where pubname = 'supabase_realtime' and schemaname = 'public';
+  if cardinality(v_actual_tables) <> cardinality(v_realtime_tables)
+     or not (v_actual_tables @> v_realtime_tables and v_actual_tables <@ v_realtime_tables) then
+    raise exception 'unexpected public tables in supabase_realtime: %', v_actual_tables;
+  end if;
+
   foreach v_name in array v_tables loop
     if to_regclass('public.' || v_name) is null then
       raise exception 'missing engagement table: public.%', v_name;
@@ -45,11 +56,19 @@ begin
         end if;
       end loop;
     end loop;
+    if v_name not in ('site_notifications','notification_reads') then
+      foreach v_role in array array['anon','authenticated'] loop
+        if has_table_privilege(v_role, 'public.' || v_name, 'SELECT') then
+          raise exception 'private engagement SELECT granted: % on public.%', v_role, v_name;
+        end if;
+      end loop;
+    end if;
   end loop;
 
   if not has_table_privilege('anon', 'public.site_notifications', 'SELECT')
      or not has_table_privilege('authenticated', 'public.site_notifications', 'SELECT')
-     or not has_table_privilege('authenticated', 'public.notification_reads', 'SELECT') then
+     or not has_table_privilege('authenticated', 'public.notification_reads', 'SELECT')
+     or has_table_privilege('anon', 'public.notification_reads', 'SELECT') then
     raise exception 'engagement SELECT table ACL baseline missing';
   end if;
 

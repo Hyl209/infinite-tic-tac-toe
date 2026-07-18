@@ -207,6 +207,207 @@ body[data-view="player"] {
   background: var(--portal-ink);
 }
 
+.checkin-calendar {
+  margin-top: 24px;
+  padding-bottom: 18px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--portal-line);
+  scrollbar-width: thin;
+}
+
+.checkin-calendar-heading {
+  min-width: 620px;
+  margin-bottom: 18px;
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.checkin-calendar-heading h3,
+.checkin-calendar-heading p {
+  margin: 0;
+}
+
+.checkin-calendar-heading h3 {
+  font-size: 1.1rem;
+  text-wrap: balance;
+}
+
+.checkin-calendar-heading p {
+  color: var(--portal-muted);
+  font-size: 0.8rem;
+}
+
+.checkin-weekdays,
+.checkin-grid {
+  min-width: 620px;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.checkin-weekdays {
+  border: 1px solid var(--portal-line);
+  border-bottom: 0;
+  color: var(--portal-muted);
+  background: var(--portal-surface);
+}
+
+.checkin-weekdays span {
+  min-height: 34px;
+  display: grid;
+  place-items: center;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.checkin-grid {
+  border-top: 1px solid var(--portal-line);
+  border-left: 1px solid var(--portal-line);
+}
+
+.checkin-day {
+  min-height: 118px;
+  padding: 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  border-right: 1px solid var(--portal-line);
+  border-bottom: 1px solid var(--portal-line);
+  background: var(--portal-surface);
+}
+
+.checkin-day--empty {
+  min-height: 48px;
+  background: color-mix(in oklch, var(--portal-bg) 76%, var(--portal-surface));
+}
+
+.checkin-day--today {
+  background: var(--portal-surface-strong);
+  box-shadow: inset 0 0 0 1px var(--portal-accent);
+}
+
+.checkin-day--checked,
+.checkin-day--made-up {
+  background: color-mix(in oklch, var(--portal-accent) 12%, var(--portal-surface));
+}
+
+.checkin-day--future {
+  color: var(--portal-muted);
+}
+
+.checkin-day-number {
+  color: var(--portal-ink);
+  font-size: 1rem;
+}
+
+.checkin-day-reward,
+.checkin-day-status {
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.checkin-day-reward {
+  color: var(--portal-muted);
+}
+
+.checkin-day-status {
+  color: var(--portal-ink);
+  font-weight: 700;
+}
+
+.checkin-day-action,
+.checkin-secondary-action {
+  min-height: 38px;
+  border: 1px solid var(--portal-line);
+  color: var(--portal-ink);
+  background: var(--portal-surface-strong);
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.checkin-day-action {
+  width: 100%;
+  margin-top: auto;
+  padding: 7px;
+}
+
+.checkin-day-action:hover,
+.checkin-secondary-action:hover {
+  border-color: var(--portal-accent-soft);
+  background: var(--portal-bg);
+}
+
+.checkin-day-action:focus-visible,
+.checkin-secondary-action:focus-visible,
+.checkin-confirmation .player-primary-action:focus-visible {
+  outline: 3px solid var(--portal-accent-soft);
+  outline-offset: 2px;
+}
+
+.checkin-day-action:disabled,
+.checkin-confirmation button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.checkin-confirmation {
+  width: min(430px, calc(100% - 32px));
+  padding: 0;
+  border: 1px solid var(--portal-line);
+  color: var(--portal-ink);
+  background: var(--portal-surface-strong);
+  box-shadow: 0 24px 80px rgb(0 0 0 / 0.48);
+}
+
+.checkin-confirmation::backdrop {
+  background: rgb(3 5 10 / 0.78);
+}
+
+.checkin-confirmation-shell {
+  padding: 24px;
+}
+
+.checkin-confirmation h4 {
+  margin: 0;
+  font-size: 1.18rem;
+  text-wrap: balance;
+}
+
+.checkin-confirmation-details {
+  margin-top: 18px;
+  border-top: 1px solid var(--portal-line);
+}
+
+.checkin-confirmation-details p {
+  margin: 0;
+  padding: 10px 0;
+  display: flex;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--portal-line);
+  color: var(--portal-muted);
+}
+
+.checkin-confirmation-details .checkin-confirmation-net {
+  color: var(--portal-ink);
+  font-weight: 750;
+}
+
+.checkin-confirmation-actions {
+  margin-top: 20px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.checkin-confirmation-actions button {
+  min-height: 42px;
+  margin-top: 0;
+  padding: 0 14px;
+}
+
 .player-message {
   min-height: 24px;
   margin: 24px 0 0;
@@ -216,6 +417,10 @@ body[data-view="player"] {
 
 .player-message[data-state="error"] {
   color: #ff9b8f;
+}
+
+.player-message[data-state="success"] {
+  color: var(--portal-accent-soft);
 }
 
 @media (max-width: 899px) {
@@ -268,11 +473,24 @@ body[data-view="player"] {
   .player-panel {
     min-height: 360px;
   }
+
+  .checkin-calendar-heading,
+  .checkin-weekdays,
+  .checkin-grid {
+    min-width: 560px;
+  }
+
+  .checkin-day {
+    min-height: 108px;
+    padding: 9px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .player-tab,
-  .player-primary-action {
+  .player-primary-action,
+  .checkin-day-action,
+  .checkin-secondary-action {
     transition: none;
   }
 }

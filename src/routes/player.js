@@ -240,7 +240,9 @@
         actions.append(actionButton('删除好友', async () => {
           const confirmed = typeof globalScope.confirm !== 'function'
             || globalScope.confirm(`确认删除好友 ${friend.displayName}？`);
-          if (confirmed) await friendsClient.removeFriend(friend.id);
+          if (!confirmed) return false;
+          await friendsClient.removeFriend(friend.id);
+          return true;
         }, `remove:${friend.id}`));
         item.append(playerCopy(friend, `@${friend.username}`), status, actions);
         return item;
@@ -336,6 +338,21 @@
       updatePendingCount();
     }
 
+    function renderLoading() {
+      friends = [];
+      requests = [];
+      invites = [];
+      foundPlayer = null;
+      pendingActions.clear();
+      incomingList.replaceChildren(empty('正在加载好友申请。'));
+      outgoingList.replaceChildren(empty('正在加载好友申请。'));
+      friendList.replaceChildren(empty('正在加载好友列表。'));
+      inviteList.replaceChildren(empty('正在加载游戏邀请。'));
+      searchResult.replaceChildren();
+      updatePendingCount();
+      setMessage();
+    }
+
     async function refresh({ preserveMessage = false } = {}) {
       if (destroyed) return false;
       if (accountPanel?.getIdentity()?.kind !== 'registered') {
@@ -369,12 +386,18 @@
 
     async function runAction(key, action) {
       if (pendingActions.has(key) || destroyed) return;
+      const previousMessage = friendMessage?.textContent || '';
+      const previousMessageState = friendMessage?.dataset.state || '';
       pendingActions.add(key);
       render();
       setMessage('正在处理。');
       try {
-        await action();
+        const result = await action();
         if (destroyed) return;
+        if (result === false) {
+          setMessage(previousMessage, previousMessageState);
+          return;
+        }
         setMessage('操作成功。', 'success');
         foundPlayer = null;
         await refresh({ preserveMessage: true });
@@ -449,10 +472,12 @@
 
     const unsubscribeAccount = accountPanel?.subscribe((state) => {
       const nextIdentityKey = getAccountKey(state?.identity || accountPanel?.getIdentity());
-      if (nextIdentityKey !== identityKey) {
+      const identityChanged = nextIdentityKey !== identityKey;
+      if (identityChanged) {
         identityKey = nextIdentityKey;
         identityVersion += 1;
         searchRequestVersion += 1;
+        if (state?.identity?.kind === 'registered') renderLoading();
       }
       refreshVersion += 1;
       foundPlayer = null;

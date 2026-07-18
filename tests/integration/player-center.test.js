@@ -129,7 +129,11 @@ function createPlayerRuntimeHarness({
   friends = [],
   friendRequests = [],
   gameInvites = [],
+  listFriendData = async () => friends,
+  listRequestData = async () => friendRequests,
+  listInviteData = async () => gameInvites,
   searchFriend = async () => null,
+  confirmFriendRemoval = () => true,
 } = {}) {
   const tabList = new FakeElement();
   tabList.setAttribute('aria-orientation', 'vertical');
@@ -174,6 +178,7 @@ function createPlayerRuntimeHarness({
   let friendRealtimeCleanups = 0;
   let friendDisconnects = 0;
   let friendRealtimeListener = null;
+  const confirmCalls = [];
   const checkinCalls = [];
   const monthCalls = [];
   const activityCalls = [];
@@ -222,15 +227,15 @@ function createPlayerRuntimeHarness({
   const friendsClient = {
     async listFriends() {
       friendCalls.push({ type: 'list-friends' });
-      return friends;
+      return listFriendData();
     },
     async listRequests() {
       friendCalls.push({ type: 'list-requests' });
-      return friendRequests;
+      return listRequestData();
     },
     async listInvites() {
       friendCalls.push({ type: 'list-invites' });
-      return gameInvites;
+      return listInviteData();
     },
     async searchExact(value) {
       friendCalls.push({ type: 'search', value });
@@ -291,7 +296,7 @@ function createPlayerRuntimeHarness({
   };
   const keys = [
     'document', 'location', 'history', 'matchMedia', 'HYLAccountPanel',
-    'PlayerCheckin', 'PlayerActivities', 'PlayerNotifications', 'PlayerFriends',
+    'PlayerCheckin', 'PlayerActivities', 'PlayerNotifications', 'PlayerFriends', 'confirm',
   ];
   const previous = new Map(keys.map((key) => [key, globalThis[key]]));
   globalThis.document = {
@@ -332,6 +337,10 @@ function createPlayerRuntimeHarness({
     createFriendsClient: () => friendsClient,
     mapFriendsError: () => '好友服务暂时不可用，请稍后重试',
   };
+  globalThis.confirm = (message) => {
+    confirmCalls.push(message);
+    return confirmFriendRemoval(message);
+  };
 
   return {
     media,
@@ -341,6 +350,7 @@ function createPlayerRuntimeHarness({
     activityCalls,
     notificationCalls,
     friendCalls,
+    confirmCalls,
     checkinCalls,
     monthCalls,
     nodes,
@@ -392,6 +402,12 @@ function createMonthSnapshot(year, month, overrides = {}) {
 
 function flushPromises() {
   return new Promise((resolve) => setImmediate(resolve));
+}
+
+function createDeferred() {
+  let resolve;
+  const promise = new Promise((nextResolve) => { resolve = nextResolve; });
+  return { promise, resolve };
 }
 
 function keyEvent(key) {
@@ -1736,6 +1752,128 @@ test('game invite cards label the host name and padded UID explicitly', async ()
     assert.match(inviteText, /五子棋/);
     assert.match(inviteText, /房主：房主甲 · UID 000007/);
     assert.match(inviteText, /彩头 12 金币/);
+  } finally {
+    instance?.destroy();
+    await flushPromises();
+    harness.restore();
+  }
+});
+
+test('account switch clears old friend data before the new account requests resolve', async () => {
+  const oldFriends = createDeferred();
+  const oldRequests = createDeferred();
+  const oldInvites = createDeferred();
+  const nextFriends = createDeferred();
+  const nextRequests = createDeferred();
+  const nextInvites = createDeferred();
+  let friendLists = 0;
+  let requestLists = 0;
+  let inviteLists = 0;
+  const harness = createPlayerRuntimeHarness({
+    identity: { kind: 'registered', username: 'account_a', displayName: '账号 A', uid: '000001' },
+    listFriendData: () => {
+      friendLists += 1;
+      if (friendLists === 1) return [{
+        id: 'a-friend', uid: '000010', username: 'a_friend', displayName: 'A 的好友', online: true,
+      }];
+      return friendLists === 2 ? oldFriends.promise : nextFriends.promise;
+    },
+    listRequestData: () => {
+      requestLists += 1;
+      if (requestLists === 1) return [{
+        id: 'a-request', direction: 'incoming',
+        player: { id: 'a-requester', uid: '000011', username: 'a_requester', displayName: 'A 的申请人' },
+      }];
+      return requestLists === 2 ? oldRequests.promise : nextRequests.promise;
+    },
+    listInviteData: () => {
+      inviteLists += 1;
+      if (inviteLists === 1) return [{
+        id: 'a-invite', direction: 'incoming', status: 'pending', gameType: 'gomoku',
+        roomCode: 'AAAAAA', wagerAmount: 0, expiresAt: '2026-07-19T12:00:00.000Z',
+        sender: { id: 'a-host', uid: '000012', username: 'a_host', displayName: 'A 的房主' },
+      }];
+      return inviteLists === 2 ? oldInvites.promise : nextInvites.promise;
+    },
+    searchFriend: async () => ({
+      id: 'a-search', uid: '000013', username: 'a_search',
+      displayName: 'A 的搜索结果', relationshipState: 'none',
+    }),
+  });
+  let instance;
+  try {
+    instance = player.mount();
+    await flushPromises();
+    const searchInput = harness.nodes.get('#friend-search-input');
+    searchInput.value = 'a_search';
+    harness.nodes.get('#friend-search-form').dispatchEvent(new Event('submit', { cancelable: true }));
+    await flushPromises();
+    assert.match(harness.nodes.get('#friend-list').textContent, /A 的好友/);
+    assert.match(harness.nodes.get('#friend-search-result').textContent, /A 的搜索结果/);
+
+    harness.tabs[3].dispatchEvent(new Event('click'));
+    harness.setIdentity({
+      kind: 'registered', username: 'account_b', displayName: '账号 B', uid: '000002',
+    });
+
+    assert.doesNotMatch(harness.nodes.get('#friend-list').textContent, /A 的好友/);
+    assert.doesNotMatch(harness.nodes.get('#incoming-friend-requests').textContent, /A 的申请人/);
+    assert.doesNotMatch(harness.nodes.get('#game-invite-list').textContent, /A 的房主/);
+    assert.equal(harness.nodes.get('#friend-search-result').textContent, '');
+    assert.equal(harness.tabs[3].dataset.pendingCount, '0');
+
+    oldFriends.resolve([{ id: 'late-a', uid: '000014', username: 'late_a', displayName: 'A 的迟到好友' }]);
+    oldRequests.resolve([]);
+    oldInvites.resolve([]);
+    await flushPromises();
+    assert.doesNotMatch(harness.nodes.get('#friend-list').textContent, /A 的迟到好友/);
+
+    nextFriends.resolve([{ id: 'b-friend', uid: '000020', username: 'b_friend', displayName: 'B 的好友' }]);
+    nextRequests.resolve([]);
+    nextInvites.resolve([]);
+    await flushPromises();
+    assert.match(harness.nodes.get('#friend-list').textContent, /B 的好友/);
+  } finally {
+    instance?.destroy();
+    await flushPromises();
+    harness.restore();
+  }
+});
+
+test('cancelling friend removal preserves search state and skips success refresh', async () => {
+  const harness = createPlayerRuntimeHarness({
+    identity: { kind: 'registered', username: 'account_a', displayName: '账号 A', uid: '000001' },
+    friends: [{
+      id: 'friend-1', uid: '000010', username: 'friend_one',
+      displayName: '好友一', online: false, lastSeenAt: '2026-07-19T10:00:00.000Z',
+    }],
+    searchFriend: async () => ({
+      id: 'search-1', uid: '000099', username: 'search_one',
+      displayName: '保留的搜索结果', relationshipState: 'none',
+    }),
+    confirmFriendRemoval: () => false,
+  });
+  let instance;
+  try {
+    instance = player.mount();
+    await flushPromises();
+    const searchInput = harness.nodes.get('#friend-search-input');
+    searchInput.value = 'search_one';
+    harness.nodes.get('#friend-search-form').dispatchEvent(new Event('submit', { cancelable: true }));
+    await flushPromises();
+    const searchText = harness.nodes.get('#friend-search-result').textContent;
+    const refreshes = harness.friendCalls.filter((call) => call.type === 'list-friends').length;
+    const deleteButton = harness.nodes.get('#friend-list').querySelectorAll('button')
+      .find((button) => button.textContent === '删除好友');
+
+    deleteButton.dispatchEvent(new Event('click'));
+    await flushPromises();
+
+    assert.equal(harness.confirmCalls.length, 1);
+    assert.equal(harness.friendCalls.filter((call) => call.type === 'remove').length, 0);
+    assert.equal(harness.friendCalls.filter((call) => call.type === 'list-friends').length, refreshes);
+    assert.equal(harness.nodes.get('#friend-search-result').textContent, searchText);
+    assert.doesNotMatch(harness.nodes.get('#friend-message').textContent, /操作成功|正在处理/);
   } finally {
     instance?.destroy();
     await flushPromises();

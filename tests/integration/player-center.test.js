@@ -121,6 +121,7 @@ function createPlayerRuntimeHarness({
   markRead = async () => null,
   claimNotification = async () => null,
   mapNotificationsError = () => '通知服务暂时不可用，请稍后重试',
+  refreshEconomy = async () => ({ balance: 0, isAdmin: false, loaded: true }),
 } = {}) {
   const tabList = new FakeElement();
   tabList.setAttribute('aria-orientation', 'vertical');
@@ -145,6 +146,7 @@ function createPlayerRuntimeHarness({
   media.matches = false;
   const urls = [];
   let subscriptions = 0;
+  let subscriptionListener = null;
   let opens = 0;
   let economyRefreshes = 0;
   const checkinCalls = [];
@@ -194,14 +196,16 @@ function createPlayerRuntimeHarness({
   const accountPanel = {
     accountClient,
     economyClient,
-    getIdentity: () => identity,
+    getIdentity: () => ({ ...identity }),
     getEconomySnapshot: () => ({ balance: 0 }),
-    subscribe() {
+    subscribe(listener) {
       subscriptions += 1;
+      subscriptionListener = listener;
       let active = true;
       return () => {
         if (!active) return;
         active = false;
+        subscriptionListener = null;
         subscriptions -= 1;
       };
     },
@@ -210,7 +214,7 @@ function createPlayerRuntimeHarness({
     },
     async refreshEconomy() {
       economyRefreshes += 1;
-      return { balance: 0, isAdmin: false, loaded: true };
+      return refreshEconomy();
     },
   };
   const keys = [
@@ -270,6 +274,10 @@ function createPlayerRuntimeHarness({
     get opens() { return opens; },
     get economyRefreshes() { return economyRefreshes; },
     get subscriptions() { return subscriptions; },
+    setIdentity(nextIdentity, economySnapshot = { balance: 0 }) {
+      identity = nextIdentity;
+      subscriptionListener?.({ identity: { ...identity }, economySnapshot });
+    },
     restore() {
       for (const [key, value] of previous) {
         if (value === undefined) delete globalThis[key];
@@ -474,6 +482,7 @@ test('activity rewards prevent duplicate submission, update the card and wallet,
     assert.equal(second.textContent, '已领取');
     assert.equal(second.disabled, true);
     assert.match(harness.activityList.textContent, /重复奖励.*已领取/);
+    assert.equal(harness.economyRefreshes, 2);
   } finally {
     instance?.destroy();
     harness.restore();
@@ -515,6 +524,48 @@ test('activity empty, retry, guest claim, and unavailable deep-link states use e
   }
 });
 
+test('load retry clears only its own live error message', async () => {
+  let activityLoads = 0;
+  let notificationLoads = 0;
+  let rejectNotification;
+  const notificationPending = new Promise((_resolve, reject) => { rejectNotification = reject; });
+  const harness = createPlayerRuntimeHarness({
+    listActivities: async () => {
+      activityLoads += 1;
+      if (activityLoads === 1) throw new Error('ACTIVITY_NETWORK_FAILED');
+      return [];
+    },
+    listNotifications: async () => {
+      notificationLoads += 1;
+      if (notificationLoads === 1) return notificationPending;
+      return [];
+    },
+    mapActivitiesError: () => '活动加载失败，请重试',
+    mapNotificationsError: () => '通知加载失败，请重试',
+  });
+  let instance;
+  try {
+    instance = player.mount();
+    await flushPromises();
+    assert.equal(harness.nodes.get('#player-message').textContent, '活动加载失败，请重试');
+
+    rejectNotification(new Error('NOTIFICATION_NETWORK_FAILED'));
+    await flushPromises();
+    assert.equal(harness.nodes.get('#player-message').textContent, '通知加载失败，请重试');
+
+    harness.activityList.querySelector('[data-activity-retry]').dispatchEvent(new Event('click'));
+    await flushPromises();
+    assert.equal(harness.nodes.get('#player-message').textContent, '通知加载失败，请重试');
+
+    harness.notificationList.querySelector('[data-notification-retry]').dispatchEvent(new Event('click'));
+    await flushPromises();
+    assert.equal(harness.nodes.get('#player-message').textContent, '');
+  } finally {
+    instance?.destroy();
+    harness.restore();
+  }
+});
+
 test('notifications sort newest first and keep detail read state independent from reward claims', async () => {
   const notifications = [
     {
@@ -540,7 +591,6 @@ test('notifications sort newest first and keep detail read state independent fro
     await flushPromises();
     const items = harness.notificationList.querySelectorAll('[data-notification-id]');
     assert.equal(items[0].dataset.notificationId, 'new');
-    assert.match(items[0].textContent, /新正文/);
     assert.ok(items[0].querySelector('[data-notification-unread]'));
     assert.match(items[0].textContent, /奖励 9 金币.*未领取/);
 
@@ -561,6 +611,45 @@ test('notifications sort newest first and keep detail read state independent fro
 
     harness.notificationList.querySelector('[data-notification-activity="activity-1"]').dispatchEvent(new Event('click'));
     assert.match(harness.urls.at(-1), /tab=activities&activity=activity-1/);
+  } finally {
+    instance?.destroy();
+    harness.restore();
+  }
+});
+
+test('notification toggle controls a stable hidden detail region and marks read only when opened', async () => {
+  const harness = createPlayerRuntimeHarness({
+    identity: { kind: 'registered', username: 'account_a', displayName: '账号 A' },
+    notifications: [{
+      id: 'controlled-detail', activityId: 'activity-1', title: '受控详情', body: '仅在详情显示的正文',
+      rewardAmount: 8, visibleAt: '2026-07-18T08:00:00.000Z', expiresAt: null,
+      actionUrl: 'https://hhhyl.me/notification/detail', isRead: false, rewardClaimed: false,
+    }],
+    markRead: async () => ({ notificationId: 'controlled-detail', readAt: '2026-07-18T08:01:00.000Z' }),
+  });
+  let instance;
+  try {
+    instance = player.mount();
+    await flushPromises();
+    let toggle = harness.notificationList.querySelector('[data-notification-open="controlled-detail"]');
+    const detailId = 'notification-detail-controlled-detail';
+    let detail = harness.notificationList.querySelector(`#${detailId}`);
+    assert.equal(toggle.getAttribute('aria-controls'), detailId);
+    assert.equal(toggle.getAttribute('aria-expanded'), 'false');
+    assert.equal(detail.hidden, true);
+    assert.equal(detail.querySelector('.notification-body').textContent, '仅在详情显示的正文');
+    assert.ok(detail.querySelector('[data-notification-activity="activity-1"]'));
+    assert.ok(detail.querySelector('[data-notification-action]'));
+    assert.ok(detail.querySelector('[data-notification-claim="controlled-detail"]'));
+    assert.equal(harness.notificationCalls.filter((call) => call.type === 'read').length, 0);
+
+    toggle.dispatchEvent(new Event('click'));
+    await flushPromises();
+    toggle = harness.notificationList.querySelector('[data-notification-open="controlled-detail"]');
+    detail = harness.notificationList.querySelector(`#${detailId}`);
+    assert.equal(toggle.getAttribute('aria-expanded'), 'true');
+    assert.equal(detail.hidden, false);
+    assert.equal(harness.notificationCalls.filter((call) => call.type === 'read').length, 1);
   } finally {
     instance?.destroy();
     harness.restore();
@@ -645,17 +734,400 @@ test('notifications expose empty, retry, guest, expired, and disabled activity s
 
     instance.refreshNotifications();
     await flushPromises();
-    const expired = harness.notificationList.querySelector('[data-notification-id="expired"]');
+    let expired = harness.notificationList.querySelector('[data-notification-id="expired"]');
     assert.match(expired.textContent, /已过期/);
+    expired.querySelector('[data-notification-open="expired"]').dispatchEvent(new Event('click'));
+    expired = harness.notificationList.querySelector('[data-notification-id="expired"]');
     assert.equal(expired.querySelector('[data-notification-claim="expired"]').disabled, true);
     expired.querySelector('[data-notification-activity="disabled-activity"]').dispatchEvent(new Event('click'));
     assert.equal(harness.nodes.get('#player-message').textContent, '关联活动可能已下架，请在活动页确认');
 
+    harness.notificationList.querySelector('[data-notification-open="retry"]').dispatchEvent(new Event('click'));
     const retry = harness.notificationList.querySelector('[data-notification-claim="retry"]');
     retry.dispatchEvent(new Event('click'));
     assert.equal(harness.notificationCalls.filter((call) => call.type === 'claim').length, 0);
     assert.equal(harness.nodes.get('#player-message').textContent, '请先登录正式账号领取通知奖励');
     assert.equal(harness.opens, 1);
+  } finally {
+    instance?.destroy();
+    harness.restore();
+  }
+});
+
+test('registered account changes reload engagement state while display-name changes keep current data', async () => {
+  let activityLoad = 0;
+  let notificationLoad = 0;
+  const harness = createPlayerRuntimeHarness({
+    identity: { kind: 'registered', username: 'account_a', displayName: '账号 A' },
+    listActivities: async () => ([{
+      id: 'shared-activity', title: '共享活动', body: '正文', rewardAmount: 5,
+      claimed: activityLoad++ === 0,
+    }]),
+    listNotifications: async () => ([{
+      id: 'shared-notification', activityId: null, title: '共享通知', body: '正文', rewardAmount: 2,
+      visibleAt: '2026-07-18T08:00:00.000Z', expiresAt: null, actionUrl: null,
+      isRead: notificationLoad++ === 0, rewardClaimed: false,
+    }]),
+  });
+  let instance;
+  try {
+    instance = player.mount();
+    await flushPromises();
+    assert.match(harness.activityList.textContent, /已领取/);
+    assert.match(harness.notificationList.textContent, /已读/);
+
+    harness.setIdentity({ kind: 'registered', username: 'account_a', displayName: '账号 A 新游戏名' });
+    await flushPromises();
+    assert.equal(harness.activityCalls.filter((call) => call.type === 'list').length, 1);
+    assert.equal(harness.notificationCalls.filter((call) => call.type === 'list').length, 1);
+
+    harness.setIdentity({ kind: 'registered', username: 'account_b', displayName: '账号 B' });
+    await flushPromises();
+    assert.equal(harness.activityCalls.filter((call) => call.type === 'list').length, 2);
+    assert.equal(harness.notificationCalls.filter((call) => call.type === 'list').length, 2);
+    assert.match(harness.activityList.textContent, /领取 5 金币/);
+    assert.doesNotMatch(harness.activityList.textContent, /已领取/);
+    assert.match(harness.notificationList.textContent, /未读/);
+    assert.doesNotMatch(harness.notificationList.textContent, /奖励 2 金币 · 已领取/);
+  } finally {
+    instance?.destroy();
+    harness.restore();
+  }
+});
+
+test('activity claim completion updates the refreshed same-id model and stays single-submit', async () => {
+  let resolveClaim;
+  const pending = new Promise((resolve) => { resolveClaim = resolve; });
+  let loads = 0;
+  const harness = createPlayerRuntimeHarness({
+    identity: { kind: 'registered', username: 'account_a', displayName: '账号 A' },
+    listActivities: async () => {
+      loads += 1;
+      return [{ id: 'race-activity', title: '竞态活动', body: '正文', rewardAmount: 7, claimed: false }];
+    },
+    claimActivity: async () => pending,
+  });
+  let instance;
+  try {
+    instance = player.mount();
+    await flushPromises();
+    harness.activityList.querySelector('[data-activity-claim="race-activity"]')
+      .dispatchEvent(new Event('click'));
+    await instance.refreshActivities();
+    assert.equal(loads, 2);
+
+    resolveClaim({ rewardAmount: 7, balance: 107, claimedAt: '2026-07-18T08:00:00.000Z' });
+    await flushPromises();
+    await flushPromises();
+    const current = harness.activityList.querySelector('[data-activity-claim="race-activity"]');
+    assert.equal(current.textContent, '已领取');
+    assert.equal(current.disabled, true);
+    current.dispatchEvent(new Event('click'));
+    assert.equal(harness.activityCalls.filter((call) => call.type === 'claim').length, 1);
+  } finally {
+    instance?.destroy();
+    harness.restore();
+  }
+});
+
+test('notification mark-read completion updates the refreshed same-id model', async () => {
+  let resolveRead;
+  const pending = new Promise((resolve) => { resolveRead = resolve; });
+  let loads = 0;
+  const harness = createPlayerRuntimeHarness({
+    identity: { kind: 'registered', username: 'account_a', displayName: '账号 A' },
+    listNotifications: async () => {
+      loads += 1;
+      return [{
+        id: 'race-read', activityId: null, title: '竞态已读', body: '正文', rewardAmount: null,
+        visibleAt: '2026-07-18T08:00:00.000Z', expiresAt: null, actionUrl: null,
+        isRead: false, rewardClaimed: false,
+      }];
+    },
+    markRead: async () => pending,
+  });
+  let instance;
+  try {
+    instance = player.mount();
+    await flushPromises();
+    harness.notificationList.querySelector('[data-notification-open="race-read"]')
+      .dispatchEvent(new Event('click'));
+    await instance.refreshNotifications();
+    assert.equal(loads, 2);
+
+    resolveRead({ notificationId: 'race-read', readAt: '2026-07-18T08:01:00.000Z' });
+    await flushPromises();
+    assert.equal(harness.notificationList.querySelector('[data-notification-unread]'), null);
+    assert.equal(harness.notificationCalls.filter((call) => call.type === 'read').length, 1);
+  } finally {
+    instance?.destroy();
+    harness.restore();
+  }
+});
+
+test('notification claim completion updates the refreshed same-id model and stays single-submit', async () => {
+  let resolveClaim;
+  const pending = new Promise((resolve) => { resolveClaim = resolve; });
+  let loads = 0;
+  const harness = createPlayerRuntimeHarness({
+    identity: { kind: 'registered', username: 'account_a', displayName: '账号 A' },
+    listNotifications: async () => {
+      loads += 1;
+      return [{
+        id: 'race-claim', activityId: null, title: '竞态领奖', body: '正文', rewardAmount: 9,
+        visibleAt: '2026-07-18T08:00:00.000Z', expiresAt: null, actionUrl: null,
+        isRead: true, rewardClaimed: false,
+      }];
+    },
+    claimNotification: async () => pending,
+  });
+  let instance;
+  try {
+    instance = player.mount();
+    await flushPromises();
+    harness.notificationList.querySelector('[data-notification-open="race-claim"]')
+      .dispatchEvent(new Event('click'));
+    harness.notificationList.querySelector('[data-notification-claim="race-claim"]')
+      .dispatchEvent(new Event('click'));
+    await instance.refreshNotifications();
+    assert.equal(loads, 2);
+
+    resolveClaim({ rewardAmount: 9, balance: 109, claimedAt: '2026-07-18T08:02:00.000Z' });
+    await flushPromises();
+    await flushPromises();
+    const current = harness.notificationList.querySelector('[data-notification-claim="race-claim"]');
+    assert.equal(current.textContent, '已领取');
+    assert.equal(current.disabled, true);
+    current.dispatchEvent(new Event('click'));
+    assert.equal(harness.notificationCalls.filter((call) => call.type === 'claim').length, 1);
+  } finally {
+    instance?.destroy();
+    harness.restore();
+  }
+});
+
+test('already-claimed notification rewards still refresh the wallet and report refresh failure', async () => {
+  let attempts = 0;
+  const harness = createPlayerRuntimeHarness({
+    identity: { kind: 'registered', username: 'account_a', displayName: '账号 A' },
+    notifications: [{
+      id: 'already-notification', activityId: null, title: '幂等奖励', body: '正文', rewardAmount: 5,
+      visibleAt: '2026-07-18T08:00:00.000Z', expiresAt: null, actionUrl: null,
+      isRead: true, rewardClaimed: false,
+    }],
+    claimNotification: async () => {
+      attempts += 1;
+      throw new Error(attempts === 1 ? 'NETWORK_FAILED' : 'NOTIFICATION_ALREADY_CLAIMED');
+    },
+    mapNotificationsError: (error) => (
+      String(error.message).includes('ALREADY') ? '奖励已领取' : '通知领取失败，可重试'
+    ),
+    refreshEconomy: async () => ({ balance: 5, isAdmin: false, loaded: false }),
+  });
+  let instance;
+  try {
+    instance = player.mount();
+    await flushPromises();
+    harness.notificationList.querySelector('[data-notification-open="already-notification"]')
+      .dispatchEvent(new Event('click'));
+    let claim = harness.notificationList.querySelector('[data-notification-claim="already-notification"]');
+    claim.dispatchEvent(new Event('click'));
+    await flushPromises();
+    assert.equal(harness.economyRefreshes, 0);
+
+    claim = harness.notificationList.querySelector('[data-notification-claim="already-notification"]');
+    claim.dispatchEvent(new Event('click'));
+    await flushPromises();
+    await flushPromises();
+    assert.equal(harness.economyRefreshes, 1);
+    assert.equal(harness.nodes.get('#player-message').textContent, '奖励已领取，但钱包刷新失败，请刷新页面');
+    assert.equal(harness.nodes.get('#player-message').dataset.state, 'error');
+    assert.equal(harness.notificationList.querySelector('[data-notification-claim="already-notification"]').textContent, '已领取');
+  } finally {
+    instance?.destroy();
+    harness.restore();
+  }
+});
+
+test('account switch keeps old activity claim results and finally blocks out of the new account', async () => {
+  let resolveA;
+  let resolveB;
+  const pendingA = new Promise((resolve) => { resolveA = resolve; });
+  const pendingB = new Promise((resolve) => { resolveB = resolve; });
+  let claimAttempt = 0;
+  const harness = createPlayerRuntimeHarness({
+    identity: { kind: 'registered', username: 'account_a', displayName: '账号 A' },
+    listActivities: async () => ([{
+      id: 'shared-claim', title: '共享领奖', body: '正文', rewardAmount: 6, claimed: false,
+    }]),
+    claimActivity: async () => (claimAttempt++ === 0 ? pendingA : pendingB),
+  });
+  let instance;
+  try {
+    instance = player.mount();
+    await flushPromises();
+    harness.activityList.querySelector('[data-activity-claim="shared-claim"]')
+      .dispatchEvent(new Event('click'));
+
+    harness.setIdentity({ kind: 'registered', username: 'account_b', displayName: '账号 B' });
+    await flushPromises();
+    harness.activityList.querySelector('[data-activity-claim="shared-claim"]')
+      .dispatchEvent(new Event('click'));
+    assert.equal(harness.activityCalls.filter((call) => call.type === 'claim').length, 2);
+
+    resolveA({ rewardAmount: 6, balance: 106, claimedAt: '2026-07-18T08:00:00.000Z' });
+    await flushPromises();
+    await flushPromises();
+    const pendingForB = harness.activityList.querySelector('[data-activity-claim="shared-claim"]');
+    assert.equal(pendingForB.textContent, '领取中…');
+    assert.equal(pendingForB.disabled, true);
+    assert.equal(harness.economyRefreshes, 0);
+    assert.equal(harness.nodes.get('#player-message').textContent, '');
+
+    resolveB({ rewardAmount: 6, balance: 206, claimedAt: '2026-07-18T08:01:00.000Z' });
+    await flushPromises();
+    await flushPromises();
+    assert.equal(harness.activityList.querySelector('[data-activity-claim="shared-claim"]').textContent, '已领取');
+    assert.equal(harness.economyRefreshes, 1);
+  } finally {
+    instance?.destroy();
+    harness.restore();
+  }
+});
+
+test('account switch keeps old notification read results and finally blocks out of the new account', async () => {
+  let resolveA;
+  let resolveB;
+  const pendingA = new Promise((resolve) => { resolveA = resolve; });
+  const pendingB = new Promise((resolve) => { resolveB = resolve; });
+  let readAttempt = 0;
+  const harness = createPlayerRuntimeHarness({
+    identity: { kind: 'registered', username: 'account_a', displayName: '账号 A' },
+    listNotifications: async () => ([{
+      id: 'shared-read', activityId: null, title: '共享已读', body: '正文', rewardAmount: null,
+      visibleAt: '2026-07-18T08:00:00.000Z', expiresAt: null, actionUrl: null,
+      isRead: false, rewardClaimed: false,
+    }]),
+    markRead: async () => (readAttempt++ === 0 ? pendingA : pendingB),
+  });
+  let instance;
+  try {
+    instance = player.mount();
+    await flushPromises();
+    harness.notificationList.querySelector('[data-notification-open="shared-read"]')
+      .dispatchEvent(new Event('click'));
+
+    harness.setIdentity({ kind: 'registered', username: 'account_b', displayName: '账号 B' });
+    await flushPromises();
+    harness.notificationList.querySelector('[data-notification-open="shared-read"]')
+      .dispatchEvent(new Event('click'));
+    assert.equal(harness.notificationCalls.filter((call) => call.type === 'read').length, 2);
+
+    resolveA({ notificationId: 'shared-read', readAt: '2026-07-18T08:00:00.000Z' });
+    await flushPromises();
+    assert.ok(harness.notificationList.querySelector('[data-notification-unread]'));
+
+    resolveB({ notificationId: 'shared-read', readAt: '2026-07-18T08:01:00.000Z' });
+    await flushPromises();
+    assert.equal(harness.notificationList.querySelector('[data-notification-unread]'), null);
+  } finally {
+    instance?.destroy();
+    harness.restore();
+  }
+});
+
+test('account switch keeps old notification claim results and finally blocks out of the new account', async () => {
+  let resolveA;
+  let resolveB;
+  const pendingA = new Promise((resolve) => { resolveA = resolve; });
+  const pendingB = new Promise((resolve) => { resolveB = resolve; });
+  let claimAttempt = 0;
+  const harness = createPlayerRuntimeHarness({
+    identity: { kind: 'registered', username: 'account_a', displayName: '账号 A' },
+    listNotifications: async () => ([{
+      id: 'shared-notification-claim', activityId: null, title: '共享通知领奖', body: '正文', rewardAmount: 4,
+      visibleAt: '2026-07-18T08:00:00.000Z', expiresAt: null, actionUrl: null,
+      isRead: true, rewardClaimed: false,
+    }]),
+    claimNotification: async () => (claimAttempt++ === 0 ? pendingA : pendingB),
+  });
+  let instance;
+  try {
+    instance = player.mount();
+    await flushPromises();
+    harness.notificationList.querySelector('[data-notification-open="shared-notification-claim"]')
+      .dispatchEvent(new Event('click'));
+    harness.notificationList.querySelector('[data-notification-claim="shared-notification-claim"]')
+      .dispatchEvent(new Event('click'));
+
+    harness.setIdentity({ kind: 'registered', username: 'account_b', displayName: '账号 B' });
+    await flushPromises();
+    harness.notificationList.querySelector('[data-notification-open="shared-notification-claim"]')
+      .dispatchEvent(new Event('click'));
+    harness.notificationList.querySelector('[data-notification-claim="shared-notification-claim"]')
+      .dispatchEvent(new Event('click'));
+    assert.equal(harness.notificationCalls.filter((call) => call.type === 'claim').length, 2);
+
+    resolveA({ rewardAmount: 4, balance: 104, claimedAt: '2026-07-18T08:00:00.000Z' });
+    await flushPromises();
+    await flushPromises();
+    const pendingForB = harness.notificationList.querySelector('[data-notification-claim="shared-notification-claim"]');
+    assert.equal(pendingForB.textContent, '领取中…');
+    assert.equal(pendingForB.disabled, true);
+    assert.equal(harness.economyRefreshes, 0);
+
+    resolveB({ rewardAmount: 4, balance: 204, claimedAt: '2026-07-18T08:01:00.000Z' });
+    await flushPromises();
+    await flushPromises();
+    assert.equal(harness.notificationList.querySelector('[data-notification-claim="shared-notification-claim"]').textContent, '已领取');
+    assert.equal(harness.economyRefreshes, 1);
+  } finally {
+    instance?.destroy();
+    harness.restore();
+  }
+});
+
+test('account switch keeps an old check-in finally from unlocking the new account action', async () => {
+  let resolveA;
+  let resolveB;
+  const pendingA = new Promise((resolve) => { resolveA = resolve; });
+  const pendingB = new Promise((resolve) => { resolveB = resolve; });
+  let checkinAttempt = 0;
+  const today = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Hong_Kong', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
+  const day = {
+    checkinDate: today, rewardAmount: 8, checkedIn: false, checkinType: null,
+    paymentMethod: null, paymentAmount: null, isToday: true, canMakeup: false, makeupCost: 20,
+  };
+  const harness = createPlayerRuntimeHarness({
+    identity: { kind: 'registered', username: 'account_a', displayName: '账号 A' },
+    getMonth: async () => [{ ...day }],
+    checkIn: async () => (checkinAttempt++ === 0 ? pendingA : pendingB),
+  });
+  let instance;
+  try {
+    instance = player.mount();
+    await flushPromises();
+    harness.calendar.querySelector('[data-checkin-action="checkin"]').dispatchEvent(new Event('click'));
+
+    harness.setIdentity({ kind: 'registered', username: 'account_b', displayName: '账号 B' });
+    await flushPromises();
+    harness.calendar.querySelector('[data-checkin-action="checkin"]').dispatchEvent(new Event('click'));
+    assert.equal(harness.checkinCalls.length, 2);
+
+    resolveA({ rewardAmount: 8, balance: 108 });
+    await flushPromises();
+    await flushPromises();
+    const pendingForB = harness.calendar.querySelector('[data-checkin-action="checkin"]');
+    assert.equal(pendingForB.disabled, true);
+    assert.equal(harness.economyRefreshes, 0);
+    assert.equal(harness.nodes.get('#player-message').textContent, '');
+
+    resolveB({ rewardAmount: 8, balance: 208 });
+    await flushPromises();
+    await flushPromises();
+    assert.equal(harness.economyRefreshes, 1);
   } finally {
     instance?.destroy();
     harness.restore();
@@ -1055,6 +1527,7 @@ test('player styles preserve the Black Obsidian system on narrow and reduced-mot
   assert.match(css, /\.notification-inbox/);
   assert.match(css, /\.notification-unread-dot/);
   assert.match(css, /\.notification-expired-status/);
+  assert.match(css, /\.notification-detail\[hidden\]/);
   assert.match(css, /\.player-secondary-action:focus-visible/);
   assert.match(css, /(?:\.activity-card|\.notification-item)[^}]*var\(--portal-line\)/s);
   assert.match(css, /\.notification-actions[^}]*flex/s);

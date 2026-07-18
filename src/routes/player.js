@@ -127,6 +127,13 @@
     return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
   }
 
+  function getAccountKey(identity) {
+    const kind = identity?.kind || 'guest';
+    return kind === 'registered'
+      ? `${kind}:${String(identity?.username || '').trim().toLowerCase()}`
+      : kind;
+  }
+
   function mount() {
     if (mounted || typeof document === 'undefined') return mounted;
 
@@ -167,20 +174,26 @@
     let calendarRequest = 0;
     let activityRequest = 0;
     let notificationRequest = 0;
-    let actionPending = false;
+    let identityGeneration = 0;
+    let actionPending = null;
     let activityItems = [];
     let notificationItems = [];
     let openNotificationId = null;
-    const activityClaims = new Set();
-    const notificationClaims = new Set();
-    const notificationReads = new Set();
+    const activityClaims = new Map();
+    const notificationClaims = new Map();
+    const notificationReads = new Map();
     const notificationReadFailures = new Set();
-    let identityKind = accountPanel?.getIdentity()?.kind || 'guest';
+    let identityKey = getAccountKey(accountPanel?.getIdentity());
 
-    function setMessage(text = '', state = '') {
+    function setMessage(text = '', state = '', source = '') {
       if (!message) return;
       message.textContent = text;
       message.dataset.state = state;
+      message.dataset.source = source;
+    }
+
+    function clearMessage(source) {
+      if (message?.dataset.source === source) setMessage();
     }
 
     function renderSummary(state) {
@@ -403,13 +416,14 @@
         if (destroyed || request !== activityRequest) return false;
         activityItems = Array.isArray(items) ? items : [];
         renderActivities();
+        clearMessage('activities-load');
         return true;
       } catch (error) {
         if (destroyed || request !== activityRequest) return false;
         const text = globalScope.PlayerActivities?.mapActivitiesError?.(error)
           || '活动加载失败，请稍后重试';
         renderRetryState(activityList, text, 'activityRetry', refreshActivities);
-        setMessage(text, 'error');
+        setMessage(text, 'error', 'activities-load');
         return false;
       } finally {
         if (!destroyed && request === activityRequest) activityList?.setAttribute('aria-busy', 'false');
@@ -424,32 +438,46 @@
         accountPanel?.open();
         return;
       }
-      activityClaims.add(activityId);
+      const generation = identityGeneration;
+      const token = { generation };
+      activityClaims.set(activityId, token);
       button.disabled = true;
       button.textContent = '领取中…';
       button.setAttribute('aria-busy', 'true');
       renderActivities();
       try {
         const result = await activitiesClient.claimReward(activityId, createRequestId());
-        if (destroyed) return;
-        activity.claimed = true;
-        activity.claimedAt = result?.claimedAt || activity.claimedAt || null;
+        if (destroyed || generation !== identityGeneration) return;
+        const currentActivity = activityItems.find((item) => item.id === activityId);
+        if (!currentActivity) return;
+        currentActivity.claimed = true;
+        currentActivity.claimedAt = result?.claimedAt || currentActivity.claimedAt || null;
         const refreshed = await refreshWallet();
-        if (destroyed) return;
+        if (destroyed || generation !== identityGeneration) return;
         setMessage(refreshed
-          ? `活动奖励领取成功，获得 ${formatCoinDelta(result?.rewardAmount ?? activity.rewardAmount)}`
+          ? `活动奖励领取成功，获得 ${formatCoinDelta(result?.rewardAmount ?? currentActivity.rewardAmount)}`
           : '奖励已领取，但钱包刷新失败，请刷新页面', refreshed ? 'success' : 'error');
       } catch (error) {
-        if (destroyed) return;
+        if (destroyed || generation !== identityGeneration) return;
         const text = globalScope.PlayerActivities?.mapActivitiesError?.(error)
           || '活动领取失败，请稍后重试';
-        if (text.includes('已经领取') || text.includes('已领取')) activity.claimed = true;
-        setMessage(text, activity.claimed ? 'success' : 'error');
+        const currentActivity = activityItems.find((item) => item.id === activityId);
+        if (currentActivity && (text.includes('已经领取') || text.includes('已领取'))) currentActivity.claimed = true;
+        if (currentActivity?.claimed) {
+          let refreshed = false;
+          try { refreshed = await refreshWallet(); } catch { /* Keep claimed state and report refresh failure. */ }
+          if (destroyed || generation !== identityGeneration) return;
+          setMessage(refreshed ? text : '奖励已领取，但钱包刷新失败，请刷新页面', refreshed ? 'success' : 'error');
+        } else {
+          setMessage(text, 'error');
+        }
       } finally {
-        activityClaims.delete(activityId);
-        button.disabled = Boolean(activity.claimed);
-        button.setAttribute('aria-busy', 'false');
-        if (!destroyed) renderActivities();
+        if (activityClaims.get(activityId) === token) activityClaims.delete(activityId);
+        if (!destroyed && generation === identityGeneration) {
+          button.disabled = Boolean(activityItems.find((item) => item.id === activityId)?.claimed);
+          button.setAttribute('aria-busy', 'false');
+          renderActivities();
+        }
       }
     }
 
@@ -487,7 +515,7 @@
             heading.append(unread);
           }
           heading.append(title, createNode('time', 'notification-time', formatDate(notification.visibleAt)));
-          item.append(heading, createNode('p', 'notification-body', notification.body || '该通知暂无正文。'));
+          item.append(heading);
 
           const statuses = createNode('div', 'notification-statuses');
           const rewardAmount = Number(notification.rewardAmount || 0);
@@ -502,13 +530,20 @@
           }
           item.append(statuses);
 
-          const actions = createNode('div', 'notification-actions');
-          const openButton = createNode('button', 'player-secondary-action', opened ? '收起详情' : '查看详情');
+          const detailId = `notification-detail-${notification.id}`;
+          const openButton = createNode('button', 'player-secondary-action notification-toggle', opened ? '收起详情' : '查看详情');
           openButton.type = 'button';
           openButton.dataset.notificationOpen = notification.id;
           openButton.setAttribute('aria-expanded', String(opened));
+          openButton.setAttribute('aria-controls', detailId);
           openButton.addEventListener('click', () => void toggleNotification(notification.id), { signal });
-          actions.append(openButton);
+          item.append(openButton);
+
+          const detail = createNode('div', 'notification-detail');
+          detail.id = detailId;
+          detail.hidden = !opened;
+          detail.append(createNode('p', 'notification-body', notification.body || '该通知暂无正文。'));
+          const actions = createNode('div', 'notification-actions');
           if (opened && !notification.isRead && notificationReadFailures.has(notification.id)) {
             const retryRead = createNode('button', 'player-secondary-action', notificationReads.has(notification.id)
               ? '正在标记…'
@@ -543,7 +578,7 @@
             ));
           }
           if (rewardAmount > 0) {
-          const claimButton = createNode('button', 'player-primary-action', notificationClaims.has(notification.id)
+            const claimButton = createNode('button', 'player-primary-action', notificationClaims.has(notification.id)
               ? '领取中…'
               : notification.rewardClaimed ? '已领取' : `领取 ${rewardAmount} 金币`);
             claimButton.type = 'button';
@@ -556,7 +591,8 @@
             claimButton.addEventListener('click', () => void runNotificationClaim(notification.id, claimButton), { signal });
             actions.append(claimButton);
           }
-          item.append(actions);
+          detail.append(actions);
+          item.append(detail);
           inbox.append(item);
         });
       notificationList.className = 'notification-list';
@@ -567,22 +603,26 @@
       const notification = notificationItems.find((item) => item.id === notificationId);
       if (!notification || notification.isRead || notificationReads.has(notificationId)
           || accountPanel?.getIdentity()?.kind !== 'registered' || destroyed) return;
-      notificationReads.add(notificationId);
+      const generation = identityGeneration;
+      const token = { generation };
+      notificationReads.set(notificationId, token);
       notificationReadFailures.delete(notificationId);
       try {
         const result = await notificationsClient.markRead(notificationId);
-        if (destroyed) return;
-        notification.isRead = true;
-        notification.readAt = result?.readAt || notification.readAt || null;
+        if (destroyed || generation !== identityGeneration) return;
+        const currentNotification = notificationItems.find((item) => item.id === notificationId);
+        if (!currentNotification) return;
+        currentNotification.isRead = true;
+        currentNotification.readAt = result?.readAt || currentNotification.readAt || null;
       } catch (error) {
-        if (destroyed) return;
+        if (destroyed || generation !== identityGeneration) return;
         notificationReadFailures.add(notificationId);
         const text = globalScope.PlayerNotifications?.mapNotificationsError?.(error)
           || '通知已读状态更新失败，请重试';
         setMessage(text, 'error');
       } finally {
-        notificationReads.delete(notificationId);
-        if (!destroyed) renderNotifications();
+        if (notificationReads.get(notificationId) === token) notificationReads.delete(notificationId);
+        if (!destroyed && generation === identityGeneration) renderNotifications();
       }
     }
 
@@ -611,13 +651,14 @@
         if (destroyed || request !== notificationRequest) return false;
         notificationItems = Array.isArray(items) ? items : [];
         renderNotifications();
+        clearMessage('notifications-load');
         return true;
       } catch (error) {
         if (destroyed || request !== notificationRequest) return false;
         const text = globalScope.PlayerNotifications?.mapNotificationsError?.(error)
           || '通知加载失败，请稍后重试';
         renderRetryState(notificationList, text, 'notificationRetry', refreshNotifications);
-        setMessage(text, 'error');
+        setMessage(text, 'error', 'notifications-load');
         return false;
       } finally {
         if (!destroyed && request === notificationRequest) notificationList?.setAttribute('aria-busy', 'false');
@@ -633,31 +674,47 @@
         accountPanel?.open();
         return;
       }
-      notificationClaims.add(notificationId);
+      const generation = identityGeneration;
+      const token = { generation };
+      notificationClaims.set(notificationId, token);
       button.disabled = true;
       button.textContent = '领取中…';
       button.setAttribute('aria-busy', 'true');
       try {
         const result = await notificationsClient.claimReward(notificationId, createRequestId());
-        if (destroyed) return;
-        notification.rewardClaimed = true;
-        notification.rewardClaimedAt = result?.claimedAt || notification.rewardClaimedAt || null;
+        if (destroyed || generation !== identityGeneration) return;
+        const currentNotification = notificationItems.find((item) => item.id === notificationId);
+        if (!currentNotification) return;
+        currentNotification.rewardClaimed = true;
+        currentNotification.rewardClaimedAt = result?.claimedAt || currentNotification.rewardClaimedAt || null;
         const refreshed = await refreshWallet();
-        if (destroyed) return;
+        if (destroyed || generation !== identityGeneration) return;
         setMessage(refreshed
-          ? `通知奖励领取成功，获得 ${formatCoinDelta(result?.rewardAmount ?? notification.rewardAmount)}`
+          ? `通知奖励领取成功，获得 ${formatCoinDelta(result?.rewardAmount ?? currentNotification.rewardAmount)}`
           : '奖励已领取，但钱包刷新失败，请刷新页面', refreshed ? 'success' : 'error');
       } catch (error) {
-        if (destroyed) return;
+        if (destroyed || generation !== identityGeneration) return;
         const text = globalScope.PlayerNotifications?.mapNotificationsError?.(error)
           || '通知奖励领取失败，请稍后重试';
-        if (text.includes('奖励已领取') || text === '已领取') notification.rewardClaimed = true;
-        setMessage(text, notification.rewardClaimed ? 'success' : 'error');
+        const currentNotification = notificationItems.find((item) => item.id === notificationId);
+        if (currentNotification && (text.includes('奖励已领取') || text === '已领取')) {
+          currentNotification.rewardClaimed = true;
+        }
+        if (currentNotification?.rewardClaimed) {
+          let refreshed = false;
+          try { refreshed = await refreshWallet(); } catch { /* Keep claimed state and report refresh failure. */ }
+          if (destroyed || generation !== identityGeneration) return;
+          setMessage(refreshed ? text : '奖励已领取，但钱包刷新失败，请刷新页面', refreshed ? 'success' : 'error');
+        } else {
+          setMessage(text, 'error');
+        }
       } finally {
-        notificationClaims.delete(notificationId);
-        button.disabled = Boolean(notification.rewardClaimed);
-        button.setAttribute('aria-busy', 'false');
-        if (!destroyed) renderNotifications();
+        if (notificationClaims.get(notificationId) === token) notificationClaims.delete(notificationId);
+        if (!destroyed && generation === identityGeneration) {
+          button.disabled = Boolean(notificationItems.find((item) => item.id === notificationId)?.rewardClaimed);
+          button.setAttribute('aria-busy', 'false');
+          renderNotifications();
+        }
       }
     }
 
@@ -830,7 +887,9 @@
 
     async function runCheckinAction({ type, day, action, dialog = null }) {
       if (actionPending || destroyed || !checkinClient) return;
-      actionPending = true;
+      const generation = identityGeneration;
+      const token = { generation };
+      actionPending = token;
       setActionDisabled(true);
       let completed = false;
       let refreshed = false;
@@ -840,11 +899,11 @@
           ? await checkinClient.checkIn(requestId)
           : await checkinClient.makeUp(day.checkinDate, 'coins', requestId);
         completed = true;
-        if (destroyed) return;
+        if (destroyed || generation !== identityGeneration || actionPending !== token) return;
         dialog?.close?.();
         const refreshResults = await Promise.all([refreshCheckinMonth(), refreshWallet()]);
         refreshed = refreshResults.every(Boolean);
-        if (destroyed) return;
+        if (destroyed || generation !== identityGeneration || actionPending !== token) return;
         if (!refreshed) {
           setMessage('操作已成功，但状态刷新失败，请刷新页面', 'error');
           return;
@@ -859,15 +918,15 @@
           'success',
         );
       } catch (error) {
-        if (destroyed) return;
+        if (destroyed || generation !== identityGeneration || actionPending !== token) return;
         const text = completed
           ? '操作已成功，但状态刷新失败，请刷新页面'
           : globalScope.PlayerCheckin?.mapCheckinError?.(error)
             || '签到失败，请稍后重试';
         setMessage(text, 'error');
       } finally {
-        actionPending = false;
-        if (!destroyed) setActionDisabled(completed && !refreshed);
+        if (actionPending === token) actionPending = null;
+        if (!destroyed && generation === identityGeneration) setActionDisabled(completed && !refreshed);
       }
     }
 
@@ -933,14 +992,34 @@
     checkinLoginButton?.addEventListener('click', () => accountPanel?.open(), { signal });
     narrowTabs?.addEventListener?.('change', syncTabOrientation);
     const unsubscribe = accountPanel?.subscribe((state) => {
-      const nextKind = state?.identity?.kind || accountPanel?.getIdentity()?.kind || 'guest';
+      const nextIdentity = state?.identity || accountPanel?.getIdentity() || { kind: 'guest' };
+      const nextKey = getAccountKey(nextIdentity);
       renderSummary(state);
-      if (nextKind === identityKind) return;
-      identityKind = nextKind;
+      if (nextKey === identityKey) return;
+      identityKey = nextKey;
+      identityGeneration += 1;
       calendarRequest += 1;
       activityRequest += 1;
       notificationRequest += 1;
-      if (nextKind === 'registered') void refreshCheckinMonth();
+      actionPending = null;
+      activityItems = [];
+      notificationItems = [];
+      currentActivityId = null;
+      openNotificationId = null;
+      activityClaims.clear();
+      notificationClaims.clear();
+      notificationReads.clear();
+      notificationReadFailures.clear();
+      const url = new URL(globalScope.location.href);
+      if (url.searchParams.has('activity')) {
+        url.searchParams.delete('activity');
+        globalScope.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+      }
+      renderActivities();
+      renderNotifications();
+      checkinCalendar?.replaceChildren(createNode('p', '', '正在加载新账号的签到数据。'));
+      setMessage();
+      if (nextIdentity.kind === 'registered') void refreshCheckinMonth();
       else renderGuestCalendar();
       void refreshActivities();
       void refreshNotifications();
@@ -952,7 +1031,7 @@
     if (!accountPanel || !checkinClient || !activitiesClient || !notificationsClient || !economyClient) {
       setMessage('玩家服务暂时不可用，请稍后刷新页面', 'error');
     }
-    if (identityKind === 'registered' && checkinClient) void refreshCheckinMonth();
+    if (accountPanel?.getIdentity()?.kind === 'registered' && checkinClient) void refreshCheckinMonth();
     else renderGuestCalendar();
     void refreshActivities();
     void refreshNotifications();
@@ -969,6 +1048,7 @@
       destroy() {
         if (destroyed) return;
         destroyed = true;
+        identityGeneration += 1;
         calendarRequest += 1;
         activityRequest += 1;
         notificationRequest += 1;

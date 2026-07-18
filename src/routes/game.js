@@ -148,6 +148,9 @@
 
   function resolveAppRoute(urlLike) {
     const url = new URL(urlLike, 'https://hyl.space/');
+    if (url.searchParams.get('view') === 'admin') {
+      return { view: 'admin', gameType: null, roomCode: null };
+    }
     const roomCandidate = normalizeRouteRoomCode(url.searchParams.get('room'));
     const roomCode = roomCandidate.length === 6 ? roomCandidate : null;
     const requestedGame = url.searchParams.get('game');
@@ -189,13 +192,6 @@
 
   function formatOnlineScoreName(name, mark) {
     return name ? `${name} · ${mark}` : mark;
-  }
-
-  function formatAdminCodeExpiry(value) {
-    if (!value) return '永久有效';
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return '时间无效';
-    return `${date.toISOString().slice(0, 16).replace('T', ' ')} UTC`;
   }
 
   function formatMatchResult(result) {
@@ -246,7 +242,6 @@
     getLocalUndoCount,
     getScoreKey,
     resolveAppRoute,
-    formatAdminCodeExpiry,
     formatFinishReason,
     formatMatchResult,
     formatOnlineScoreName,
@@ -261,6 +256,11 @@
   if (typeof module !== 'undefined' && module.exports) module.exports = exported;
 
   function mountGame() {
+    const initialRoute = resolveAppRoute(globalScope.location.href);
+    if (initialRoute.view === 'admin') {
+      globalScope.location.replace('/admin/');
+      return;
+    }
     const home = document.querySelector('#game-home');
     const gameView = document.querySelector('#game-view');
     const leaderboardView = document.querySelector('#leaderboard-view');
@@ -323,15 +323,6 @@
     const roomWagerDisplay = document.querySelector('#room-wager-display');
     const roomSettlementMessage = document.querySelector('#room-settlement-message');
     const disconnectCountdown = document.querySelector('#disconnect-countdown');
-    const adminView = document.querySelector('#admin-view');
-    const adminBackButton = document.querySelector('#admin-back-button');
-    const adminRedeemForm = document.querySelector('#admin-redeem-form');
-    const adminGeneratedCode = document.querySelector('#admin-generated-code');
-    const adminGeneratedCodeValue = document.querySelector('#admin-generated-code-value');
-    const copyGeneratedCodeButton = document.querySelector('#copy-generated-code-button');
-    const adminMessage = document.querySelector('#admin-message');
-    const adminRedeemList = document.querySelector('#admin-redeem-list');
-    const refreshAdminCodesButton = document.querySelector('#refresh-admin-codes-button');
     const openLeaderboardButton = document.querySelector('#open-leaderboard-button');
     const leaderboardBackButton = document.querySelector('#leaderboard-back-button');
     const leaderboardSeasonSelect = document.querySelector('#leaderboard-season-select');
@@ -339,19 +330,9 @@
     const leaderboardList = document.querySelector('#leaderboard-list');
     const leaderboardCurrentPlayer = document.querySelector('#leaderboard-current-player');
     const leaderboardMessage = document.querySelector('#leaderboard-message');
-    const adminSeasonForm = document.querySelector('#admin-season-form');
-    const adminSeasonName = document.querySelector('#admin-season-name');
-    const adminCurrentSeason = document.querySelector('#admin-current-season');
-    const endCurrentSeasonButton = document.querySelector('#end-current-season-button');
-    const adminSeasonList = document.querySelector('#admin-season-list');
-    const adminSeasonMessage = document.querySelector('#admin-season-message');
-
     const onlineApi = globalScope.OnlineGame;
-    const economyApi = globalScope.PlayerEconomy;
     const statsApi = globalScope.PlayerStats;
-    const accountPanel = globalScope.HYLAccountPanel?.mount({
-      onAdminOpen: () => showAdminView(),
-    });
+    const accountPanel = globalScope.HYLAccountPanel?.mount();
     const accountClient = accountPanel?.accountClient;
     const economyClient = accountPanel?.economyClient;
     const statsClient = accountPanel?.statsClient;
@@ -392,7 +373,6 @@
       isAdmin: false,
       loaded: false,
     };
-    let adminCodes = [];
     let seasons = [];
     let selectedSeasonId = null;
     let leaderboardGameType = 'tic_tac_toe';
@@ -400,12 +380,6 @@
     let leaderboardBusy = false;
     let leaderboardError = '';
     let leaderboardRequestId = 0;
-    function setAdminMessage(message = '', stateName = '') {
-      if (!adminMessage) return;
-      adminMessage.textContent = message;
-      adminMessage.dataset.state = stateName;
-    }
-
     function setStatsMessage(element, message = '', stateName = '') {
       if (!element) return;
       element.textContent = message;
@@ -544,7 +518,6 @@
       if (accountDialog?.open) accountDialog.close();
       home.hidden = true;
       gameView.hidden = true;
-      adminView.hidden = true;
       leaderboardView.hidden = false;
       document.body.dataset.view = 'leaderboard';
       await loadLeaderboard();
@@ -1420,173 +1393,6 @@
       }
     }
 
-    function renderAdminCodes() {
-      adminRedeemList.textContent = '';
-      if (adminCodes.length === 0) {
-        const empty = document.createElement('p');
-        empty.className = 'admin-empty-state';
-        empty.textContent = '还没有兑换码，先生成一个。';
-        adminRedeemList.append(empty);
-        return;
-      }
-      const fragment = document.createDocumentFragment();
-      adminCodes.forEach((code) => {
-        const row = document.createElement('article');
-        row.className = 'admin-code-row';
-        const expired = code.expiresAt && Date.parse(code.expiresAt) <= Date.now();
-        const exhausted = code.claimCount >= code.maxClaims;
-        const status = !code.active ? '已停用' : expired ? '已过期' : exhausted ? '已领完' : '可领取';
-
-        const main = document.createElement('div');
-        const hint = document.createElement('strong');
-        hint.textContent = code.codeHint;
-        const meta = document.createElement('span');
-        meta.textContent = `${code.amount} 金币 · ${code.claimCount}/${code.maxClaims} 人 · ${formatAdminCodeExpiry(code.expiresAt)} · ${status}`;
-        main.append(hint, meta);
-
-        const disableButton = document.createElement('button');
-        disableButton.type = 'button';
-        disableButton.className = 'button secondary';
-        disableButton.dataset.disableCode = code.id;
-        disableButton.textContent = '停用';
-        disableButton.disabled = !code.active;
-        row.append(main, disableButton);
-        fragment.append(row);
-      });
-      adminRedeemList.append(fragment);
-    }
-
-    function renderAdminSeasons() {
-      if (!adminCurrentSeason || !adminSeasonList) return;
-      const current = seasons.find((season) => season.status === 'active') || null;
-      adminCurrentSeason.textContent = '';
-      const currentTitle = document.createElement('strong');
-      currentTitle.textContent = current ? current.name : '当前没有进行中的赛季';
-      const currentMeta = document.createElement('span');
-      currentMeta.textContent = current
-        ? `开始于 ${formatMatchTime(current.startedAt)}，已开局的对局在结束后仍计入本赛季。`
-        : '空窗期的对局会保留个人历史，但不产生排行榜积分。';
-      adminCurrentSeason.append(currentTitle, currentMeta);
-      endCurrentSeasonButton.hidden = !current;
-      adminSeasonForm.hidden = Boolean(current);
-
-      adminSeasonList.textContent = '';
-      const ended = seasons.filter((season) => season.status === 'ended');
-      if (ended.length === 0) {
-        const empty = document.createElement('p');
-        empty.className = 'admin-empty-state';
-        empty.textContent = '还没有历史赛季。';
-        adminSeasonList.append(empty);
-        return;
-      }
-      ended.forEach((season) => {
-        const row = document.createElement('article');
-        row.className = 'admin-season-row';
-        const name = document.createElement('strong');
-        name.textContent = season.name;
-        const time = document.createElement('span');
-        time.textContent = `${formatMatchTime(season.startedAt)} 至 ${formatMatchTime(season.endedAt)}`;
-        row.append(name, time);
-        adminSeasonList.append(row);
-      });
-    }
-
-    async function loadAdminSeasons() {
-      if (!statsClient || !economySnapshot.isAdmin) return;
-      setStatsMessage(adminSeasonMessage, '正在加载赛季');
-      try {
-        seasons = await statsClient.listSeasons();
-        renderSeasonControls();
-        renderAdminSeasons();
-        setStatsMessage(adminSeasonMessage);
-      } catch (error) {
-        setStatsMessage(adminSeasonMessage, statsApi.mapStatsError(error), 'error');
-      }
-    }
-
-    async function createAdminSeason() {
-      if (!statsClient || !economySnapshot.isAdmin) return;
-      setStatsMessage(adminSeasonMessage, '正在开启赛季');
-      try {
-        await statsClient.startSeason(adminSeasonName.value);
-        adminSeasonForm.reset();
-        await loadAdminSeasons();
-        setStatsMessage(adminSeasonMessage, '新赛季已开启', 'success');
-      } catch (error) {
-        setStatsMessage(adminSeasonMessage, statsApi.mapStatsError(error), 'error');
-      }
-    }
-
-    async function endAdminSeason() {
-      const current = seasons.find((season) => season.status === 'active');
-      if (!statsClient || !economySnapshot.isAdmin || !current) return;
-      if (!globalScope.confirm(`确认结束“${current.name}”？已开局的对局仍会计入本赛季。`)) return;
-      setStatsMessage(adminSeasonMessage, '正在结束赛季');
-      try {
-        await statsClient.endSeason(current.id);
-        await loadAdminSeasons();
-        setStatsMessage(adminSeasonMessage, '赛季已结束', 'success');
-      } catch (error) {
-        setStatsMessage(adminSeasonMessage, statsApi.mapStatsError(error), 'error');
-      }
-    }
-
-    async function loadAdminCodes() {
-      if (!economyClient || !economySnapshot.isAdmin) return;
-      setAdminMessage('正在加载兑换码');
-      try {
-        adminCodes = await economyClient.listRedeemCodes();
-        setAdminMessage();
-        renderAdminCodes();
-      } catch (error) {
-        setAdminMessage(economyApi.mapEconomyError(error), 'error');
-      }
-    }
-
-    function showAdminView() {
-      if (!economySnapshot.isAdmin) return;
-      if (accountDialog?.open) accountDialog.close();
-      home.hidden = true;
-      gameView.hidden = true;
-      leaderboardView.hidden = true;
-      adminView.hidden = false;
-      document.body.dataset.view = 'admin';
-      void loadAdminCodes();
-      void loadAdminSeasons();
-    }
-
-    async function createAdminRedeemCode() {
-      if (!economyClient || !economySnapshot.isAdmin) return;
-      const data = new FormData(adminRedeemForm);
-      const expiryValue = String(data.get('expiresAt') || '');
-      const expiresAt = expiryValue ? new Date(expiryValue).toISOString() : null;
-      setAdminMessage('正在生成兑换码');
-      try {
-        const code = await economyClient.createRedeemCode({
-          amount: Number(data.get('amount')),
-          maxClaims: Number(data.get('maxClaims')),
-          expiresAt,
-        });
-        adminGeneratedCodeValue.textContent = code.code;
-        adminGeneratedCode.hidden = false;
-        setAdminMessage('兑换码已生成，请立即复制保存', 'success');
-        await loadAdminCodes();
-      } catch (error) {
-        setAdminMessage(economyApi.mapEconomyError(error), 'error');
-      }
-    }
-
-    async function disableAdminRedeemCode(id) {
-      if (!economyClient || !economySnapshot.isAdmin) return;
-      try {
-        await economyClient.disableRedeemCode(id);
-        setAdminMessage('兑换码已停用', 'success');
-        await loadAdminCodes();
-      } catch (error) {
-        setAdminMessage(economyApi.mapEconomyError(error), 'error');
-      }
-    }
-
     async function submitOnlineUndo(action) {
       if (!onlineClient || onlineSubmitting || !onlineGame) return;
       onlineSubmitting = true;
@@ -1610,7 +1416,6 @@
       engine = engineFor(type);
       if (!engine) return;
       if (accountDialog?.open) accountDialog.close();
-      adminView.hidden = true;
       leaderboardView.hidden = true;
       home.hidden = true;
       gameView.hidden = false;
@@ -1657,7 +1462,6 @@
     async function showGameHome({ replaceUrl = false } = {}) {
       await resetGameSession();
       gameView.hidden = true;
-      adminView.hidden = true;
       leaderboardView.hidden = true;
       home.hidden = false;
       document.body.dataset.view = 'games';
@@ -1669,7 +1473,6 @@
       openGameHome: showGameHome,
     });
     openLeaderboardButton?.addEventListener('click', () => void showLeaderboardView());
-    adminBackButton?.addEventListener('click', () => void showGameHome());
     leaderboardBackButton?.addEventListener('click', () => void showGameHome());
     leaderboardSeasonSelect?.addEventListener('change', () => {
       selectedSeasonId = leaderboardSeasonSelect.value || null;
@@ -1683,30 +1486,6 @@
         tab.setAttribute('aria-selected', String(tab === button));
       });
       void loadLeaderboard();
-    });
-    adminSeasonForm?.addEventListener('submit', (event) => {
-      event.preventDefault();
-      void createAdminSeason();
-    });
-    endCurrentSeasonButton?.addEventListener('click', () => void endAdminSeason());
-    adminRedeemForm?.addEventListener('submit', (event) => {
-      event.preventDefault();
-      void createAdminRedeemCode();
-    });
-    copyGeneratedCodeButton?.addEventListener('click', async () => {
-      const code = adminGeneratedCodeValue.textContent;
-      if (!code) return;
-      try {
-        await globalScope.navigator.clipboard.writeText(code);
-        setAdminMessage('兑换码已复制', 'success');
-      } catch {
-        setAdminMessage(`请手动复制：${code}`, 'error');
-      }
-    });
-    refreshAdminCodesButton?.addEventListener('click', () => void loadAdminCodes());
-    adminRedeemList?.addEventListener('click', (event) => {
-      const button = event.target.closest('[data-disable-code]');
-      if (button) void disableAdminRedeemCode(button.dataset.disableCode);
     });
     backHomeButton.addEventListener('click', () => void showGameHome());
     document.querySelectorAll('input[name="difficulty"], input[name="first-player"]')
@@ -1785,14 +1564,15 @@
 
     globalScope.addEventListener('popstate', () => {
       const route = resolveAppRoute(globalScope.location.href);
-      if (route.view === 'game') {
+      if (route.view === 'admin') {
+        globalScope.location.replace('/admin/');
+      } else if (route.view === 'game') {
         enterGame(route.gameType, { replaceUrl: true, roomCode: route.roomCode });
       } else if (route.view === 'games') {
         void showGameHome({ replaceUrl: true });
       } else void showGameHome({ replaceUrl: true });
     });
 
-    const initialRoute = resolveAppRoute(globalScope.location.href);
     if (initialRoute.view === 'game') {
       enterGame(initialRoute.gameType, {
         replaceUrl: true,

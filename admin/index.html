@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#08090d">
+    <meta name="description" content="HYL Space 统一站点管理中心">
+    <title>站点管理 - HYL Space</title>
+    <link rel="icon" href="/assets/images/image_01.png">
+    <link rel="stylesheet" href="/assets/styles/game.css">
+    <link rel="stylesheet" href="/assets/styles/admin.css">
+    <script src="/src/config/online.js" defer></script>
+    <script src="/src/utils/room-code.js" defer></script>
+    <script src="/src/services/online.js" defer></script>
+    <script src="/src/services/account.js" defer></script>
+    <script src="/src/services/economy.js" defer></script>
+    <script src="/src/services/stats.js" defer></script>
+    <script src="/src/services/activities.js" defer></script>
+    <script src="/src/services/checkin.js" defer></script>
+    <script src="/src/services/notifications.js" defer></script>
+    <script src="/src/routes/account-panel.js" defer></script>
+    <script src="/src/routes/admin.js" defer></script>
+  </head>
+  <body class="admin-page">
+    <a class="skip-link" href="#admin-main">跳到管理内容</a>
+    <header class="admin-topbar">
+      <a class="admin-brand" href="/" aria-label="返回 HYL Space 首页">
+        <img src="/assets/images/image_01.png" alt="">
+        <span>HYL SPACE <small>CONTROL</small></span>
+      </a>
+      <button id="account-button" class="account-button" type="button" aria-label="打开账号面板" aria-haspopup="dialog" aria-controls="account-dialog">
+        <span class="account-avatar" aria-hidden="true">游</span>
+        <span class="account-button-copy">
+          <small id="account-kind-label">游客身份</small>
+          <strong id="account-display-name">匿名玩家</strong>
+        </span>
+        <span id="account-coin-balance" class="coin-balance" hidden>金币 0</span>
+      </button>
+    </header>
+
+    <main id="admin-main" class="admin-shell" tabindex="-1">
+      <header class="admin-hero">
+        <div>
+          <p>Site administration / HYL Space</p>
+          <h1>统一管理中心</h1>
+        </div>
+        <a class="admin-link-button" href="/">返回首页</a>
+      </header>
+
+      <section class="admin-access" aria-labelledby="admin-access-title">
+        <div>
+          <p class="admin-kicker">权限边界</p>
+          <h2 id="admin-access-title">管理员验证</h2>
+          <p id="admin-access-state" aria-live="polite">正在确认账号与管理权限…</p>
+        </div>
+        <div class="admin-access-actions">
+          <button id="admin-login-button" class="admin-primary-button" type="button" hidden>登录账号</button>
+          <button id="admin-retry-button" class="admin-secondary-button" type="button" hidden>重试验证</button>
+        </div>
+      </section>
+
+      <section id="admin-workspace" class="admin-workspace" hidden aria-label="站点管理工作区">
+        <nav class="admin-section-nav" aria-label="管理分区">
+          <a href="#admin-activity-section">活动</a>
+          <a href="#admin-checkin-section">签到规则</a>
+          <a href="#admin-notification-section">通知</a>
+          <a href="#admin-season-section">赛季</a>
+          <a href="#admin-redeem-section">兑换码</a>
+          <a href="#admin-system-section">系统状态</a>
+        </nav>
+
+        <section id="admin-activity-section" class="admin-section" aria-labelledby="admin-activity-title">
+          <header class="admin-section-heading">
+            <div><h2 id="admin-activity-title">活动排期</h2></div>
+            <button id="admin-activity-cancel" class="admin-secondary-button" type="button" hidden>取消编辑</button>
+          </header>
+          <form id="admin-activity-form" class="admin-form">
+            <input name="id" type="hidden">
+            <label class="admin-field admin-span-2"><span>标题</span><input name="title" type="text" maxlength="80" required></label>
+            <label class="admin-field admin-span-2"><span>正文</span><textarea name="body" rows="5" maxlength="4000" required></textarea></label>
+            <label class="admin-field"><span>封面地址（可选）</span><input name="coverUrl" type="url"></label>
+            <label class="admin-field"><span>奖励金币</span><input name="rewardAmount" type="number" min="0" max="1000000" step="1" value="0" required></label>
+            <label class="admin-field"><span>操作文字（可选）</span><input name="actionLabel" type="text" maxlength="40"></label>
+            <label class="admin-field"><span>操作地址（可选）</span><input name="actionUrl" type="url"></label>
+            <label class="admin-field"><span>自动发布时间</span><input name="publishAt" type="datetime-local" required></label>
+            <label class="admin-field"><span>活动开始时间</span><input name="startsAt" type="datetime-local" required></label>
+            <label class="admin-field"><span>活动结束时间</span><input name="endsAt" type="datetime-local" required></label>
+            <div class="admin-form-actions"><button class="admin-primary-button" type="submit">保存排期</button></div>
+          </form>
+          <p id="admin-activity-message" class="admin-message" aria-live="polite"></p>
+          <div id="admin-activity-list" class="admin-record-list" aria-live="polite"></div>
+        </section>
+
+        <section id="admin-checkin-section" class="admin-section" aria-labelledby="admin-checkin-title">
+          <header class="admin-section-heading">
+            <div><h2 id="admin-checkin-title">签到规则版本</h2></div>
+            <p>历史版本只读；新规则按香港日期生效。</p>
+          </header>
+          <form id="admin-checkin-form" class="admin-form admin-rule-form">
+            <label class="admin-field"><span>生效日期（香港）</span><input name="effectiveFrom" type="date" required></label>
+            <label class="admin-field"><span>周一奖励</span><input name="mondayReward" type="number" min="0" max="1000000" step="1" value="0" required></label>
+            <label class="admin-field"><span>周二奖励</span><input name="tuesdayReward" type="number" min="0" max="1000000" step="1" value="0" required></label>
+            <label class="admin-field"><span>周三奖励</span><input name="wednesdayReward" type="number" min="0" max="1000000" step="1" value="0" required></label>
+            <label class="admin-field"><span>周四奖励</span><input name="thursdayReward" type="number" min="0" max="1000000" step="1" value="0" required></label>
+            <label class="admin-field"><span>周五奖励</span><input name="fridayReward" type="number" min="0" max="1000000" step="1" value="0" required></label>
+            <label class="admin-field"><span>周六奖励</span><input name="saturdayReward" type="number" min="0" max="1000000" step="1" value="0" required></label>
+            <label class="admin-field"><span>周日奖励</span><input name="sundayReward" type="number" min="0" max="1000000" step="1" value="0" required></label>
+            <label class="admin-field"><span>补签费用</span><input name="makeupCost" type="number" min="0" max="1000000" step="1" value="0" required></label>
+            <div class="admin-form-actions"><button class="admin-primary-button" type="submit">创建规则版本</button></div>
+          </form>
+          <p id="admin-checkin-message" class="admin-message" aria-live="polite"></p>
+          <div id="admin-checkin-list" class="admin-record-list" aria-live="polite"></div>
+        </section>
+
+        <section id="admin-notification-section" class="admin-section" aria-labelledby="admin-notification-title">
+          <header class="admin-section-heading"><div><h2 id="admin-notification-title">独立通知</h2></div></header>
+          <form id="admin-notification-form" class="admin-form">
+            <label class="admin-field admin-span-2"><span>标题</span><input name="title" type="text" maxlength="120" required></label>
+            <label class="admin-field admin-span-2"><span>正文</span><textarea name="body" rows="5" maxlength="5000" required></textarea></label>
+            <label class="admin-field"><span>奖励金币</span><input name="rewardAmount" type="number" min="0" max="1000000" step="1" value="0" required></label>
+            <label class="admin-field"><span>立即可见时间</span><input name="visibleAt" type="datetime-local" required></label>
+            <label class="admin-field"><span>失效时间（可选）</span><input name="expiresAt" type="datetime-local"></label>
+            <div class="admin-form-actions"><button class="admin-primary-button" type="submit">发布通知</button></div>
+          </form>
+          <p id="admin-notification-message" class="admin-message" aria-live="polite"></p>
+          <div id="admin-notification-list" class="admin-record-list" aria-live="polite"></div>
+        </section>
+
+        <section id="admin-season-section" class="admin-section" aria-labelledby="admin-season-title">
+          <header class="admin-section-heading">
+            <div><h2 id="admin-season-title">赛季管理</h2></div>
+            <button id="end-current-season-button" class="admin-danger-button" type="button" hidden>结束当前赛季</button>
+          </header>
+          <div id="admin-current-season" class="admin-current-record"></div>
+          <form id="admin-season-form" class="admin-inline-form">
+            <label class="admin-field"><span>新赛季名称</span><input name="seasonName" type="text" minlength="1" maxlength="40" required></label>
+            <button class="admin-primary-button" type="submit">开启新赛季</button>
+          </form>
+          <p id="admin-season-message" class="admin-message" aria-live="polite"></p>
+          <div id="admin-season-list" class="admin-record-list" aria-live="polite"></div>
+        </section>
+
+        <section id="admin-redeem-section" class="admin-section" aria-labelledby="admin-redeem-title">
+          <header class="admin-section-heading"><div><h2 id="admin-redeem-title">兑换码</h2></div></header>
+          <form id="admin-redeem-form" class="admin-inline-form">
+            <label class="admin-field"><span>每次领取金币</span><input name="amount" type="number" min="1" max="1000000" step="1" value="100" required></label>
+            <label class="admin-field"><span>总领取人数</span><input name="maxClaims" type="number" min="1" max="100000" step="1" value="1" required></label>
+            <label class="admin-field"><span>有效期（可选）</span><input name="expiresAt" type="datetime-local"></label>
+            <button class="admin-primary-button" type="submit">生成兑换码</button>
+          </form>
+          <div id="admin-generated-code" class="admin-generated-code" hidden aria-live="polite">
+            <span>新兑换码</span><strong id="admin-generated-code-value"></strong>
+            <button id="copy-generated-code-button" class="admin-secondary-button" type="button">复制</button>
+          </div>
+          <p id="admin-redeem-message" class="admin-message" aria-live="polite"></p>
+          <div id="admin-redeem-list" class="admin-record-list" aria-live="polite"></div>
+        </section>
+
+        <section id="admin-system-section" class="admin-section" aria-labelledby="admin-system-title">
+          <header class="admin-section-heading"><div><h2 id="admin-system-title">系统状态</h2></div></header>
+          <dl id="admin-system-status" class="admin-system-status" aria-live="polite"></dl>
+        </section>
+      </section>
+
+      <dialog id="account-dialog" class="account-dialog" aria-labelledby="account-dialog-title">
+        <div class="account-dialog-shell">
+          <div class="account-dialog-heading">
+            <div><small>PLAYER ID</small><h2 id="account-dialog-title">登录账号</h2><p id="account-dialog-description">登录后才能验证管理权限。</p></div>
+            <button id="account-close-button" class="account-close-button" type="button" aria-label="关闭账号面板">×</button>
+          </div>
+          <div id="account-auth-view">
+            <div class="account-tabs" role="tablist" aria-label="账号操作">
+              <button id="account-login-tab" type="button" role="tab" aria-selected="true">登录</button>
+              <button id="account-register-tab" type="button" role="tab" aria-selected="false">注册</button>
+            </div>
+            <form id="account-login-form" class="account-form">
+              <label class="account-field"><span>用户名</span><input name="username" type="text" autocomplete="username" required></label>
+              <label class="account-field"><span>密码</span><input name="password" type="password" autocomplete="current-password" required></label>
+              <button class="button primary" type="submit">登录账号</button>
+            </form>
+            <form id="account-register-form" class="account-form" hidden>
+              <label class="account-field"><span>登录用户名</span><input name="username" type="text" minlength="3" maxlength="20" pattern="[A-Za-z0-9_]{3,20}" autocomplete="username" required></label>
+              <label class="account-field"><span>密码</span><input name="password" type="password" minlength="8" maxlength="64" autocomplete="new-password" required></label>
+              <label class="account-field"><span>游戏名</span><input name="gameName" type="text" maxlength="16" autocomplete="nickname" required></label>
+              <button class="button primary" type="submit">注册账号</button>
+            </form>
+          </div>
+          <form id="account-profile-form" class="account-form" hidden>
+            <p class="account-username">登录用户名 <strong id="profile-username"></strong></p>
+            <label class="account-field"><span>游戏名</span><input id="profile-game-name" name="gameName" type="text" maxlength="16" required></label>
+            <div class="account-profile-actions"><button class="button primary" type="submit">保存游戏名</button><button id="account-logout-button" class="button danger" type="button">退出账号</button></div>
+          </form>
+          <section id="wallet-panel" class="wallet-panel" hidden>
+            <div class="wallet-heading"><div><small>可用金币</small><strong id="wallet-balance">0</strong></div><button id="open-admin-button" type="button" hidden>管理后台</button></div>
+            <form id="redeem-code-form" class="redeem-form"><label class="account-field"><span>兑换码</span><div class="redeem-row"><input id="redeem-code-input" name="code" type="text" maxlength="16" required><button class="button primary" type="submit">领取</button></div></label></form>
+            <p id="redeem-message" class="account-message" aria-live="polite"></p>
+          </section>
+          <section id="match-history-panel" class="match-history-panel" hidden>
+            <label class="account-field"><span>战绩筛选</span><select id="match-history-filter"><option value="">全部游戏</option><option value="tic_tac_toe">无限井字棋</option><option value="gomoku">五子棋</option></select></label>
+            <div id="season-summary"></div><p id="match-history-message" class="account-message" aria-live="polite"></p><div id="match-history-list"></div><button id="load-more-history-button" type="button" hidden>加载更多</button>
+          </section>
+          <p id="account-message" class="account-message" aria-live="polite"></p>
+        </div>
+      </dialog>
+    </main>
+  </body>
+</html>

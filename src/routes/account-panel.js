@@ -391,7 +391,7 @@
     openAdminButton?.addEventListener('click', () => {
       accountDialog.close();
       if (mountOptions.onAdminOpen) mountOptions.onAdminOpen();
-      else globalScope.location.assign('/game/?view=admin');
+      else globalScope.location.assign('/admin/');
     });
     accountDialog.addEventListener('click', (event) => {
       if (event.target === accountDialog) accountDialog.close();

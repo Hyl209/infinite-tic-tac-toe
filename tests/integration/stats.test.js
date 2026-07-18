@@ -71,6 +71,17 @@ test('赛季管理 RPC 限定表字段避免与输出参数歧义', () => {
   }
 });
 
+test('统一管理中心复用赛季客户端且游戏控制器不再承载赛季管理', () => {
+  const adminSource = fs.existsSync('./src/routes/admin.js')
+    ? fs.readFileSync('./src/routes/admin.js', 'utf8')
+    : '';
+  const gameSource = fs.readFileSync('./src/routes/game.js', 'utf8');
+  assert.match(adminSource, /statsClient\.listSeasons/);
+  assert.match(adminSource, /statsClient\.startSeason/);
+  assert.match(adminSource, /statsClient\.endSeason/);
+  assert.doesNotMatch(gameSource, /statsClient\.(?:startSeason|endSeason)/);
+});
+
 test('至少一方为正式账号时才写入历史且游客对局不进入赛季积分', () => {
   for (const sql of [readGuestHistoryMigration(), readSetupSql()]) {
     const start = sql.lastIndexOf('create or replace function public.record_online_round_result');

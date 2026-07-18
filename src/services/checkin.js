@@ -77,9 +77,12 @@
     return Array.isArray(data) ? data[0] : data;
   }
 
-  function requiredRpcRow(data) {
+  function requiredRpcRow(data, fields) {
     var row = firstRpcRow(data);
-    if (!row || typeof row !== 'object' || Array.isArray(row)) fail('INVALID_CHECKIN_RESPONSE');
+    if (!row || typeof row !== 'object' || Array.isArray(row) ||
+        fields.some(function (field) { return row[field] == null; })) {
+      fail('INVALID_CHECKIN_RESPONSE');
+    }
     return row;
   }
 
@@ -161,7 +164,7 @@
       requireRequestId(requestId);
       return mapResult(requiredRpcRow(await callRpc('perform_daily_checkin', {
         p_request_id: requestId,
-      })));
+      }), ['checkin_date', 'reward_amount', 'balance']));
     }
 
     async function makeUp(date, paymentMethod, requestId) {
@@ -174,7 +177,7 @@
         p_date: date,
         p_payment_method: paymentMethod,
         p_request_id: requestId,
-      })));
+      }), ['checkin_date', 'reward_amount', 'balance']));
     }
 
     async function adminListRules() {
@@ -196,7 +199,7 @@
         p_saturday_reward: nullableNumber(rule.saturdayReward),
         p_sunday_reward: nullableNumber(rule.sundayReward),
         p_makeup_cost: nullableNumber(rule.makeupCost),
-      })));
+      }), ['id', 'effective_from']));
     }
 
     return {

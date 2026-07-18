@@ -17,9 +17,10 @@
     return Array.isArray(data) ? data[0] : data;
   }
 
-  function requiredRpcRow(data) {
+  function requiredRpcRow(data, fields) {
     const row = firstRpcRow(data);
-    if (!row || typeof row !== 'object' || Array.isArray(row)) {
+    if (!row || typeof row !== 'object' || Array.isArray(row)
+        || fields.some((field) => row[field] == null)) {
       throw new Error('INVALID_ACTIVITY_RESPONSE');
     }
     return row;
@@ -71,6 +72,9 @@
     async function callRpc(name, params) {
       const supabase = await accountClient.getSupabaseClient();
       const result = await supabase.rpc(name, params);
+      if (!result || typeof result !== 'object' || Array.isArray(result)) {
+        throw new Error('INVALID_ACTIVITY_RESPONSE');
+      }
       if (result.error) throw result.error;
       return result.data;
     }
@@ -85,7 +89,7 @@
       const row = requiredRpcRow(await callRpc('claim_activity_reward', {
         p_activity_id: activityId,
         p_request_id: requestId,
-      }));
+      }), ['reward_amount', 'balance', 'claimed_at']);
       return {
         rewardAmount: Number(row.reward_amount ?? 0),
         balance: Number(row.balance ?? 0),
@@ -112,7 +116,7 @@
         p_starts_at: input.startsAt ?? null,
         p_ends_at: input.endsAt ?? null,
         p_reward_amount: Number(input.rewardAmount ?? 0),
-      }));
+      }), ['id', 'is_active']);
       return mapAdminActivity(row);
     }
 
@@ -120,7 +124,7 @@
       requireRegistered();
       const row = requiredRpcRow(await callRpc('admin_unpublish_activity', {
         p_activity_id: activityId,
-      }));
+      }), ['id', 'is_active']);
       return mapAdminActivity(row);
     }
 

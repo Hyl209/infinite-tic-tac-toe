@@ -77,9 +77,12 @@
     return Array.isArray(data) ? data[0] : data;
   }
 
-  function requiredRpcRow(data) {
+  function requiredRpcRow(data, fields) {
     var row = firstRpcRow(data);
-    if (!row || typeof row !== 'object' || Array.isArray(row)) fail('INVALID_NOTIFICATION_RESPONSE');
+    if (!row || typeof row !== 'object' || Array.isArray(row) ||
+        fields.some(function (field) { return row[field] == null; })) {
+      fail('INVALID_NOTIFICATION_RESPONSE');
+    }
     return row;
   }
 
@@ -122,6 +125,9 @@
     var channelQueue = Promise.resolve();
     var latestChannelPromise = null;
     var unsubscribeIdentity = null;
+    var identityVersion = 0;
+    var retryTimer = null;
+    var retryAttempt = 0;
 
     async function getSupabaseClient() {
       var supabase = await accountClient.getSupabaseClient();
@@ -162,7 +168,7 @@
       requireRegistered();
       var row = requiredRpcRow(await callRpc('mark_site_notification_read', {
         p_notification_id: notificationId,
-      }));
+      }), ['notification_id', 'read_at']);
       return {
         notificationId: row && row.notification_id != null ? row.notification_id : null,
         readAt: row && row.read_at != null ? row.read_at : null,
@@ -175,7 +181,7 @@
       var row = requiredRpcRow(await callRpc('claim_site_notification_reward', {
         p_notification_id: notificationId,
         p_request_id: requestId,
-      }));
+      }), ['reward_amount', 'balance', 'claimed_at']);
       return {
         rewardAmount: nullableNumber(row && row.reward_amount),
         balance: nullableNumber(row && row.balance),
@@ -198,14 +204,14 @@
         p_reward_amount: nullableNumber(notification.rewardAmount),
         p_visible_at: notification.visibleAt,
         p_expires_at: notification.expiresAt ?? null,
-      })));
+      }), ['id', 'is_active']));
     }
 
     async function adminDisable(notificationId) {
       requireRegistered();
       return adminNotification(requiredRpcRow(await callRpc('admin_disable_site_notification', {
         p_notification_id: notificationId,
-      })));
+      }), ['id', 'is_active']));
     }
 
     function notifyListeners() {
@@ -297,11 +303,51 @@
       }
     }
 
+    function clearRetryTimer() {
+      if (retryTimer === null) return;
+      clearTimeout(retryTimer);
+      retryTimer = null;
+    }
+
+    function scheduleIdentityRetry(targetVersion) {
+      if (targetVersion !== identityVersion || listeners.size === 0 || retryTimer !== null) return;
+      var delay = Math.min(25 * (2 ** retryAttempt), 400);
+      retryAttempt = Math.min(retryAttempt + 1, 4);
+      retryTimer = setTimeout(function () {
+        retryTimer = null;
+        if (targetVersion !== identityVersion || listeners.size === 0) return;
+        if (channel) {
+          retryAttempt = 0;
+          return;
+        }
+        refreshIdentityChannel(targetVersion);
+      }, delay);
+      if (retryTimer && typeof retryTimer.unref === 'function') retryTimer.unref();
+    }
+
+    function refreshIdentityChannel(targetVersion) {
+      return requestChannelRefresh().then(function () {
+        if (targetVersion === identityVersion) {
+          clearRetryTimer();
+          retryAttempt = 0;
+        }
+      }, function () {
+        scheduleIdentityRetry(targetVersion);
+      });
+    }
+
+    function handleIdentityChange() {
+      var targetVersion = ++identityVersion;
+      clearRetryTimer();
+      retryAttempt = 0;
+      if (listeners.size === 0) return;
+      return refreshIdentityChannel(targetVersion);
+    }
+
     function startIdentitySubscription() {
       if (unsubscribeIdentity || typeof accountClient.subscribe !== 'function') return;
       var cleanup = accountClient.subscribe(function () {
-        if (listeners.size === 0) return;
-        return requestChannelRefresh().catch(function () {});
+        return handleIdentityChange();
       });
       unsubscribeIdentity = typeof cleanup === 'function' ? cleanup : function () {};
     }
@@ -315,6 +361,9 @@
 
     async function stopChannel() {
       var stoppedVersion = ++channelVersion;
+      identityVersion += 1;
+      clearRetryTimer();
+      retryAttempt = 0;
       stopIdentitySubscription();
       await channelQueue;
       if (listeners.size === 0 && stoppedVersion === channelVersion) await clearChannel();
@@ -325,6 +374,9 @@
       var wasEmpty = listeners.size === 0;
       listeners.add(listener);
       if (wasEmpty) {
+        identityVersion += 1;
+        clearRetryTimer();
+        retryAttempt = 0;
         startIdentitySubscription();
         requestChannelRefresh();
       }

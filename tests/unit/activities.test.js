@@ -14,7 +14,7 @@ function createFakeAccount({ kind = 'registered' } = {}) {
   const supabase = {
     async rpc(name, params) {
       calls.push([name, params]);
-      return responses.get(name) || { data: [], error: null };
+      return responses.has(name) ? responses.get(name) : { data: [], error: null };
     },
   };
   return {
@@ -218,6 +218,36 @@ test('single-row activity RPCs reject missing successful responses', async () =>
   assert.equal(
     activities.mapActivitiesError(new Error('INVALID_ACTIVITY_RESPONSE')),
     '活动服务返回了无效数据，请稍后重试',
+  );
+});
+
+test('activity writes reject empty rows, missing required fields, and missing RPC envelopes', async () => {
+  const missingEnvelope = createFakeAccount();
+  missingEnvelope.responses.set('claim_activity_reward', undefined);
+  const missingEnvelopeClient = activities.createActivitiesClient({
+    accountClient: missingEnvelope.accountClient,
+  });
+  await assert.rejects(
+    missingEnvelopeClient.claimReward('activity-1', 'request-1'),
+    { message: 'INVALID_ACTIVITY_RESPONSE' },
+  );
+
+  const fake = createFakeAccount();
+  fake.responses.set('claim_activity_reward', { data: {}, error: null });
+  fake.responses.set('admin_save_activity', { data: [{}], error: null });
+  fake.responses.set('admin_unpublish_activity', {
+    data: { id: 'activity-1' },
+    error: null,
+  });
+  const client = activities.createActivitiesClient({ accountClient: fake.accountClient });
+  await assert.rejects(
+    client.claimReward('activity-1', 'request-1'),
+    { message: 'INVALID_ACTIVITY_RESPONSE' },
+  );
+  await assert.rejects(client.adminSave({}), { message: 'INVALID_ACTIVITY_RESPONSE' });
+  await assert.rejects(
+    client.adminUnpublish('activity-1'),
+    { message: 'INVALID_ACTIVITY_RESPONSE' },
   );
 });
 

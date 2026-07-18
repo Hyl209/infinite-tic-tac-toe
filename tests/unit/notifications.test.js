@@ -14,6 +14,7 @@ function fakeClient(options = {}) {
   const calls = [];
   const channels = [];
   const removed = [];
+  const liveChannels = new Set();
   const identityListeners = new Set();
   let channelError = null;
   let getSupabaseClientCalls = 0;
@@ -40,7 +41,11 @@ function fakeClient(options = {}) {
           return channel;
         },
         subscribe(callback) {
-          queueMicrotask(() => callback(channelError ? 'CHANNEL_ERROR' : 'SUBSCRIBED'));
+          const failed = channelError;
+          queueMicrotask(() => {
+            if (!failed) liveChannels.add(channel);
+            callback(failed ? 'CHANNEL_ERROR' : 'SUBSCRIBED');
+          });
           return channel;
         },
       };
@@ -48,6 +53,7 @@ function fakeClient(options = {}) {
       return channel;
     },
     async removeChannel(channel) {
+      liveChannels.delete(channel);
       removed.push(channel);
     },
   };
@@ -58,6 +64,7 @@ function fakeClient(options = {}) {
     get getSupabaseClientCalls() { return getSupabaseClientCalls; },
     get getSessionCalls() { return getSessionCalls; },
     get identitySubscriberCount() { return identityListeners.size; },
+    get liveChannelCount() { return liveChannels.size; },
     getIdentity() { return { kind: identityKind }; },
     async getSupabaseClient() {
       getSupabaseClientCalls += 1;
@@ -79,6 +86,14 @@ function fakeClient(options = {}) {
       channelError = false;
     },
   };
+}
+
+async function waitFor(predicate, timeout = 500) {
+  const deadline = Date.now() + timeout;
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error('WAIT_FOR_TIMEOUT');
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
 }
 
 test('list uses defaults, paired cursor, clamped limit, and explicit public model', async () => {
@@ -242,6 +257,32 @@ test('active subscription rebuilds its channel when guest registers or registere
   assert.equal(supabase.channels.length, 5);
 });
 
+test('failed identity rebuild retries current user and cleanup cancels pending retry', async () => {
+  const supabase = fakeClient({ user: null });
+  const notifications = createNotificationsClient({ accountClient: supabase });
+  const off = await notifications.subscribe(() => {});
+
+  supabase.failNextChannel();
+  await supabase.setIdentity('registered', { id: 'user-a' });
+  assert.equal(supabase.liveChannelCount, 0);
+  supabase.recoverChannel();
+  await waitFor(() => supabase.liveChannelCount === 1);
+  assert.equal(
+    supabase.channels.at(-1).handlers[1].filter.filter,
+    'user_id=eq.user-a',
+  );
+
+  supabase.failNextChannel();
+  await supabase.setIdentity('registered', { id: 'user-b' });
+  const channelCountBeforeCleanup = supabase.channels.length;
+  await off();
+  supabase.recoverChannel();
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  assert.equal(supabase.channels.length, channelCountBeforeCleanup);
+  assert.equal(supabase.liveChannelCount, 0);
+  assert.equal(supabase.identitySubscriberCount, 0);
+});
+
 test('guest subscription watches only public notifications and failed init can retry', async () => {
   const supabase = fakeClient({ user: null });
   const notifications = createNotificationsClient({ accountClient: supabase });
@@ -277,6 +318,21 @@ test('scalar and single-row RPCs reject missing or invalid successful responses'
     mapNotificationsError({ code: 'INVALID_NOTIFICATION_RESPONSE' }),
     '通知服务返回了无效数据，请稍后重试',
   );
+});
+
+test('notification writes reject empty rows and missing required fields', async () => {
+  const supabase = fakeClient({ rpcResults: [
+    { data: {}, error: null },
+    { data: [{}], error: null },
+    { data: { id: 'n1' }, error: null },
+    { data: [{ is_active: false }], error: null },
+  ] });
+  const notifications = createNotificationsClient({ accountClient: supabase });
+
+  await assert.rejects(() => notifications.markRead('n1'), { message: 'INVALID_NOTIFICATION_RESPONSE' });
+  await assert.rejects(() => notifications.claimReward('n1', 'req-1'), { message: 'INVALID_NOTIFICATION_RESPONSE' });
+  await assert.rejects(() => notifications.adminPublish({}), { message: 'INVALID_NOTIFICATION_RESPONSE' });
+  await assert.rejects(() => notifications.adminDisable('n1'), { message: 'INVALID_NOTIFICATION_RESPONSE' });
 });
 
 test('maps stable notification errors and requires an account client', async () => {

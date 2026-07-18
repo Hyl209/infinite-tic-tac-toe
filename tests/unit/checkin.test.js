@@ -199,3 +199,22 @@ test('single-row check-in RPCs reject missing successful responses', async () =>
     '签到服务返回了无效数据，请稍后重试',
   );
 });
+
+test('check-in writes reject empty rows and missing required fields', async () => {
+  const accountClient = fakeAccount({ rpcResults: [
+    { data: {}, error: null },
+    { data: [{}], error: null },
+    { data: { id: 1 }, error: null },
+  ] });
+  const client = createCheckinClient({ accountClient });
+
+  await assert.rejects(() => client.checkIn('req-1'), { message: 'INVALID_CHECKIN_RESPONSE' });
+  await assert.rejects(
+    () => client.makeUp('2026-07-01', 'coins', 'req-2'),
+    { message: 'INVALID_CHECKIN_RESPONSE' },
+  );
+  await assert.rejects(
+    () => client.adminCreateRule({}),
+    { message: 'INVALID_CHECKIN_RESPONSE' },
+  );
+});

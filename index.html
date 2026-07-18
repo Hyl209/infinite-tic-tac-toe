@@ -7,27 +7,25 @@
     <meta name="description" content="HYL Space，收录工具、作品、游戏与近期动态的个人数字门户">
     <title>HYL Space - 工具、作品与游戏</title>
     <link rel="icon" href="data:,">
-    <link rel="stylesheet" href="assets/styles/game.css">
-    <link rel="stylesheet" href="assets/styles/portal.css">
-    <script src="assets/vendor/gsap/gsap.min.js" defer></script>
-    <script src="assets/vendor/gsap/ScrollTrigger.min.js" defer></script>
-    <script src="src/config/portal.js" defer></script>
-    <script src="src/config/online.js" defer></script>
-    <script src="src/domain/games/tic-tac-toe.js" defer></script>
-    <script src="src/domain/games/gomoku.js" defer></script>
-    <script src="src/utils/room-code.js" defer></script>
-    <script src="src/services/online.js" defer></script>
-    <script src="src/services/account.js" defer></script>
-    <script src="src/services/economy.js" defer></script>
-    <script src="src/services/stats.js" defer></script>
-    <script src="src/routes/game.js" defer></script>
-    <script src="src/routes/portal.js" defer></script>
+    <link rel="stylesheet" href="/assets/styles/game.css">
+    <link rel="stylesheet" href="/assets/styles/portal.css">
+    <script src="/assets/vendor/gsap/gsap.min.js" defer></script>
+    <script src="/assets/vendor/gsap/ScrollTrigger.min.js" defer></script>
+    <script src="/src/config/portal.js" defer></script>
+    <script src="/src/config/online.js" defer></script>
+    <script src="/src/utils/room-code.js" defer></script>
+    <script src="/src/services/online.js" defer></script>
+    <script src="/src/services/account.js" defer></script>
+    <script src="/src/services/economy.js" defer></script>
+    <script src="/src/services/stats.js" defer></script>
+    <script src="/src/routes/account-panel.js" defer></script>
+    <script src="/src/routes/portal.js" defer></script>
   </head>
   <body>
     <a class="skip-link" href="#site-main">跳到主要内容</a>
     <header class="site-nav">
       <div class="site-nav-inner">
-        <a class="site-brand" href="./" data-open-portal aria-label="返回 HYL Space 首页">
+        <a class="site-brand" href="/" aria-label="返回 HYL Space 首页">
           <span class="site-brand-mark" aria-hidden="true">H</span>
           <span>HYL SPACE</span>
         </a>
@@ -70,7 +68,7 @@
             <p class="portal-intro">这里收着我正在使用、制作和反复打磨的东西。</p>
             <div class="portal-hero-actions">
               <a class="portal-action primary" href="#tools" data-portal-section="tools">打开工具集</a>
-              <button class="portal-action secondary" type="button" data-open-game-hub>进入游戏专区</button>
+              <a class="portal-action secondary" href="/game/">进入游戏专区</a>
             </div>
             <p class="portal-index-note">TOOLS · WORKS · PLAY · NOTES</p>
           </div>
@@ -143,20 +141,20 @@
             <p>游戏仍然完整保留，但它只是 HYL Space 的一部分。</p>
           </header>
           <div class="portal-game-stage">
-            <button class="portal-game-link" type="button" data-game-type="tic_tac_toe">
+            <a class="portal-game-link" href="/game/?game=tic_tac_toe">
               <span class="portal-game-board tic" aria-hidden="true">
                 <i>X</i><i></i><i>O</i><i></i><i>X</i><i></i><i>O</i><i></i><i>X</i>
               </span>
               <span><strong>无限井字棋</strong><small>动态消子 · AI · 双人 · 在线</small></span>
-            </button>
-            <button class="portal-game-link" type="button" data-game-type="gomoku">
+            </a>
+            <a class="portal-game-link" href="/game/?game=gomoku">
               <span class="portal-game-board gomoku" aria-hidden="true">
                 <i></i><i></i><i></i><i></i><i></i>
               </span>
               <span><strong>五子棋</strong><small>15×15 棋盘 · AI · 双人 · 在线</small></span>
-            </button>
+            </a>
           </div>
-          <button class="portal-section-action" type="button" data-open-game-hub>查看游戏专区与排行榜</button>
+          <a class="portal-section-action" href="/game/">查看游戏专区与排行榜</a>
         </section>
 
         <section id="updates" class="portal-section portal-updates" aria-labelledby="updates-title">
@@ -174,49 +172,6 @@
           <p>工具、作品、游戏与持续发生的事。</p>
           <a href="#portal-main-title">回到顶部</a>
         </footer>
-      </section>
-
-      <section id="game-home" class="game-home" hidden aria-labelledby="home-title">
-        <div class="home-actions">
-          <button id="game-hub-back-button" class="button secondary" type="button">返回 HYL Space</button>
-          <button id="open-leaderboard-button" class="button secondary home-leaderboard-button" type="button">
-            查看排行榜
-          </button>
-        </div>
-
-        <header class="home-copy">
-          <p class="home-mark" aria-hidden="true"><span>五</span><span>井</span></p>
-          <div>
-            <p class="home-kicker">选一盘，马上开局</p>
-            <h1 id="home-title">两种棋局，三种对战方式</h1>
-            <p>挑战三档 AI，和身边的人轮流落子，或把房间码发给好友在线对战。</p>
-          </div>
-        </header>
-
-        <div class="game-picker" aria-label="选择游戏">
-          <button class="game-choice tic-choice" type="button" data-game-type="tic_tac_toe">
-            <span class="choice-preview tic-preview" aria-hidden="true">
-              <i>X</i><i></i><i>O</i><i></i><i>X</i><i></i><i>O</i><i></i><i>X</i>
-            </span>
-            <span class="choice-copy">
-              <strong>无限井字棋</strong>
-              <small>每方只保留三颗棋子，旧棋会随落子消失。</small>
-              <span>进入棋局</span>
-            </span>
-          </button>
-
-          <button class="game-choice gomoku-choice" type="button" data-game-type="gomoku">
-            <span class="choice-preview gomoku-preview" aria-hidden="true">
-              <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
-            </span>
-            <span class="choice-copy">
-              <strong>五子棋</strong>
-              <small>15×15 棋盘，无禁手，横竖斜五颗连成一线即胜。</small>
-              <span>进入棋局</span>
-            </span>
-          </button>
-        </div>
-
       </section>
 
         <dialog id="account-dialog" class="account-dialog" aria-labelledby="account-dialog-title">
@@ -383,286 +338,6 @@
             <p class="account-footnote">游客也能在线对战，名称会显示为匿名玩家加随机码。</p>
           </div>
         </dialog>
-
-      <section id="game-view" class="app-shell" hidden>
-        <section class="control-panel" aria-labelledby="game-title">
-          <button id="back-home-button" class="back-button" type="button">返回游戏专区</button>
-
-          <header class="hero-copy">
-            <p id="brand-mark" class="brand-mark" aria-hidden="true">X<span>O</span></p>
-            <div>
-              <h1 id="game-title">无限井字棋</h1>
-              <p id="game-description">每方只保留 3 颗棋子，棋局永远不会填满。</p>
-            </div>
-          </header>
-
-          <div class="status-card" data-result="playing">
-            <p class="status-label">当前对局</p>
-            <p id="status-text" class="status-text" aria-live="polite">轮到你，你是 X</p>
-            <p id="mark-info" class="mark-info">你执 X，AI 执 O</p>
-          </div>
-
-          <div class="settings" aria-label="游戏设置">
-            <fieldset>
-              <legend>对战模式</legend>
-              <div class="segmented-control">
-                <label>
-                  <input type="radio" name="game-mode" value="ai" checked>
-                  <span>人机对战</span>
-                </label>
-                <label>
-                  <input type="radio" name="game-mode" value="pvp">
-                  <span>双人对战</span>
-                </label>
-                <label>
-                  <input type="radio" name="game-mode" value="online">
-                  <span>线上对战</span>
-                </label>
-              </div>
-            </fieldset>
-
-            <fieldset id="online-room-panel" hidden>
-              <legend>好友房间</legend>
-              <div class="online-room-actions">
-                <fieldset id="online-wager-picker" class="wager-picker">
-                  <legend>每人彩头</legend>
-                  <div class="segmented-control four-options">
-                    <label><input type="radio" name="online-wager" value="0" checked><span>免费</span></label>
-                    <label><input type="radio" name="online-wager" value="10"><span>10</span></label>
-                    <label><input type="radio" name="online-wager" value="50"><span>50</span></label>
-                    <label><input type="radio" name="online-wager" value="100"><span>100</span></label>
-                  </div>
-                  <p id="wager-balance-note" class="wager-balance-note">登录后可使用金币彩头</p>
-                </fieldset>
-                <button id="create-room-button" class="button primary" type="button">创建房间</button>
-                <div class="room-join-row">
-                  <input
-                    id="room-code-input"
-                    type="text"
-                    inputmode="text"
-                    maxlength="12"
-                    autocomplete="off"
-                    spellcheck="false"
-                    aria-label="六位房间码"
-                    placeholder="输入房间码"
-                  >
-                  <button id="join-room-button" class="button secondary" type="button">查看</button>
-                </div>
-                <div id="room-preview" class="room-preview" hidden>
-                  <p id="room-preview-game">线上对战</p>
-                  <p><strong id="room-preview-host">好友房间</strong></p>
-                  <p id="room-preview-wager">每人彩头 0 金币</p>
-                  <div class="room-preview-actions">
-                    <button id="confirm-join-button" class="button primary" type="button">确认加入</button>
-                    <button id="cancel-join-button" class="button secondary" type="button">取消</button>
-                  </div>
-                </div>
-              </div>
-              <div id="online-room-session" class="online-room-session" hidden>
-                <p>房间码 <strong id="room-code-display">------</strong></p>
-                <p id="room-wager-display" class="room-wager-display">本局无彩头</p>
-                <p id="disconnect-countdown" class="disconnect-countdown" hidden></p>
-                <p id="room-settlement-message" class="room-settlement-message" hidden></p>
-                <div class="room-session-actions">
-                  <button id="copy-room-button" class="button secondary" type="button">复制邀请</button>
-                  <button id="leave-room-button" class="button danger" type="button">退出房间</button>
-                </div>
-              </div>
-              <div id="online-undo-request" class="undo-request" hidden>
-                <p id="online-undo-message"></p>
-                <div class="undo-request-actions">
-                  <button id="accept-undo-button" class="button primary" type="button">同意</button>
-                  <button id="reject-undo-button" class="button secondary" type="button">拒绝</button>
-                  <button id="cancel-undo-button" class="button secondary" type="button">取消请求</button>
-                </div>
-              </div>
-              <p id="online-room-message" class="online-room-message" aria-live="polite"></p>
-            </fieldset>
-
-            <fieldset id="ai-difficulty-settings">
-              <legend>AI 强度</legend>
-              <div class="segmented-control">
-                <label>
-                  <input type="radio" name="difficulty" value="easy">
-                  <span>简单</span>
-                </label>
-                <label>
-                  <input type="radio" name="difficulty" value="normal" checked>
-                  <span>普通</span>
-                </label>
-                <label>
-                  <input type="radio" name="difficulty" value="hard">
-                  <span>困难</span>
-                </label>
-              </div>
-            </fieldset>
-
-            <fieldset id="ai-first-settings">
-              <legend>谁先落子</legend>
-              <div class="segmented-control two-options">
-                <label>
-                  <input type="radio" name="first-player" value="player" checked>
-                  <span>我先手</span>
-                </label>
-                <label>
-                  <input type="radio" name="first-player" value="ai">
-                  <span>AI 先手</span>
-                </label>
-              </div>
-            </fieldset>
-
-            <fieldset id="placement-settings" hidden>
-              <legend>落子方式</legend>
-              <div class="segmented-control two-options">
-                <label>
-                  <input type="radio" name="placement-mode" value="single">
-                  <span>单击落子</span>
-                </label>
-                <label>
-                  <input type="radio" name="placement-mode" value="confirm">
-                  <span>点两次确认</span>
-                </label>
-              </div>
-            </fieldset>
-          </div>
-
-          <section class="scoreboard" aria-label="本次会话比分">
-            <div>
-              <span id="left-score-name" class="score-name">玩家</span>
-              <strong id="player-score">0</strong>
-            </div>
-            <div>
-              <span id="middle-score-name" class="score-name">平局</span>
-              <strong id="draw-score">0</strong>
-            </div>
-            <div>
-              <span id="right-score-name" class="score-name">AI</span>
-              <strong id="ai-score">0</strong>
-            </div>
-          </section>
-
-          <div class="actions">
-            <button id="restart-button" class="button primary" type="button">重新开始</button>
-            <button id="undo-button" class="button secondary" type="button">悔棋</button>
-            <button id="clear-score-button" class="button secondary" type="button">清空比分</button>
-          </div>
-        </section>
-
-        <section class="game-panel" aria-label="棋盘">
-          <div class="arena-heading">
-            <div>
-              <span id="arena-label" class="arena-label">动态棋盘</span>
-              <strong id="difficulty-label">普通模式</strong>
-            </div>
-            <span id="thinking-label" class="thinking-label" aria-hidden="true">AI 思考中</span>
-            <span id="online-connection-label" class="connection-label" hidden>连接中</span>
-          </div>
-
-          <div id="board" class="board" role="grid" aria-label="棋盘"></div>
-
-          <p id="game-note" class="game-note">
-            <span class="expiry-swatch" aria-hidden="true"></span>
-            <span id="game-note-text">高亮棋子会在该方下次落子时消失</span>
-          </p>
-        </section>
-      </section>
-
-      <section id="leaderboard-view" class="leaderboard-shell" hidden aria-labelledby="leaderboard-title">
-        <button id="leaderboard-back-button" class="back-button" type="button">返回游戏专区</button>
-        <header class="leaderboard-header">
-          <div>
-            <p>在线竞技</p>
-            <h1 id="leaderboard-title">赛季排行榜</h1>
-          </div>
-          <p>正式账号之间的在线对局计入积分，胜 3 分，平 1 分，负 0 分。</p>
-        </header>
-
-        <div class="leaderboard-toolbar">
-          <label for="leaderboard-season-select">
-            <span>赛季</span>
-            <select id="leaderboard-season-select"></select>
-          </label>
-          <div id="leaderboard-game-tabs" class="leaderboard-game-tabs" role="tablist" aria-label="排行榜游戏">
-            <button type="button" role="tab" aria-selected="true" data-leaderboard-game="tic_tac_toe">无限井字棋</button>
-            <button type="button" role="tab" aria-selected="false" data-leaderboard-game="gomoku">五子棋</button>
-          </div>
-        </div>
-
-        <p id="leaderboard-message" class="leaderboard-message" aria-live="polite"></p>
-        <div id="leaderboard-list" class="leaderboard-list" aria-live="polite"></div>
-        <aside id="leaderboard-current-player" class="leaderboard-current-player" hidden aria-label="我的当前排名"></aside>
-      </section>
-
-      <section id="admin-view" class="admin-shell" hidden aria-labelledby="admin-title">
-        <button id="admin-back-button" class="back-button" type="button">返回游戏专区</button>
-        <header class="admin-header">
-          <div>
-            <p>站点管理</p>
-            <h1 id="admin-title">管理后台</h1>
-          </div>
-          <p>管理竞技赛季与金币兑换码。结束赛季后，新开的对局不再计入该赛季。</p>
-        </header>
-
-        <section class="admin-season-section" aria-labelledby="admin-season-title">
-          <div class="admin-list-heading">
-            <div>
-              <p>竞技排行</p>
-              <h2 id="admin-season-title">赛季管理</h2>
-            </div>
-            <button id="end-current-season-button" class="button danger" type="button" hidden>结束当前赛季</button>
-          </div>
-          <div id="admin-current-season" class="admin-current-season"></div>
-          <form id="admin-season-form" class="admin-season-form">
-            <label class="account-field" for="admin-season-name">
-              <span>新赛季名称</span>
-              <input id="admin-season-name" name="seasonName" type="text" minlength="1" maxlength="40" required>
-            </label>
-            <button class="button primary" type="submit">开启新赛季</button>
-          </form>
-          <p id="admin-season-message" class="account-message" aria-live="polite"></p>
-          <div id="admin-season-list" class="admin-season-list"></div>
-        </section>
-
-        <section class="admin-code-section" aria-labelledby="admin-redeem-title">
-          <div class="admin-list-heading">
-            <div>
-              <p>金币管理</p>
-              <h2 id="admin-redeem-title">兑换码</h2>
-            </div>
-          </div>
-
-        <form id="admin-redeem-form" class="admin-form">
-          <label class="account-field" for="admin-code-amount">
-            <span>每次领取金币</span>
-            <input id="admin-code-amount" name="amount" type="number" min="1" max="1000000" value="100" required>
-          </label>
-          <label class="account-field" for="admin-code-limit">
-            <span>总领取人数</span>
-            <input id="admin-code-limit" name="maxClaims" type="number" min="1" max="100000" value="1" required>
-          </label>
-          <label class="account-field" for="admin-code-expiry">
-            <span>有效期（可不填）</span>
-            <input id="admin-code-expiry" name="expiresAt" type="datetime-local">
-          </label>
-          <button class="button primary" type="submit">生成兑换码</button>
-        </form>
-
-        <section id="admin-generated-code" class="generated-code" hidden aria-live="polite">
-          <span>新兑换码</span>
-          <strong id="admin-generated-code-value"></strong>
-          <button id="copy-generated-code-button" class="button secondary" type="button">复制兑换码</button>
-        </section>
-
-        <p id="admin-message" class="account-message" aria-live="polite"></p>
-        <section class="admin-code-section" aria-labelledby="admin-code-list-title">
-          <div class="admin-list-heading">
-            <h2 id="admin-code-list-title">最近创建</h2>
-            <button id="refresh-admin-codes-button" class="button secondary" type="button">刷新列表</button>
-          </div>
-          <div id="admin-redeem-list" class="admin-code-list"></div>
-        </section>
-        </section>
-      </section>
     </main>
   </body>
 </html>

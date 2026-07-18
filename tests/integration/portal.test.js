@@ -27,20 +27,42 @@ test('默认页面提供 HYL Space 门户并按工具、作品、游戏、动态
   assert.match(html, /id="portal-home"/);
   assert.match(html, /HYL SPACE/);
   assert.ok(tools > 0 && works > tools && games > works && updates > games);
-  assert.match(html, /id="game-home"[^>]*hidden/);
+  assert.doesNotMatch(html, /id="game-home"/);
+  assert.doesNotMatch(html, /id="game-view"/);
+  assert.doesNotMatch(html, /src="\/src\/routes\/game\.js"/);
+  assert.match(html, /href="\/game\/\?game=tic_tac_toe"/);
+  assert.match(html, /href="\/game\/\?game=gomoku"/);
+  assert.match(html, /href="\/game\/"/);
   assert.match(html, /class="skip-link"\s+href="#site-main"/);
   assert.match(html, /<main id="site-main"[^>]*tabindex="-1"/);
   assert.doesNotMatch(html, /href="#"/);
 });
 
+test('旧游戏查询参数会重定向到独立游戏页面', () => {
+  assert.equal(
+    portal.getLegacyGameRedirect('https://hhhyl.me/?game=gomoku&room=ABC23D'),
+    'https://hhhyl.me/game/?game=gomoku&room=ABC23D',
+  );
+  assert.equal(
+    portal.getLegacyGameRedirect('https://hhhyl.me/?view=games'),
+    'https://hhhyl.me/game/',
+  );
+  assert.equal(portal.getLegacyGameRedirect('https://hhhyl.me/#games'), null);
+});
+
 test('门户加载独立内容、样式、动效和本地 GSAP 资源', () => {
   const html = fs.readFileSync('./index.html', 'utf8');
 
-  assert.match(html, /href="assets\/styles\/portal\.css"/);
-  assert.match(html, /src="assets\/vendor\/gsap\/gsap\.min\.js"[^>]*defer/);
-  assert.match(html, /src="assets\/vendor\/gsap\/ScrollTrigger\.min\.js"[^>]*defer/);
-  assert.match(html, /src="src\/config\/portal\.js"[^>]*defer/);
-  assert.match(html, /src="src\/routes\/portal\.js"[^>]*defer/);
+  assert.match(html, /href="\/assets\/styles\/portal\.css"/);
+  assert.match(html, /src="\/assets\/vendor\/gsap\/gsap\.min\.js"[^>]*defer/);
+  assert.match(html, /src="\/assets\/vendor\/gsap\/ScrollTrigger\.min\.js"[^>]*defer/);
+  assert.match(html, /src="\/src\/config\/portal\.js"[^>]*defer/);
+  const roomCodeIndex = html.indexOf('src="/src/utils/room-code.js"');
+  const onlineIndex = html.indexOf('src="/src/services/online.js"');
+  assert.ok(roomCodeIndex >= 0 && roomCodeIndex < onlineIndex);
+  assert.match(html, /src="\/src\/routes\/account-panel\.js"[^>]*defer/);
+  assert.match(html, /src="\/src\/routes\/portal\.js"[^>]*defer/);
+  assert.match(html, /id="account-dialog"/);
 });
 
 test('门户配置使用统一字段且占位内容不提供假链接', () => {
@@ -74,7 +96,7 @@ test('没有真实链接的门户条目保持不可交互', () => {
     interactive: false,
     status: '内容整理中',
   });
-  assert.deepEqual(portal.getPortalItemState({ href: '?view=games', status: '在线' }), {
+  assert.deepEqual(portal.getPortalItemState({ href: '/game/', status: '在线' }), {
     interactive: true,
     status: '在线',
   });

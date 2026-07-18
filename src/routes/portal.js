@@ -6,6 +6,20 @@
     return desktop ? 'immersive' : 'light';
   }
 
+  function getLegacyGameRedirect(urlLike) {
+    const url = new URL(urlLike, 'https://hyl.space/');
+    const isGameRoute = url.searchParams.get('view') === 'games'
+      || url.searchParams.has('game')
+      || url.searchParams.has('room');
+    if (!isGameRoute) return null;
+
+    const target = new URL('/game/', url.origin);
+    url.searchParams.forEach((value, key) => {
+      if (key !== 'view') target.searchParams.append(key, value);
+    });
+    return target.toString();
+  }
+
   function getPortalItemState(item = {}) {
     return {
       interactive: Boolean(item.href),
@@ -30,7 +44,6 @@
       element.className = `portal-entry portal-entry-${section}`;
       if (state.interactive) {
         element.href = item.href;
-        if (item.href === '?view=games') element.dataset.openGameHub = '';
       } else {
         element.classList.add('is-pending');
       }
@@ -201,34 +214,10 @@
         menuButton,
       })) closeMenu();
 
-      const portalLink = event.target.closest('[data-open-portal]');
-      const gameHubLink = event.target.closest('[data-open-game-hub]');
       const sectionLink = event.target.closest('[data-portal-section]');
-
-      if (portalLink) {
-        event.preventDefault();
-        closeMenu();
-        void Promise.resolve(globalScope.GameApp?.openPortal?.()).then(() => {
-          globalScope.scrollTo({ top: 0, behavior: 'smooth' });
-        });
-        return;
-      }
-
-      if (gameHubLink) {
-        event.preventDefault();
-        closeMenu();
-        void globalScope.GameApp?.openGameHome?.();
-        return;
-      }
 
       if (sectionLink) {
         closeMenu();
-        if (!root.hidden) return;
-        event.preventDefault();
-        const sectionId = sectionLink.dataset.portalSection;
-        void Promise.resolve(globalScope.GameApp?.openPortal?.()).then(() => {
-          document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth' });
-        });
       }
     });
 
@@ -251,6 +240,7 @@
   const exported = {
     activate,
     deactivate,
+    getLegacyGameRedirect,
     getPortalItemState,
     resolveMotionMode,
     shouldCloseMenuOnOutsideClick,
@@ -259,7 +249,10 @@
   if (typeof module !== 'undefined' && module.exports) module.exports = exported;
   globalScope.HYLPortal = exported;
   if (typeof document !== 'undefined') {
-    if (document.readyState === 'loading') {
+    const redirect = getLegacyGameRedirect(globalScope.location.href);
+    if (redirect) {
+      globalScope.location.replace(redirect);
+    } else if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', mountPortal, { once: true });
     } else {
       mountPortal();

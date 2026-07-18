@@ -10,10 +10,10 @@ try {
 }
 
 test('页面加载战绩服务并提供分开的个人历史和排行榜入口', () => {
-  const html = fs.readFileSync('./index.html', 'utf8');
+  const html = fs.readFileSync('./game/index.html', 'utf8');
   assert.match(
     html,
-    /src="src\/services\/economy\.js"[^>]*defer[\s\S]*src="src\/services\/stats\.js"[^>]*defer[\s\S]*src="src\/routes\/game\.js"[^>]*defer/,
+    /src="\/src\/services\/economy\.js"[^>]*defer[\s\S]*src="\/src\/services\/stats\.js"[^>]*defer[\s\S]*src="\/src\/routes\/account-panel\.js"[^>]*defer[\s\S]*src="\/src\/routes\/game\.js"[^>]*defer/,
   );
   for (const id of [
     'open-leaderboard-button',
@@ -33,7 +33,7 @@ test('页面加载战绩服务并提供分开的个人历史和排行榜入口',
 });
 
 test('管理后台提供赛季开启结束和历史列表', () => {
-  const html = fs.readFileSync('./index.html', 'utf8');
+  const html = fs.readFileSync('./game/index.html', 'utf8');
   for (const id of [
     'admin-season-form',
     'admin-season-name',
@@ -49,16 +49,16 @@ test('管理后台提供赛季开启结束和历史列表', () => {
 
 test('页面控制器接入战绩查询、分页、排行榜和赛季管理', () => {
   const source = fs.readFileSync('./src/routes/game.js', 'utf8');
-  assert.match(source, /PlayerStats/);
-  assert.match(source, /createStatsClient\(\{[\s\S]*accountClient/);
+  const accountSource = fs.readFileSync('./src/routes/account-panel.js', 'utf8');
+  assert.match(accountSource, /createStatsClient\(\{[\s\S]*accountClient/);
   assert.match(source, /statsClient\.listSeasons/);
-  assert.match(source, /statsClient\.getHistory/);
-  assert.match(source, /statsClient\.getMyStandings/);
+  assert.match(accountSource, /statsClient\.getHistory/);
+  assert.match(accountSource, /statsClient\.getMyStandings/);
   assert.match(source, /statsClient\.getLeaderboard/);
   assert.match(source, /statsClient\.startSeason/);
   assert.match(source, /statsClient\.endSeason/);
-  assert.match(source, /beforeFinishedAt/);
-  assert.match(source, /beforeId/);
+  assert.match(accountSource, /beforeFinishedAt/);
+  assert.match(accountSource, /beforeId/);
 });
 
 test('战绩和排行榜格式化函数返回稳定中文文案', () => {
@@ -93,13 +93,13 @@ test('排行榜使用请求序号阻止旧响应覆盖新分榜', () => {
 });
 
 test('个人战绩使用请求序号阻止旧账号响应覆盖', () => {
-  const source = fs.readFileSync('./src/routes/game.js', 'utf8');
-  assert.match(source, /matchHistoryRequestId/);
-  assert.match(source, /requestId\s*!==\s*matchHistoryRequestId/);
-  assert.match(source, /matchHistoryBusy\s*&&\s*!reset/);
+  const source = fs.readFileSync('./src/routes/account-panel.js', 'utf8');
+  assert.match(source, /historyRequestId/);
+  assert.match(source, /requestId\s*!==\s*historyRequestId/);
+  assert.match(source, /historyBusy\s*&&\s*!reset/);
   assert.match(
     source,
-    /accountClient\?\.subscribe\([\s\S]*matchHistoryRequestId\s*\+=\s*1/,
+    /accountClient\?\.subscribe\([\s\S]*historyRequestId\s*\+=\s*1/,
   );
 });
 

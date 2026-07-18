@@ -97,6 +97,8 @@
     const guestName = getGuestName({ storage, random });
     const listeners = new Set();
     let supabase = null;
+    let supabasePromise = null;
+    let initializationPromise = null;
     let identity = guestIdentity(guestName);
 
     function isConfigured() {
@@ -121,16 +123,22 @@
 
     async function getSupabaseClient() {
       if (supabase) return supabase;
+      if (supabasePromise) return supabasePromise;
       if (!isConfigured()) throw new Error('ONLINE_NOT_CONFIGURED');
-      const sdk = await loadSupabase();
-      supabase = sdk.createClient(config.supabaseUrl, config.supabaseAnonKey, {
-        auth: {
-          persistSession: true,
-          autoRefreshToken: true,
-          detectSessionInUrl: false,
-        },
+      supabasePromise = loadSupabase().then((sdk) => {
+        supabase = sdk.createClient(config.supabaseUrl, config.supabaseAnonKey, {
+          auth: {
+            persistSession: true,
+            autoRefreshToken: true,
+            detectSessionInUrl: false,
+          },
+        });
+        return supabase;
+      }).catch((error) => {
+        supabasePromise = null;
+        throw error;
       });
-      return supabase;
+      return supabasePromise;
     }
 
     async function readProfile(userId) {
@@ -161,13 +169,30 @@
       return registeredIdentity(user, profile);
     }
 
-    async function initialize() {
-      if (!isConfigured()) return setIdentity(guestIdentity(guestName));
-      const client = await getSupabaseClient();
-      const result = await client.auth.getSession();
-      if (result.error) throw result.error;
-      const user = result.data.session?.user || null;
-      return setIdentity(await identityForUser(user));
+    function initialize() {
+      if (!isConfigured()) return Promise.resolve(setIdentity(guestIdentity(guestName)));
+      if (!initializationPromise) {
+        initializationPromise = (async () => {
+          const client = await getSupabaseClient();
+          const result = await client.auth.getSession();
+          if (result.error) throw result.error;
+          const user = result.data.session?.user || null;
+          return setIdentity(await identityForUser(user));
+        })().catch((error) => {
+          initializationPromise = null;
+          throw error;
+        });
+      }
+      return initializationPromise;
+    }
+
+    async function waitForInitialization() {
+      if (!initializationPromise) return;
+      try {
+        await initializationPromise;
+      } catch {
+        // The explicit account action below retries through the reset client promise.
+      }
     }
 
     function validateCredentials({ username, password, gameName, requireGameName = false }) {
@@ -198,6 +223,7 @@
         gameName,
         requireGameName: true,
       });
+      await waitForInitialization();
       const client = await getSupabaseClient();
       const sessionResult = await client.auth.getSession();
       if (sessionResult.error) throw sessionResult.error;
@@ -220,6 +246,7 @@
 
     async function login({ username, password }) {
       const { normalizedUsername } = validateCredentials({ username, password });
+      await waitForInitialization();
       const client = await getSupabaseClient();
       const result = await client.auth.signInWithPassword({
         email: usernameToEmail(normalizedUsername),

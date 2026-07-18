@@ -13,6 +13,18 @@ function readEconomyMigration() {
   return fs.existsSync(path) ? fs.readFileSync(path, 'utf8') : '';
 }
 
+function readRematchDeclineMigration() {
+  const path = './database/supabase/migrations/20260721_rematch_decline.sql';
+  return fs.existsSync(path) ? fs.readFileSync(path, 'utf8') : '';
+}
+
+function extractDeclineRematchFunction(sql) {
+  const start = sql.indexOf('create or replace function public.decline_online_rematch');
+  if (start < 0) return '';
+  const end = sql.indexOf('$$;', start);
+  return end < 0 ? sql.slice(start) : sql.slice(start, end + 3);
+}
+
 test('Supabase 脚本创建线上棋局表和全部 RPC', () => {
   const sql = readSetupSql();
   assert.match(sql, /create table(?: if not exists)? public\.online_games/i);
@@ -24,6 +36,7 @@ test('Supabase 脚本创建线上棋局表和全部 RPC', () => {
     'respond_online_undo',
     'cancel_online_undo',
     'request_online_rematch',
+    'decline_online_rematch',
     'leave_online_game',
   ]) {
     assert.match(sql, new RegExp(`create or replace function public\\.${name}`, 'i'));
@@ -128,6 +141,7 @@ test('经济和彩头 RPC 显式拒绝 PUBLIC 与匿名角色执行', () => {
     'heartbeat_online_game\\(uuid\\)',
     'claim_online_disconnect\\(uuid\\)',
     'request_online_rematch\\(uuid\\)',
+    'decline_online_rematch\\(uuid\\)',
     'leave_online_game\\(uuid\\)',
   ]) {
     assert.match(
@@ -249,6 +263,66 @@ test('重赛按游戏类型重建棋盘并重置悔棋历史和额度', () => {
   assert.match(rematchFunction, /move_history\s*=\s*'\{\}'::smallint\[\]/i);
   assert.match(rematchFunction, /x_undos_remaining\s*=\s*3/i);
   assert.match(rematchFunction, /o_undos_remaining\s*=\s*3/i);
+});
+
+test('拒绝重赛只清除对手申请并保持已结束棋局内容不变', () => {
+  const migration = readRematchDeclineMigration();
+  assert.notEqual(migration, '');
+
+  for (const sql of [readSetupSql(), migration]) {
+    const declineFunction = extractDeclineRematchFunction(sql);
+    assert.match(declineFunction, /returns setof public\.online_games/i);
+    assert.match(declineFunction, /security definer/i);
+    assert.match(declineFunction, /set search_path = public, pg_temp/i);
+    assert.match(declineFunction, /auth\.uid\(\)/i);
+    assert.match(declineFunction, /for update/i);
+    assert.match(declineFunction, /ROOM_NOT_FOUND/);
+    assert.match(declineFunction, /NOT_A_PLAYER/);
+    assert.match(declineFunction, /status not in\s*\(\s*'x_win'\s*,\s*'o_win'\s*,\s*'draw'\s*\)/i);
+    assert.match(declineFunction, /REMATCH_NOT_PENDING/);
+    assert.match(
+      declineFunction,
+      /if v_game\.x_player = v_user then[\s\S]*?set o_rematch = false/i,
+    );
+    assert.match(
+      declineFunction,
+      /if not v_game\.o_rematch or v_game\.x_rematch then[\s\S]*?REMATCH_NOT_PENDING/i,
+    );
+    assert.match(
+      declineFunction,
+      /elsif v_game\.o_player = v_user then[\s\S]*?set x_rematch = false/i,
+    );
+    assert.match(
+      declineFunction,
+      /if not v_game\.x_rematch or v_game\.o_rematch then[\s\S]*?REMATCH_NOT_PENDING/i,
+    );
+
+    const updates = declineFunction.match(
+      /update public\.online_games[\s\S]*?returning \* into v_game;/gi,
+    ) || [];
+    assert.equal(updates.length, 2);
+    assert.match(updates[0], /o_rematch\s*=\s*false/i);
+    assert.doesNotMatch(updates[0], /x_rematch\s*=/i);
+    assert.match(updates[1], /x_rematch\s*=\s*false/i);
+    assert.doesNotMatch(updates[1], /o_rematch\s*=/i);
+    for (const update of updates) {
+      assert.match(update, /updated_at\s*=\s*now\(\)/i);
+      assert.match(update, /version\s*=\s*version\s*\+\s*1/i);
+      assert.doesNotMatch(
+        update,
+        /\b(?:board|round|status|x_score|o_score|wager_amount|x_stake_locked|o_stake_locked|current_mark)\s*=/i,
+      );
+    }
+
+    assert.match(
+      sql,
+      /revoke execute on function public\.decline_online_rematch\(uuid\) from public, anon/i,
+    );
+    assert.match(
+      sql,
+      /grant execute on function public\.decline_online_rematch\(uuid\) to authenticated/i,
+    );
+  }
 });
 
 test('Supabase 脚本启用 RLS、Realtime 和私有频道权限', () => {

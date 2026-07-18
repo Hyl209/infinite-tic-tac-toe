@@ -30,7 +30,7 @@
         id: 'board-room',
         title: '棋局',
         summary: '支持 AI、本地双人与好友房间的井字棋和五子棋。',
-        href: '?view=games',
+      href: '/game/',
         status: '在线',
       }),
       Object.freeze({

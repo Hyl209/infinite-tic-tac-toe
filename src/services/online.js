@@ -1,6 +1,8 @@
 (function initOnlineGame(globalScope) {
   'use strict';
 
+  const SUPABASE_SDK_LOADS = new WeakMap();
+
   const roomCodeUtils = typeof module !== 'undefined' && module.exports
     ? require('../utils/room-code.js')
     : globalScope.RoomCodeUtils;
@@ -26,6 +28,7 @@
     INVALID_WAGER: '请选择正确的彩头金额',
     INSUFFICIENT_COINS: '金币不足',
     OPPONENT_STILL_ONLINE: '对手仍在线，暂时不能判负',
+    REMATCH_NOT_PENDING: '当前没有待处理的再来一局申请',
   };
 
   function mapOnlineGame(row, userId, { opponentOnline = false } = {}) {
@@ -180,15 +183,27 @@
     browser = globalScope,
   } = {}) {
     if (browser.supabase?.createClient) return browser.supabase;
+    if (SUPABASE_SDK_LOADS.has(browser)) return SUPABASE_SDK_LOADS.get(browser);
 
-    return new Promise((resolve, reject) => {
+    const loading = new Promise((resolve, reject) => {
       const script = documentObject.createElement('script');
       script.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
       script.async = true;
-      script.onload = () => resolve(browser.supabase);
-      script.onerror = () => reject(new Error('SUPABASE_SDK_LOAD_FAILED'));
+      script.onload = () => {
+        if (browser.supabase?.createClient) resolve(browser.supabase);
+        else reject(new Error('SUPABASE_SDK_LOAD_FAILED'));
+      };
+      script.onerror = () => {
+        script.remove?.();
+        reject(new Error('SUPABASE_SDK_LOAD_FAILED'));
+      };
       documentObject.head.append(script);
+    }).catch((error) => {
+      SUPABASE_SDK_LOADS.delete(browser);
+      throw error;
     });
+    SUPABASE_SDK_LOADS.set(browser, loading);
+    return loading;
   }
 
   function firstRpcRow(data) {
@@ -358,6 +373,14 @@
       return acceptRow(row);
     }
 
+    async function declineRematch() {
+      if (!currentRow) throw new Error('ROOM_NOT_FOUND');
+      const row = await callRpc('decline_online_rematch', {
+        p_game_id: currentRow.id,
+      });
+      return acceptRow(row);
+    }
+
     async function requestUndo() {
       if (!currentRow) throw new Error('ROOM_NOT_FOUND');
       const row = await callRpc('request_online_undo', { p_game_id: currentRow.id });
@@ -404,6 +427,7 @@
       cancelUndo,
       claimDisconnect,
       createRoom,
+      declineRematch,
       disconnect,
       heartbeat,
       isConfigured,

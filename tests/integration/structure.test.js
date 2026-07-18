@@ -3,8 +3,10 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
 const expectedFiles = [
+  'game/index.html',
   'src/config/portal.js',
   'src/routes/game.js',
+  'src/routes/account-panel.js',
   'src/routes/portal.js',
   'src/services/account.js',
   'src/services/online.js',

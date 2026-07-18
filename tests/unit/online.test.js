@@ -128,6 +128,7 @@ test('mapOnlineError 把稳定错误码转换成中文提示', () => {
   assert.equal(online.mapOnlineError({ message: 'REGISTERED_ACCOUNT_REQUIRED' }), '有彩头的房间仅限注册玩家');
   assert.equal(online.mapOnlineError({ message: 'INSUFFICIENT_COINS' }), '金币不足');
   assert.equal(online.mapOnlineError({ message: 'OPPONENT_STILL_ONLINE' }), '对手仍在线，暂时不能判负');
+  assert.equal(online.mapOnlineError({ message: 'REMATCH_NOT_PENDING' }), '当前没有待处理的再来一局申请');
   assert.equal(online.mapOnlineError({ message: 'unexpected' }), '线上服务暂时不可用，请稍后重试');
 });
 
@@ -241,6 +242,58 @@ test('loadSupabaseSdk loads one browser bundle instead of an ESM dependency grap
   );
   assert.equal(appendedScript.async, true);
   assert.equal(loaded, sdk);
+});
+
+test('并发加载 Supabase SDK 只插入一个脚本并复用同一结果', async () => {
+  const sdk = { createClient() {} };
+  const browser = {};
+  let appended = 0;
+  let appendedScript;
+  const documentObject = {
+    createElement() {
+      return { remove() {} };
+    },
+    head: {
+      append(script) {
+        appended += 1;
+        appendedScript = script;
+      },
+    },
+  };
+
+  const first = online.loadSupabaseSdk({ documentObject, browser });
+  const second = online.loadSupabaseSdk({ documentObject, browser });
+  browser.supabase = sdk;
+  appendedScript.onload();
+
+  assert.equal(appended, 1);
+  assert.equal(await first, sdk);
+  assert.equal(await second, sdk);
+});
+
+test('Supabase SDK 加载失败后会清理缓存并允许再次加载', async () => {
+  const browser = {};
+  const scripts = [];
+  const documentObject = {
+    createElement() {
+      return { removeCalled: false, remove() { this.removeCalled = true; } };
+    },
+    head: {
+      append(script) {
+        scripts.push(script);
+      },
+    },
+  };
+
+  const first = online.loadSupabaseSdk({ documentObject, browser });
+  scripts[0].onerror();
+  await assert.rejects(first, /SUPABASE_SDK_LOAD_FAILED/);
+
+  const second = online.loadSupabaseSdk({ documentObject, browser });
+  assert.equal(scripts.length, 2);
+  browser.supabase = { createClient() {} };
+  scripts[1].onload();
+  await second;
 });
 
 function createFakeSupabase(rowOverrides = {}) {
@@ -429,6 +482,7 @@ test('joinRoom 携带游戏类型，落子、悔棋和重赛都携带当前房�
   await client.respondUndo(true);
   await client.cancelUndo();
   await client.requestRematch();
+  await client.declineRematch();
   await client.heartbeat();
   await client.claimDisconnect();
 
@@ -443,6 +497,7 @@ test('joinRoom 携带游戏类型，落子、悔棋和重赛都携带当前房�
     ['rpc', 'respond_online_undo', { p_game_id: 'game-1', p_accept: true }],
     ['rpc', 'cancel_online_undo', { p_game_id: 'game-1' }],
     ['rpc', 'request_online_rematch', { p_game_id: 'game-1' }],
+    ['rpc', 'decline_online_rematch', { p_game_id: 'game-1' }],
     ['rpc', 'heartbeat_online_game', { p_game_id: 'game-1' }],
     ['rpc', 'claim_online_disconnect', { p_game_id: 'game-1' }],
   ]);

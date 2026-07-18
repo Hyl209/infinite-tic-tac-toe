@@ -199,6 +199,65 @@ test('登录使用隐藏邮箱并读取资料', async () => {
   assert.equal(identity.displayName, '棋手甲');
 });
 
+test('初始化与登录并发时只加载一个客户端且登录等待初始化', async () => {
+  const calls = [];
+  let releaseSession;
+  const sessionReady = new Promise((resolve) => {
+    releaseSession = resolve;
+  });
+  const fakeClient = {
+    auth: {
+      async getSession() {
+        calls.push('getSession:start');
+        await sessionReady;
+        calls.push('getSession:end');
+        return { data: { session: null }, error: null };
+      },
+      async signInWithPassword(credentials) {
+        calls.push(['login', credentials]);
+        return {
+          data: { user: { id: 'registered-user', email: credentials.email, is_anonymous: false } },
+          error: null,
+        };
+      },
+    },
+    from() {
+      return {
+        select() { return this; },
+        eq() { return this; },
+        async maybeSingle() {
+          return { data: { username: 'player_01', game_name: '棋手甲' }, error: null };
+        },
+      };
+    },
+  };
+  let sdkLoads = 0;
+  let clients = 0;
+  const client = account.createAccountClient({
+    config: { supabaseUrl: 'https://example.supabase.co', supabaseAnonKey: 'anon-key' },
+    loadSupabase: async () => {
+      sdkLoads += 1;
+      return { createClient() { clients += 1; return fakeClient; } };
+    },
+    storage: createStorage(),
+  });
+
+  const initializing = client.initialize();
+  const loggingIn = client.login({ username: 'player_01', password: 'password8' });
+  await Promise.resolve();
+  assert.equal(calls.some((call) => Array.isArray(call) && call[0] === 'login'), false);
+  releaseSession();
+  await Promise.all([initializing, loggingIn]);
+
+  assert.equal(sdkLoads, 1);
+  assert.equal(clients, 1);
+  assert.deepEqual(calls.slice(0, 3), [
+    'getSession:start',
+    'getSession:end',
+    ['login', { email: 'player_01@players.invalid', password: 'password8' }],
+  ]);
+});
+
 test('修改游戏名后更新身份，退出后恢复持久匿名名', async () => {
   const storage = createStorage({ 'board-game-guest-name': '匿名玩家·ABCD' });
   const fake = createFakeSupabase({

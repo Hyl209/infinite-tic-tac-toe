@@ -105,6 +105,10 @@ button {
   transition: border-color 180ms ease, background-color 180ms ease, transform 180ms ease;
 }
 
+.game-site-nav .account-button {
+  margin-left: auto;
+}
+
 .account-button:hover {
   border-color: #52617f;
   background: #19263e;
@@ -172,6 +176,52 @@ button {
 .account-dialog::backdrop {
   background: rgb(3 8 18 / 0.78);
   backdrop-filter: blur(5px);
+}
+
+.game-event-dialog {
+  position: fixed;
+  inset: 0;
+  width: min(420px, calc(100% - 32px));
+  max-width: 420px;
+  margin: auto;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) + 4px);
+  color: var(--text);
+  background: var(--surface);
+  box-shadow: var(--shadow), inset 0 1px 0 rgb(255 255 255 / 0.06);
+}
+
+.game-event-dialog::backdrop {
+  background: rgb(3 8 18 / 0.78);
+  backdrop-filter: blur(5px);
+}
+
+.game-event-dialog-shell {
+  padding: 26px;
+}
+
+.game-event-dialog h2 {
+  margin: 0;
+  font-size: 1.4rem;
+}
+
+.game-event-dialog p {
+  margin: 12px 0 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.game-event-actions {
+  margin-top: 22px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.game-event-actions .button {
+  min-width: 44px;
+  min-height: 44px;
 }
 
 .account-dialog-shell {
@@ -1494,11 +1544,16 @@ legend {
 }
 
 .board {
+  scroll-margin-top: calc(var(--nav-height, 76px) + 24px);
   aspect-ratio: 1;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   grid-template-rows: repeat(3, minmax(0, 1fr));
   gap: clamp(8px, 1.7vw, 14px);
+}
+
+#online-room-panel {
+  scroll-margin-top: calc(var(--nav-height, 76px) + 24px);
 }
 
 .board.gomoku-board {

@@ -34,6 +34,118 @@
       .slice(0, 6);
   }
 
+  function normalizeRoomCodeInput(value, isComposing = false) {
+    if (isComposing) return String(value || '');
+    return String(value || '').replace(/[^a-z0-9]/gi, '').toUpperCase();
+  }
+
+  function getGameEntryTarget({ roomCode, joined } = {}) {
+    return roomCode && !joined ? 'online-room-panel' : 'board';
+  }
+
+  function shouldDismissGameDialogAction(action) {
+    return action === 'close';
+  }
+
+  function shouldUpdateGameDialogContent(current, next) {
+    if (!current || !next) return current !== next;
+    return current.title !== next.title
+      || current.message !== next.message
+      || current.dismissible !== next.dismissible
+      || JSON.stringify(current.actions) !== JSON.stringify(next.actions);
+  }
+
+  function detectRematchRejection(previousGame, nextGame) {
+    const finishedStatuses = ['x_win', 'o_win', 'draw'];
+    const playerMark = previousGame?.playerMark;
+    return Boolean(
+      previousGame
+      && nextGame
+      && previousGame.round === nextGame.round
+      && finishedStatuses.includes(previousGame.status)
+      && finishedStatuses.includes(nextGame.status)
+      && playerMark
+      && nextGame.playerMark === playerMark
+      && previousGame.rematchReady?.[playerMark]
+      && !nextGame.rematchReady?.[playerMark],
+    );
+  }
+
+  function getGameDialogState({
+    state,
+    onlineGame = null,
+    resultMessage = '',
+    roundKey = '',
+    rematchRejected = null,
+    actionError = '',
+  } = {}) {
+    if (!state) return null;
+    const isOnline = state.gameMode === 'online';
+    const request = onlineGame?.undoRequest;
+    const activeRequest = request?.requesterMark
+      && request?.expiresAt
+      && Date.parse(request.expiresAt) > Date.now();
+
+    if (isOnline && activeRequest) {
+      if (request.requesterMark === onlineGame.playerMark) return null;
+      const requesterName = onlineGame.playerNames?.[request.requesterMark] || '对方';
+      return {
+        key: `undo:${onlineGame.round || 0}:${request.expiresAt}:${state.status}`,
+        title: '悔棋请求',
+        message: actionError || `${requesterName}申请撤回最近一手`,
+        actions: [
+          { action: 'accept-undo', label: '同意' },
+          { action: 'reject-undo', label: '拒绝' },
+        ],
+        dismissible: false,
+      };
+    }
+
+    const finished = ['x_win', 'o_win', 'draw'].includes(state.status);
+    if (!finished) return null;
+
+    if (isOnline && rematchRejected) {
+      return {
+        key: `rematch-rejected:${rematchRejected.round ?? 0}:${rematchRejected.version ?? 0}:${state.status}`,
+        title: '再来一局',
+        message: '对方已拒绝再来一局',
+        actions: [{ action: 'close', label: '关闭' }],
+        dismissible: true,
+      };
+    }
+
+    if (isOnline && onlineGame?.playerMark) {
+      const opponentMark = onlineGame.playerMark === 'X' ? 'O' : 'X';
+      const ownReady = Boolean(onlineGame.rematchReady?.[onlineGame.playerMark]);
+      const opponentReady = Boolean(onlineGame.rematchReady?.[opponentMark]);
+      if (opponentReady && !ownReady) {
+        const opponentName = onlineGame.playerNames?.[opponentMark] || '对方';
+        return {
+          key: `rematch:${onlineGame.round || 0}:${onlineGame.version ?? 0}:${state.status}`,
+          title: '再来一局',
+          message: actionError || `${opponentName}申请再来一局`,
+          actions: [
+            { action: 'accept-rematch', label: '同意' },
+            { action: 'reject-rematch', label: '拒绝' },
+          ],
+          dismissible: false,
+        };
+      }
+      if (ownReady) return null;
+    }
+
+    return {
+      key: `result:${roundKey}:${state.status}`,
+      title: '本局结束',
+      message: isOnline && actionError ? actionError : resultMessage,
+      actions: [
+        { action: 'restart', label: '再来一局' },
+        { action: 'close', label: '关闭' },
+      ],
+      dismissible: true,
+    };
+  }
+
   function resolveAppRoute(urlLike) {
     const url = new URL(urlLike, 'https://hyl.space/');
     const roomCandidate = normalizeRouteRoomCode(url.searchParams.get('room'));
@@ -44,10 +156,7 @@
       : (roomCode ? 'tic_tac_toe' : null);
 
     if (gameType) return { view: 'game', gameType, roomCode };
-    if (url.searchParams.get('view') === 'games') {
-      return { view: 'games', gameType: null, roomCode: null };
-    }
-    return { view: 'portal', gameType: null, roomCode: null };
+    return { view: 'games', gameType: null, roomCode: null };
   }
 
   function buildAppUrl(currentUrl, { view, gameType = null, roomCode = null } = {}) {
@@ -56,7 +165,6 @@
     url.searchParams.delete('game');
     url.searchParams.delete('room');
 
-    if (view === 'games') url.searchParams.set('view', 'games');
     if (view === 'game' && GAME_TYPES.includes(gameType)) {
       url.searchParams.set('game', gameType);
       if (roomCode) url.searchParams.set('room', normalizeRouteRoomCode(roomCode));
@@ -131,7 +239,10 @@
 
   const exported = {
     buildAppUrl,
+    detectRematchRejection,
     getDefaultPlacementMode,
+    getGameDialogState,
+    getGameEntryTarget,
     getLocalUndoCount,
     getScoreKey,
     resolveAppRoute,
@@ -140,19 +251,20 @@
     formatMatchResult,
     formatOnlineScoreName,
     formatWinRate,
+    normalizeRoomCodeInput,
     resolvePlacementSelection,
     selectPreferredSeason,
+    shouldDismissGameDialogAction,
+    shouldUpdateGameDialogContent,
     shouldShowLeaderboardEmpty,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = exported;
 
   function mountGame() {
-    const portalHome = document.querySelector('#portal-home');
     const home = document.querySelector('#game-home');
     const gameView = document.querySelector('#game-view');
     const leaderboardView = document.querySelector('#leaderboard-view');
     const backHomeButton = document.querySelector('#back-home-button');
-    const gameHubBackButton = document.querySelector('#game-hub-back-button');
     const boardElement = document.querySelector('#board');
     if (!home || !gameView || !boardElement) return;
 
@@ -182,9 +294,11 @@
     const leaveRoomButton = document.querySelector('#leave-room-button');
     const onlineUndoRequest = document.querySelector('#online-undo-request');
     const onlineUndoMessage = document.querySelector('#online-undo-message');
-    const acceptUndoButton = document.querySelector('#accept-undo-button');
-    const rejectUndoButton = document.querySelector('#reject-undo-button');
-    const cancelUndoButton = document.querySelector('#cancel-undo-button');
+    const gameEventDialog = document.querySelector('#game-event-dialog');
+    const gameEventTitle = document.querySelector('#game-event-title');
+    const gameEventMessage = document.querySelector('#game-event-message');
+    const gameEventPrimary = document.querySelector('#game-event-primary');
+    const gameEventSecondary = document.querySelector('#game-event-secondary');
     const connectionLabel = document.querySelector('#online-connection-label');
     const restartButton = document.querySelector('#restart-button');
     const undoButton = document.querySelector('#undo-button');
@@ -197,31 +311,7 @@
       draw: document.querySelector('#draw-score'),
       right: document.querySelector('#ai-score'),
     };
-    const accountButton = document.querySelector('#account-button');
-    const accountAvatar = document.querySelector('.account-avatar');
-    const accountKindLabel = document.querySelector('#account-kind-label');
-    const accountDisplayName = document.querySelector('#account-display-name');
-    const accountCoinBalance = document.querySelector('#account-coin-balance');
     const accountDialog = document.querySelector('#account-dialog');
-    const accountCloseButton = document.querySelector('#account-close-button');
-    const accountDialogTitle = document.querySelector('#account-dialog-title');
-    const accountDialogDescription = document.querySelector('#account-dialog-description');
-    const accountAuthView = document.querySelector('#account-auth-view');
-    const accountLoginTab = document.querySelector('#account-login-tab');
-    const accountRegisterTab = document.querySelector('#account-register-tab');
-    const accountLoginForm = document.querySelector('#account-login-form');
-    const accountRegisterForm = document.querySelector('#account-register-form');
-    const accountProfileForm = document.querySelector('#account-profile-form');
-    const accountLogoutButton = document.querySelector('#account-logout-button');
-    const accountMessage = document.querySelector('#account-message');
-    const profileUsername = document.querySelector('#profile-username');
-    const profileGameName = document.querySelector('#profile-game-name');
-    const walletPanel = document.querySelector('#wallet-panel');
-    const walletBalance = document.querySelector('#wallet-balance');
-    const redeemCodeForm = document.querySelector('#redeem-code-form');
-    const redeemCodeInput = document.querySelector('#redeem-code-input');
-    const redeemMessage = document.querySelector('#redeem-message');
-    const openAdminButton = document.querySelector('#open-admin-button');
     const onlineWagerPicker = document.querySelector('#online-wager-picker');
     const wagerBalanceNote = document.querySelector('#wager-balance-note');
     const roomPreviewElement = document.querySelector('#room-preview');
@@ -249,12 +339,6 @@
     const leaderboardList = document.querySelector('#leaderboard-list');
     const leaderboardCurrentPlayer = document.querySelector('#leaderboard-current-player');
     const leaderboardMessage = document.querySelector('#leaderboard-message');
-    const matchHistoryPanel = document.querySelector('#match-history-panel');
-    const matchHistoryFilter = document.querySelector('#match-history-filter');
-    const matchHistoryList = document.querySelector('#match-history-list');
-    const matchHistoryMessage = document.querySelector('#match-history-message');
-    const loadMoreHistoryButton = document.querySelector('#load-more-history-button');
-    const seasonSummary = document.querySelector('#season-summary');
     const adminSeasonForm = document.querySelector('#admin-season-form');
     const adminSeasonName = document.querySelector('#admin-season-name');
     const adminCurrentSeason = document.querySelector('#admin-current-season');
@@ -263,15 +347,14 @@
     const adminSeasonMessage = document.querySelector('#admin-season-message');
 
     const onlineApi = globalScope.OnlineGame;
-    const accountApi = globalScope.PlayerAccount;
     const economyApi = globalScope.PlayerEconomy;
     const statsApi = globalScope.PlayerStats;
-    const accountClient = accountApi?.createAccountClient({
-      config: globalScope.ONLINE_GAME_CONFIG,
-      loadSupabase: onlineApi?.loadSupabaseSdk,
+    const accountPanel = globalScope.HYLAccountPanel?.mount({
+      onAdminOpen: () => showAdminView(),
     });
-    const economyClient = economyApi?.createEconomyClient({ accountClient });
-    const statsClient = statsApi?.createStatsClient({ accountClient });
+    const accountClient = accountPanel?.accountClient;
+    const economyClient = accountPanel?.economyClient;
+    const statsClient = accountPanel?.statsClient;
     const sessionScores = new Map();
     let gameType = null;
     let engine = null;
@@ -285,7 +368,10 @@
     let aiRequestId = 0;
     let roundToken = 0;
     let undoRenderTimer = null;
+    let activeGameDialog = null;
+    let dismissedGameDialogKey = null;
     let onlineGame = null;
+    let rematchRejected = null;
     let onlinePhase = 'idle';
     let onlineConnected = false;
     let onlineSubmitting = false;
@@ -295,15 +381,13 @@
     let disconnectTimer = null;
     let disconnectDeadline = 0;
     let claimingDisconnect = false;
-    let accountIdentity = accountClient?.getIdentity() || {
+    let accountIdentity = accountPanel?.getIdentity() || {
       kind: 'guest',
       username: null,
       displayName: '匿名玩家',
       needsProfile: false,
     };
-    let accountBusy = false;
-    let accountMode = 'login';
-    let economySnapshot = economyClient?.getSnapshot() || {
+    let economySnapshot = accountPanel?.getEconomySnapshot() || {
       balance: 0,
       isAdmin: false,
       loaded: false,
@@ -316,25 +400,6 @@
     let leaderboardBusy = false;
     let leaderboardError = '';
     let leaderboardRequestId = 0;
-    let matchHistory = [];
-    let matchHistoryCursor = null;
-    let matchHistoryHasMore = false;
-    let matchHistoryBusy = false;
-    let matchHistoryRequestId = 0;
-    let playerStandings = [];
-
-    function setAccountMessage(message = '', stateName = '') {
-      if (!accountMessage) return;
-      accountMessage.textContent = message;
-      accountMessage.dataset.state = stateName;
-    }
-
-    function setRedeemMessage(message = '', stateName = '') {
-      if (!redeemMessage) return;
-      redeemMessage.textContent = message;
-      redeemMessage.dataset.state = stateName;
-    }
-
     function setAdminMessage(message = '', stateName = '') {
       if (!adminMessage) return;
       adminMessage.textContent = message;
@@ -388,141 +453,6 @@
       });
       leaderboardSeasonSelect.disabled = false;
       leaderboardSeasonSelect.value = selectedSeasonId;
-    }
-
-    function renderSeasonSummary() {
-      if (!seasonSummary) return;
-      seasonSummary.textContent = '';
-      const season = preferredSeason();
-      if (!season) {
-        const empty = document.createElement('p');
-        empty.className = 'history-empty-state';
-        empty.textContent = '暂无赛季，在线对局仍会保留在历史中。';
-        seasonSummary.append(empty);
-        return;
-      }
-
-      const title = document.createElement('p');
-      title.className = 'season-summary-title';
-      title.textContent = season.status === 'active' ? `${season.name} · 进行中` : season.name;
-      seasonSummary.append(title);
-      ['tic_tac_toe', 'gomoku'].forEach((type) => {
-        const standing = playerStandings.find((item) => item.gameType === type);
-        const item = document.createElement('article');
-        item.className = 'season-summary-item';
-        const name = document.createElement('span');
-        name.textContent = gameTypeLabel(type);
-        const points = document.createElement('strong');
-        points.textContent = `${standing?.points || 0} 分`;
-        const meta = document.createElement('small');
-        meta.textContent = standing
-          ? `第 ${standing.rank} 名 · ${standing.wins}胜 ${standing.draws}平 ${standing.losses}负`
-          : '暂未上榜';
-        item.append(name, points, meta);
-        seasonSummary.append(item);
-      });
-    }
-
-    function renderMatchHistory() {
-      if (!matchHistoryList) return;
-      matchHistoryList.textContent = '';
-      if (matchHistory.length === 0 && !matchHistoryBusy) {
-        const empty = document.createElement('p');
-        empty.className = 'history-empty-state';
-        empty.textContent = '还没有在线战绩，完成一局后会显示在这里。';
-        matchHistoryList.append(empty);
-      } else {
-        const fragment = document.createDocumentFragment();
-        matchHistory.forEach((match) => {
-          const item = document.createElement('article');
-          item.className = 'match-history-item';
-          item.dataset.result = match.result;
-
-          const heading = document.createElement('div');
-          heading.className = 'match-history-item-heading';
-          const opponent = document.createElement('strong');
-          opponent.textContent = `${formatMatchResult(match.result)} · ${match.opponentName}`;
-          const time = document.createElement('time');
-          time.dateTime = match.finishedAt;
-          time.textContent = formatMatchTime(match.finishedAt);
-          heading.append(opponent, time);
-
-          const meta = document.createElement('p');
-          meta.textContent = `${gameTypeLabel(match.gameType)} · ${formatFinishReason(match.finishReason, match.result)} · ${match.seasonName || '不计分对局'}`;
-
-          const values = document.createElement('div');
-          values.className = 'match-history-values';
-          const points = document.createElement('span');
-          points.textContent = match.pointsAwarded === null ? '不计分' : `积分 +${match.pointsAwarded}`;
-          const wager = document.createElement('span');
-          wager.textContent = match.wagerAmount === 0
-            ? '无彩头'
-            : `彩头 ${match.coinDelta > 0 ? '+' : ''}${match.coinDelta}`;
-          values.append(points, wager);
-          item.append(heading, meta, values);
-          fragment.append(item);
-        });
-        matchHistoryList.append(fragment);
-      }
-      loadMoreHistoryButton.hidden = !matchHistoryHasMore;
-      loadMoreHistoryButton.disabled = matchHistoryBusy;
-      matchHistoryFilter.disabled = matchHistoryBusy;
-    }
-
-    async function refreshSeasons() {
-      if (!statsClient) return [];
-      seasons = await statsClient.listSeasons();
-      renderSeasonControls();
-      return seasons;
-    }
-
-    async function loadMatchHistory({ reset = false } = {}) {
-      if (
-        !statsClient
-        || accountIdentity.kind !== 'registered'
-        || (matchHistoryBusy && !reset)
-      ) return;
-      const requestId = ++matchHistoryRequestId;
-      matchHistoryBusy = true;
-      if (reset) {
-        matchHistory = [];
-        matchHistoryCursor = null;
-        matchHistoryHasMore = false;
-      }
-      setStatsMessage(matchHistoryMessage, reset ? '正在加载个人战绩' : '正在加载更多战绩');
-      renderMatchHistory();
-      try {
-        if (seasons.length === 0) await refreshSeasons();
-        if (requestId !== matchHistoryRequestId) return;
-        if (reset) {
-          const summarySeason = preferredSeason();
-          const standings = summarySeason
-            ? await statsClient.getMyStandings(summarySeason.id)
-            : [];
-          if (requestId !== matchHistoryRequestId) return;
-          playerStandings = standings;
-          renderSeasonSummary();
-        }
-        const items = await statsClient.getHistory({
-          gameType: matchHistoryFilter.value || null,
-          beforeFinishedAt: matchHistoryCursor?.finishedAt || null,
-          beforeId: matchHistoryCursor?.id || null,
-          limit: 20,
-        });
-        if (requestId !== matchHistoryRequestId) return;
-        matchHistory.push(...items);
-        const last = items.at(-1);
-        matchHistoryCursor = last ? { finishedAt: last.finishedAt, id: last.id } : matchHistoryCursor;
-        matchHistoryHasMore = items.length === 20;
-        setStatsMessage(matchHistoryMessage);
-      } catch (error) {
-        if (requestId !== matchHistoryRequestId) return;
-        setStatsMessage(matchHistoryMessage, statsApi.mapStatsError(error), 'error');
-      } finally {
-        if (requestId !== matchHistoryRequestId) return;
-        matchHistoryBusy = false;
-        renderMatchHistory();
-      }
     }
 
     function createLeaderboardRow(entry, { heading = false } = {}) {
@@ -612,107 +542,19 @@
 
     async function showLeaderboardView() {
       if (accountDialog?.open) accountDialog.close();
-      portalHome.hidden = true;
       home.hidden = true;
       gameView.hidden = true;
       adminView.hidden = true;
       leaderboardView.hidden = false;
       document.body.dataset.view = 'leaderboard';
-      globalScope.HYLPortal?.deactivate?.();
       await loadLeaderboard();
     }
 
     async function refreshEconomy({ reportError = false } = {}) {
-      if (!economyClient) return economySnapshot;
-      try {
-        economySnapshot = await economyClient.refresh();
-      } catch (error) {
-        economySnapshot = {
-          balance: 0,
-          isAdmin: false,
-          loaded: false,
-        };
-        if (reportError) setRedeemMessage(economyApi.mapEconomyError(error), 'error');
-      }
-      renderAccount();
+      if (!accountPanel) return economySnapshot;
+      economySnapshot = await accountPanel.refreshEconomy({ reportError });
       if (state) render();
       return economySnapshot;
-    }
-
-    function setAccountMode(mode, { clearMessage = true } = {}) {
-      accountMode = mode === 'register' ? 'register' : 'login';
-      const registering = accountMode === 'register';
-      accountLoginForm.hidden = registering;
-      accountRegisterForm.hidden = !registering;
-      accountLoginTab.setAttribute('aria-selected', String(!registering));
-      accountRegisterTab.setAttribute('aria-selected', String(registering));
-      accountDialogTitle.textContent = registering ? '注册账号' : '登录账号';
-      accountDialogDescription.textContent = registering
-        ? '用户名用于登录，游戏名会显示给在线对手。'
-        : '登录后，游戏名会同步到其他设备。';
-      if (clearMessage) setAccountMessage();
-    }
-
-    function setAccountBusy(busy) {
-      accountBusy = busy;
-      accountDialog.querySelectorAll('button, input').forEach((control) => {
-        control.disabled = busy;
-      });
-      accountDialog.setAttribute('aria-busy', String(busy));
-    }
-
-    function renderAccount() {
-      if (!accountButton || !accountDialog) return;
-      const registered = accountIdentity.kind === 'registered';
-      accountAvatar.textContent = registered ? accountIdentity.displayName.slice(0, 1) : '游';
-      accountKindLabel.textContent = registered ? '个人资料' : '游客身份';
-      accountDisplayName.textContent = accountIdentity.displayName;
-      accountCoinBalance.hidden = !registered;
-      accountCoinBalance.textContent = `金币 ${economySnapshot.balance}`;
-      accountAuthView.hidden = registered;
-      accountProfileForm.hidden = !registered;
-      walletPanel.hidden = !registered;
-      matchHistoryPanel.hidden = !registered;
-      walletBalance.textContent = String(economySnapshot.balance);
-      openAdminButton.hidden = !registered || !economySnapshot.isAdmin;
-      if (registered) {
-        accountDialogTitle.textContent = '个人资料';
-        accountDialogDescription.textContent = '修改后的游戏名会用于之后加入的在线房间。';
-        profileUsername.textContent = accountIdentity.username;
-        if (document.activeElement !== profileGameName) {
-          profileGameName.value = accountIdentity.displayName;
-        }
-      } else {
-        matchHistory = [];
-        matchHistoryCursor = null;
-        matchHistoryHasMore = false;
-        playerStandings = [];
-        renderMatchHistory();
-        renderSeasonSummary();
-        setAccountMode(accountMode, { clearMessage: false });
-        document.querySelector('input[name="online-wager"][value="0"]').checked = true;
-      }
-      document.querySelectorAll('input[name="online-wager"]').forEach((input) => {
-        input.disabled = !registered && input.value !== '0';
-      });
-      accountButton.disabled = accountBusy;
-    }
-
-    async function runAccountAction(action, successMessage) {
-      if (!accountClient || accountBusy) return;
-      setAccountBusy(true);
-      setAccountMessage();
-      try {
-        accountIdentity = await action();
-        await refreshEconomy();
-        renderAccount();
-        setAccountMessage(successMessage, 'success');
-      } catch (error) {
-        setAccountMessage(accountApi.mapAccountError(error), 'error');
-      } finally {
-        setAccountBusy(false);
-        renderAccount();
-      }
     }
 
     function selectedValue(name) {
@@ -969,21 +811,60 @@
       if (undoRenderTimer) clearTimeout(undoRenderTimer);
       undoRenderTimer = null;
       const request = activeUndoRequest();
-      const showRequest = state.gameMode === 'online' && Boolean(request);
+      const ownRequest = request?.requesterMark === onlineGame?.playerMark;
+      const showRequest = state.gameMode === 'online' && Boolean(request) && ownRequest;
       onlineUndoRequest.hidden = !showRequest;
       if (!showRequest) return;
-      const ownRequest = request.requesterMark === onlineGame.playerMark;
       const opponentMark = onlineGame.playerMark === 'X' ? 'O' : 'X';
-      const requesterName = onlineGame.playerNames?.[request.requesterMark] || '对方';
       const opponentName = onlineGame.playerNames?.[opponentMark] || '对方';
       const seconds = Math.max(1, Math.ceil((Date.parse(request.expiresAt) - Date.now()) / 1000));
-      onlineUndoMessage.textContent = ownRequest
-        ? `等待${opponentName}回应，${seconds} 秒后自动取消`
-        : `${requesterName}申请撤回最近一手，剩余 ${seconds} 秒`;
-      acceptUndoButton.hidden = ownRequest;
-      rejectUndoButton.hidden = ownRequest;
-      cancelUndoButton.hidden = !ownRequest;
+      onlineUndoMessage.textContent = `等待${opponentName}回应，${seconds} 秒后自动取消`;
       undoRenderTimer = setTimeout(render, Math.min(1000, seconds * 1000));
+    }
+
+    function closeGameEventDialog({ dismiss = false } = {}) {
+      if (dismiss && activeGameDialog) dismissedGameDialogKey = activeGameDialog.key;
+      if (gameEventDialog?.open) gameEventDialog.close();
+      activeGameDialog = null;
+    }
+
+    function syncGameEventDialog(resultMessage) {
+      if (!gameEventDialog) return;
+      const roundKey = state.gameMode === 'online'
+        ? `${onlineGame?.roomId || 'online'}:${onlineGame?.round || 0}`
+        : `local:${roundToken}`;
+      const nextDialog = getGameDialogState({
+        state,
+        onlineGame,
+        resultMessage,
+        roundKey,
+        rematchRejected,
+        actionError: onlineError,
+      });
+      if (!nextDialog || nextDialog.key === dismissedGameDialogKey) {
+        closeGameEventDialog();
+        return;
+      }
+      const sameOpenDialog = activeGameDialog?.key === nextDialog.key && gameEventDialog.open;
+      if (sameOpenDialog && !shouldUpdateGameDialogContent(activeGameDialog, nextDialog)) return;
+      activeGameDialog = nextDialog;
+      gameEventTitle.textContent = nextDialog.title;
+      gameEventMessage.textContent = nextDialog.message;
+      [gameEventPrimary, gameEventSecondary].forEach((button, index) => {
+        const action = nextDialog.actions[index];
+        button.hidden = !action;
+        button.dataset.action = action?.action || '';
+        button.textContent = action?.label || '';
+      });
+      if (sameOpenDialog) return;
+      if (!gameEventDialog.open) gameEventDialog.showModal();
+    }
+
+    function scrollToGameEntry(options) {
+      const target = document.querySelector(`#${getGameEntryTarget(options)}`);
+      const scroll = () => target?.scrollIntoView({ block: 'start' });
+      if (globalScope.requestAnimationFrame) globalScope.requestAnimationFrame(scroll);
+      else setTimeout(scroll, 0);
     }
 
     function render() {
@@ -1014,7 +895,8 @@
       gameNote.classList.toggle('gomoku-note', gameType === 'gomoku');
       brandMark.innerHTML = gameType === 'gomoku' ? '五' : 'X<span>O</span>';
       brandMark.classList.toggle('gomoku-brand', gameType === 'gomoku');
-      statusText.textContent = statusMessage();
+      const currentStatusMessage = statusMessage();
+      statusText.textContent = currentStatusMessage;
       statusCard.dataset.result = state.status;
       markInfo.textContent = isOnline
         ? hasOnlineRoom
@@ -1167,6 +1049,7 @@
 
       renderUndoRequest();
       renderScores();
+      syncGameEventDialog(currentStatusMessage);
     }
 
     function finishRound() {
@@ -1188,7 +1071,7 @@
       const requestId = ++aiRequestId;
       if (gameType === 'gomoku' && state.difficulty === 'hard' && typeof Worker !== 'undefined') {
         if (aiWorker) aiWorker.terminate();
-        const worker = new Worker('src/workers/gomoku-ai-worker.js');
+        const worker = new Worker('/src/workers/gomoku-ai-worker.js');
         aiWorker = worker;
         return new Promise((resolve) => {
           worker.onmessage = (event) => {
@@ -1252,6 +1135,7 @@
       if (clearScores) sessionScores.set(scoreKey(mode), { left: 0, draw: 0, right: 0 });
       if (mode !== 'online') {
         onlineGame = null;
+        rematchRejected = null;
         onlinePhase = 'idle';
         onlineConnected = false;
         onlineError = '';
@@ -1350,6 +1234,15 @@
         if (state?.gameMode !== 'online' || game.gameType !== gameType) return;
         const previousRound = onlineGame?.round;
         const previousStatus = onlineGame?.status;
+        const rejected = detectRematchRejection(onlineGame, game);
+        if (rejected) {
+          rematchRejected = { round: game.round, version: game.version };
+        } else if (
+          rematchRejected
+          && (rematchRejected.round !== game.round || rematchRejected.version !== game.version)
+        ) {
+          rematchRejected = null;
+        }
         onlineGame = game;
         state = {
           ...state,
@@ -1366,8 +1259,6 @@
         if (isOnlineFinished(game) && (previousStatus !== game.status || previousRound !== game.round)) {
           seasons = [];
           leaderboardEntries = [];
-          matchHistory = [];
-          matchHistoryCursor = null;
           void refreshEconomy();
         }
         render();
@@ -1449,6 +1340,7 @@
         pendingRoomPreview = null;
         await refreshEconomy();
         updateGameUrl(game.roomCode);
+        scrollToGameEntry({ roomCode: normalized, joined: true });
       } catch (error) {
         onlineError = onlineApi.mapOnlineError(error);
       } finally {
@@ -1474,6 +1366,21 @@
       }
     }
 
+    async function declineOnlineRematch() {
+      if (!onlineClient || onlineSubmitting || !onlineGame) return;
+      onlineSubmitting = true;
+      onlineError = '';
+      render();
+      try {
+        await onlineClient.declineRematch();
+      } catch (error) {
+        onlineError = onlineApi.mapOnlineError(error);
+      } finally {
+        onlineSubmitting = false;
+        render();
+      }
+    }
+
     async function leaveOnlineRoom() {
       if (!onlineClient || onlineSubmitting || !onlineGame) return;
       onlineSubmitting = true;
@@ -1483,6 +1390,7 @@
         await onlineClient.leaveRoom();
         stopOnlineRuntime();
         onlineGame = null;
+        rematchRejected = null;
         onlineConnected = false;
         onlinePhase = 'idle';
         state = createState({
@@ -1587,7 +1495,8 @@
       if (!statsClient || !economySnapshot.isAdmin) return;
       setStatsMessage(adminSeasonMessage, '正在加载赛季');
       try {
-        await refreshSeasons();
+        seasons = await statsClient.listSeasons();
+        renderSeasonControls();
         renderAdminSeasons();
         setStatsMessage(adminSeasonMessage);
       } catch (error) {
@@ -1637,13 +1546,11 @@
     function showAdminView() {
       if (!economySnapshot.isAdmin) return;
       if (accountDialog?.open) accountDialog.close();
-      portalHome.hidden = true;
       home.hidden = true;
       gameView.hidden = true;
       leaderboardView.hidden = true;
       adminView.hidden = false;
       document.body.dataset.view = 'admin';
-      globalScope.HYLPortal?.deactivate?.();
       void loadAdminCodes();
       void loadAdminSeasons();
     }
@@ -1680,24 +1587,6 @@
       }
     }
 
-    async function redeemCoins() {
-      if (!economyClient || accountBusy) return;
-      setAccountBusy(true);
-      setRedeemMessage();
-      try {
-        const result = await economyClient.redeemCode(redeemCodeInput.value);
-        economySnapshot = { ...economySnapshot, balance: result.balance, loaded: true };
-        redeemCodeInput.value = '';
-        setRedeemMessage(`已领取 ${result.grantedAmount} 金币`, 'success');
-      } catch (error) {
-        setRedeemMessage(economyApi.mapEconomyError(error), 'error');
-      } finally {
-        setAccountBusy(false);
-        renderAccount();
-        if (state) render();
-      }
-    }
-
     async function submitOnlineUndo(action) {
       if (!onlineClient || onlineSubmitting || !onlineGame) return;
       onlineSubmitting = true;
@@ -1707,7 +1596,6 @@
         if (action === 'request') await onlineClient.requestUndo();
         if (action === 'accept') await onlineClient.respondUndo(true);
         if (action === 'reject') await onlineClient.respondUndo(false);
-        if (action === 'cancel') await onlineClient.cancelUndo();
       } catch (error) {
         onlineError = onlineApi.mapOnlineError(error);
       } finally {
@@ -1722,13 +1610,11 @@
       engine = engineFor(type);
       if (!engine) return;
       if (accountDialog?.open) accountDialog.close();
-      portalHome.hidden = true;
       adminView.hidden = true;
       leaderboardView.hidden = true;
       home.hidden = true;
       gameView.hidden = false;
       document.body.dataset.view = 'game';
-      globalScope.HYLPortal?.deactivate?.();
       document.querySelector('input[name="game-mode"][value="ai"]').checked = true;
       const storedMode = globalScope.localStorage?.getItem(PLACEMENT_STORAGE_KEY);
       placementMode = getDefaultPlacementMode(
@@ -1746,6 +1632,7 @@
         roomCodeInput.value = roomCode;
       }
       newRound();
+      scrollToGameEntry({ roomCode, joined: false });
       if (roomCode) void previewOnlineRoom(roomCode);
     }
 
@@ -1760,6 +1647,7 @@
         }
       }
       onlineGame = null;
+      rematchRejected = null;
       pendingRoomPreview = null;
       gameType = null;
       state = null;
@@ -1768,95 +1656,21 @@
 
     async function showGameHome({ replaceUrl = false } = {}) {
       await resetGameSession();
-      portalHome.hidden = true;
       gameView.hidden = true;
       adminView.hidden = true;
       leaderboardView.hidden = true;
       home.hidden = false;
       document.body.dataset.view = 'games';
-      globalScope.HYLPortal?.deactivate?.();
       updateViewUrl('games', replaceUrl);
-    }
-
-    async function showPortal({ replaceUrl = false } = {}) {
-      await resetGameSession();
-      gameView.hidden = true;
-      adminView.hidden = true;
-      leaderboardView.hidden = true;
-      home.hidden = true;
-      portalHome.hidden = false;
-      document.body.dataset.view = 'portal';
-      updateViewUrl('portal', replaceUrl);
-      globalScope.HYLPortal?.activate?.();
     }
 
     Object.assign(exported, {
       enterGame,
       openGameHome: showGameHome,
-      openPortal: showPortal,
     });
-
-    document.querySelectorAll('[data-game-type]').forEach((button) => {
-      button.addEventListener('click', () => enterGame(button.dataset.gameType));
-    });
-    accountButton?.addEventListener('click', () => {
-      renderAccount();
-      if (accountIdentity.kind === 'registered') {
-        void refreshEconomy({ reportError: true });
-        void loadMatchHistory({ reset: true });
-      }
-      if (!accountClient?.isConfigured()) {
-        setAccountMessage('账号服务尚未配置，游客仍可使用本地模式', 'error');
-      }
-      accountDialog.showModal();
-    });
-    accountCloseButton?.addEventListener('click', () => accountDialog.close());
-    accountLoginTab?.addEventListener('click', () => setAccountMode('login'));
-    accountRegisterTab?.addEventListener('click', () => setAccountMode('register'));
-    accountLoginForm?.addEventListener('submit', (event) => {
-      event.preventDefault();
-      const data = new FormData(accountLoginForm);
-      void runAccountAction(() => accountClient.login({
-        username: data.get('username'),
-        password: data.get('password'),
-      }), '登录成功');
-    });
-    accountRegisterForm?.addEventListener('submit', (event) => {
-      event.preventDefault();
-      const data = new FormData(accountRegisterForm);
-      void runAccountAction(() => accountClient.register({
-        username: data.get('username'),
-        password: data.get('password'),
-        gameName: data.get('gameName'),
-      }), '注册成功');
-    });
-    accountProfileForm?.addEventListener('submit', (event) => {
-      event.preventDefault();
-      const data = new FormData(accountProfileForm);
-      void runAccountAction(
-        () => accountClient.updateGameName(data.get('gameName')),
-        '游戏名已保存',
-      );
-    });
-    accountLogoutButton?.addEventListener('click', () => {
-      void runAccountAction(() => accountClient.logout(), '已退出账号');
-    });
-    redeemCodeForm?.addEventListener('submit', (event) => {
-      event.preventDefault();
-      void redeemCoins();
-    });
-    redeemCodeInput?.addEventListener('input', () => {
-      redeemCodeInput.value = economyApi.formatRedeemCode(redeemCodeInput.value);
-      setRedeemMessage();
-    });
-    openAdminButton?.addEventListener('click', showAdminView);
     openLeaderboardButton?.addEventListener('click', () => void showLeaderboardView());
-    accountDialog?.addEventListener('click', (event) => {
-      if (event.target === accountDialog) accountDialog.close();
-    });
     adminBackButton?.addEventListener('click', () => void showGameHome());
     leaderboardBackButton?.addEventListener('click', () => void showGameHome());
-    gameHubBackButton?.addEventListener('click', () => void showPortal());
     leaderboardSeasonSelect?.addEventListener('change', () => {
       selectedSeasonId = leaderboardSeasonSelect.value || null;
       void loadLeaderboard();
@@ -1870,8 +1684,6 @@
       });
       void loadLeaderboard();
     });
-    matchHistoryFilter?.addEventListener('change', () => void loadMatchHistory({ reset: true }));
-    loadMoreHistoryButton?.addEventListener('click', () => void loadMatchHistory());
     adminSeasonForm?.addEventListener('submit', (event) => {
       event.preventDefault();
       void createAdminSeason();
@@ -1931,12 +1743,18 @@
       }
     });
 
-    roomCodeInput.addEventListener('input', () => {
-      roomCodeInput.value = onlineApi.normalizeRoomCode(roomCodeInput.value);
+    function handleRoomCodeInput(isComposing = false) {
+      if (!isComposing) {
+        roomCodeInput.value = normalizeRoomCodeInput(roomCodeInput.value, false);
+      }
       pendingRoomPreview = null;
       onlineError = '';
       render();
+    }
+    roomCodeInput.addEventListener('input', (event) => {
+      handleRoomCodeInput(event.isComposing);
     });
+    roomCodeInput.addEventListener('compositionend', () => handleRoomCodeInput(false));
     roomCodeInput.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') void previewOnlineRoom();
     });
@@ -1955,9 +1773,6 @@
     });
     copyRoomButton.addEventListener('click', () => void copyInvitation());
     leaveRoomButton.addEventListener('click', () => void leaveOnlineRoom());
-    acceptUndoButton.addEventListener('click', () => void submitOnlineUndo('accept'));
-    rejectUndoButton.addEventListener('click', () => void submitOnlineUndo('reject'));
-    cancelUndoButton.addEventListener('click', () => void submitOnlineUndo('cancel'));
     undoButton.addEventListener('click', () => {
       if (state.gameMode === 'online') void submitOnlineUndo('request');
       else undoLocal();
@@ -1974,9 +1789,7 @@
         enterGame(route.gameType, { replaceUrl: true, roomCode: route.roomCode });
       } else if (route.view === 'games') {
         void showGameHome({ replaceUrl: true });
-      } else {
-        void showPortal({ replaceUrl: true });
-      }
+      } else void showGameHome({ replaceUrl: true });
     });
 
     const initialRoute = resolveAppRoute(globalScope.location.href);
@@ -1987,36 +1800,37 @@
       });
     } else if (initialRoute.view === 'games') {
       void showGameHome({ replaceUrl: true });
-    } else {
-      void showPortal({ replaceUrl: true });
-    }
-    accountClient?.subscribe((identity) => {
+    } else void showGameHome({ replaceUrl: true });
+    accountPanel?.subscribe(({ identity, economySnapshot: nextEconomySnapshot }) => {
       accountIdentity = identity;
-      matchHistoryRequestId += 1;
-      matchHistoryBusy = false;
-      matchHistory = [];
-      matchHistoryCursor = null;
-      matchHistoryHasMore = false;
-      playerStandings = [];
-      renderAccount();
-      void refreshEconomy();
-      if (identity.kind === 'registered') void loadMatchHistory({ reset: true });
-    });
-    economyClient?.subscribe((snapshot) => {
-      economySnapshot = snapshot;
-      renderAccount();
+      economySnapshot = nextEconomySnapshot;
       if (state) render();
     });
-    renderAccount();
-    if (accountClient?.isConfigured()) {
-      void accountClient.initialize().then((identity) => {
-        accountIdentity = identity;
-        renderAccount();
-        return refreshEconomy();
-      }).catch((error) => {
-        setAccountMessage(accountApi.mapAccountError(error), 'error');
+    [gameEventPrimary, gameEventSecondary].forEach((button) => {
+      button?.addEventListener('click', () => {
+        const action = button.dataset.action;
+        if (shouldDismissGameDialogAction(action)) {
+          closeGameEventDialog({ dismiss: true });
+        }
+        if (action === 'restart') {
+          if (state.gameMode === 'online') void requestOnlineRematch();
+          else newRound();
+        }
+        if (action === 'accept-undo') void submitOnlineUndo('accept');
+        if (action === 'reject-undo') void submitOnlineUndo('reject');
+        if (action === 'accept-rematch') void requestOnlineRematch();
+        if (action === 'reject-rematch') void declineOnlineRematch();
       });
-    }
+    });
+    gameEventDialog?.addEventListener('cancel', (event) => {
+      if (!activeGameDialog?.dismissible) event.preventDefault();
+      else closeGameEventDialog({ dismiss: true });
+    });
+    gameEventDialog?.addEventListener('click', (event) => {
+      if (event.target === gameEventDialog && activeGameDialog?.dismissible) {
+        closeGameEventDialog({ dismiss: true });
+      }
+    });
   }
 
   globalScope.GameApp = exported;

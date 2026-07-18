@@ -406,6 +406,34 @@ for (const [label, path] of sqlSources) {
     }
   });
 
+  test(`${label} makes reward claims and check-ins immutable`, () => {
+    const sql = readSql(path);
+    for (const table of ['activity_claims', 'notification_claims', 'player_checkins']) {
+      assert.match(
+        sql,
+        new RegExp(`create\\s+trigger\\s+engagement_record_immutable\\s+before\\s+update\\s+or\\s+delete\\s+on\\s+public\\.${table}\\s+for\\s+each\\s+row\\s+execute\\s+function\\s+public\\.prevent_engagement_record_mutation\\s*\\(\\s*\\)\\s*;`, 'i'),
+        `${table} must have a BEFORE UPDATE OR DELETE immutability trigger`,
+      );
+      assert.match(
+        sql,
+        new RegExp(`drop\\s+trigger\\s+if\\s+exists\\s+engagement_record_immutable\\s+on\\s+public\\.${table}\\s*;`, 'i'),
+        `${table} trigger setup must be idempotent`,
+      );
+    }
+
+    const helper = extractFunction(sql, 'prevent_engagement_record_mutation');
+    assert.notEqual(helper, '', 'missing shared engagement immutability trigger function');
+    assert.match(helper, /returns\s+trigger/i);
+    assert.match(helper, /set\s+search_path\s*=\s*public\s*,\s*pg_temp/i);
+    assert.match(helper, /ENGAGEMENT_RECORD_IMMUTABLE/);
+    assert.match(helper, /tg_op\s*=\s*'DELETE'[\s\S]*not\s+exists[\s\S]*from\s+public\.profiles[\s\S]*old\.user_id[\s\S]*return\s+old/i);
+    assert.deepEqual(
+      [...functionPrivilegeRoles(sql, 'revoke', 'prevent_engagement_record_mutation')].sort(),
+      ['anon', 'authenticated', 'public'],
+    );
+    assert.deepEqual([...functionPrivilegeRoles(sql, 'grant', 'prevent_engagement_record_mutation')], []);
+  });
+
   test(`${label} secures every engagement RPC with a fixed execution context`, () => {
     const sql = readSql(path);
     for (const rpc of rpcs) {

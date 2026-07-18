@@ -1577,3 +1577,44 @@ grant execute on function public.perform_daily_checkin(uuid) to authenticated;
 grant execute on function public.perform_makeup_checkin(date, text, uuid) to authenticated;
 grant execute on function public.admin_list_checkin_rules() to authenticated;
 grant execute on function public.admin_create_checkin_rule(date, bigint, bigint, bigint, bigint, bigint, bigint, bigint, bigint) to authenticated;
+
+create or replace function public.prevent_engagement_record_mutation()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  if tg_op = 'DELETE'
+     and not exists (
+       select 1
+       from public.profiles as profile
+       where profile.id = old.user_id
+     ) then
+    return old;
+  end if;
+
+  raise exception 'ENGAGEMENT_RECORD_IMMUTABLE';
+end;
+$$;
+
+revoke execute on function public.prevent_engagement_record_mutation()
+from public, anon, authenticated;
+
+drop trigger if exists engagement_record_immutable on public.activity_claims;
+create trigger engagement_record_immutable
+before update or delete on public.activity_claims
+for each row
+execute function public.prevent_engagement_record_mutation();
+
+drop trigger if exists engagement_record_immutable on public.notification_claims;
+create trigger engagement_record_immutable
+before update or delete on public.notification_claims
+for each row
+execute function public.prevent_engagement_record_mutation();
+
+drop trigger if exists engagement_record_immutable on public.player_checkins;
+create trigger engagement_record_immutable
+before update or delete on public.player_checkins
+for each row
+execute function public.prevent_engagement_record_mutation();

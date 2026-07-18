@@ -40,6 +40,10 @@ class FakeElement extends EventTarget {
     this.children = [];
   }
 
+  set innerHTML(_value) {
+    throw new Error('UNSAFE_INNER_HTML');
+  }
+
   setAttribute(name, value) {
     this.attributes.set(name, String(value));
   }
@@ -69,7 +73,7 @@ class FakeElement extends EventTarget {
     if (selector.startsWith('#')) return this.id === selector.slice(1);
     if (selector.startsWith('.')) return this.className.split(/\s+/).includes(selector.slice(1));
     const attribute = /^\[data-([a-z-]+)(?:="([^"]+)")?\]$/.exec(selector);
-    if (!attribute) return false;
+    if (!attribute) return this.tagName.toLowerCase() === selector.toLowerCase();
     const key = attribute[1].replace(/-([a-z])/g, (_match, letter) => letter.toUpperCase());
     return Object.hasOwn(this.dataset, key) && (attribute[2] == null || this.dataset[key] === attribute[2]);
   }
@@ -92,21 +96,39 @@ class FakeElement extends EventTarget {
   close() {
     this.open = false;
   }
+
+  remove() {
+    if (!this.parentElement) return;
+    this.parentElement.children = this.parentElement.children.filter((child) => child !== this);
+    this.parentElement = null;
+  }
 }
 
 function createPlayerRuntimeHarness({
   identity = { kind: 'guest', displayName: '匿名玩家' },
+  locationHref = 'https://hhhyl.me/player/?tab=checkin',
   month = [],
   getMonth = async () => month,
   checkIn = async () => null,
   makeUp = async () => null,
   mapError = () => '签到失败，请稍后重试',
+  activities = [],
+  listActivities = async () => activities,
+  claimActivity = async () => null,
+  mapActivitiesError = () => '活动服务暂时不可用，请稍后重试',
+  notifications = [],
+  listNotifications = async () => notifications,
+  markRead = async () => null,
+  claimNotification = async () => null,
+  mapNotificationsError = () => '通知服务暂时不可用，请稍后重试',
 } = {}) {
   const tabList = new FakeElement();
   tabList.setAttribute('aria-orientation', 'vertical');
   const tabs = ['checkin', 'activities', 'notifications'].map((tab) => new FakeElement({ playerTab: tab }));
   const panels = ['checkin', 'activities', 'notifications'].map((tab) => new FakeElement({ playerPanel: tab }));
   const calendar = new FakeElement();
+  const activityList = new FakeElement();
+  const notificationList = new FakeElement();
   const nodes = new Map([
     ['.player-tabs', tabList],
     ['#player-summary-name', new FakeElement()],
@@ -115,6 +137,8 @@ function createPlayerRuntimeHarness({
     ['#checkin-guest-state', new FakeElement()],
     ['#checkin-login-button', new FakeElement()],
     ['#checkin-calendar', calendar],
+    ['#activity-list', activityList],
+    ['#notification-list', notificationList],
     ['#player-message', new FakeElement()],
   ]);
   const media = new FakeElement();
@@ -125,6 +149,8 @@ function createPlayerRuntimeHarness({
   let economyRefreshes = 0;
   const checkinCalls = [];
   const monthCalls = [];
+  const activityCalls = [];
+  const notificationCalls = [];
   const accountClient = {};
   const economyClient = { refresh: async () => ({ balance: 0, isAdmin: false, loaded: true }) };
   const checkinClient = {
@@ -139,6 +165,30 @@ function createPlayerRuntimeHarness({
     async makeUp(date, paymentMethod, requestId) {
       checkinCalls.push({ type: 'makeup', date, paymentMethod, requestId });
       return makeUp(date, paymentMethod, requestId);
+    },
+  };
+  const activitiesClient = {
+    async listActive() {
+      activityCalls.push({ type: 'list' });
+      return listActivities();
+    },
+    async claimReward(activityId, requestId) {
+      activityCalls.push({ type: 'claim', activityId, requestId });
+      return claimActivity(activityId, requestId);
+    },
+  };
+  const notificationsClient = {
+    async list() {
+      notificationCalls.push({ type: 'list' });
+      return listNotifications();
+    },
+    async markRead(notificationId) {
+      notificationCalls.push({ type: 'read', notificationId });
+      return markRead(notificationId);
+    },
+    async claimReward(notificationId, requestId) {
+      notificationCalls.push({ type: 'claim', notificationId, requestId });
+      return claimNotification(notificationId, requestId);
     },
   };
   const accountPanel = {
@@ -181,20 +231,35 @@ function createPlayerRuntimeHarness({
       return nodes.get(selector) || null;
     },
   };
-  globalThis.location = { href: 'https://hhhyl.me/player/?tab=checkin' };
-  globalThis.history = { replaceState(_state, _title, url) { urls.push(url); } };
+  globalThis.location = { href: locationHref };
+  globalThis.history = {
+    replaceState(_state, _title, url) {
+      urls.push(url);
+      globalThis.location.href = new URL(url, globalThis.location.href).href;
+    },
+  };
   globalThis.matchMedia = () => media;
   globalThis.HYLAccountPanel = { mount: () => accountPanel };
   globalThis.PlayerCheckin = {
     createCheckinClient: () => checkinClient,
     mapCheckinError: mapError,
   };
-  globalThis.PlayerActivities = { createActivitiesClient: () => ({}) };
-  globalThis.PlayerNotifications = { createNotificationsClient: () => ({}) };
+  globalThis.PlayerActivities = {
+    createActivitiesClient: () => activitiesClient,
+    mapActivitiesError,
+  };
+  globalThis.PlayerNotifications = {
+    createNotificationsClient: () => notificationsClient,
+    mapNotificationsError,
+  };
 
   return {
     media,
     calendar,
+    activityList,
+    notificationList,
+    activityCalls,
+    notificationCalls,
     checkinCalls,
     monthCalls,
     nodes,
@@ -313,6 +378,241 @@ test('player route normalizes tabs and preserves an activity deep link', () => {
     tab: 'checkin',
     activity: null,
   });
+});
+
+test('activities render safe cards and a deep-linked detail with a cover fallback and validated action URL', async () => {
+  const malicious = '<img src=x onerror="globalThis.pwned=true">';
+  const activities = [{
+    id: 'activity-1',
+    title: `夏日活动 ${malicious}`,
+    body: `正文 ${malicious}`,
+    coverUrl: 'https://cdn.hhhyl.me/activity.webp',
+    actionLabel: '查看规则',
+    actionUrl: 'https://hhhyl.me/rules/summer',
+    startsAt: '2026-07-01T00:00:00.000Z',
+    endsAt: '2026-07-31T12:00:00.000Z',
+    rewardAmount: 0,
+    claimed: false,
+  }];
+  const harness = createPlayerRuntimeHarness({
+    locationHref: 'https://hhhyl.me/player/?tab=activities&activity=activity-1',
+    activities,
+  });
+  let instance;
+  try {
+    instance = player.mount();
+    await flushPromises();
+
+    const card = harness.activityList.querySelector('[data-activity-id="activity-1"]');
+    const detail = harness.activityList.querySelector('[data-activity-detail="activity-1"]');
+    assert.ok(card);
+    assert.ok(detail);
+    assert.match(card.textContent, /夏日活动 <img src=x/);
+    assert.match(card.textContent, /7 月 1 日.*7 月 31 日/);
+    assert.match(card.textContent, /无金币奖励/);
+    assert.match(card.textContent, /查看活动/);
+    assert.equal(detail.querySelector('.activity-detail-body').textContent, `正文 ${malicious}`);
+    assert.equal(detail.querySelector('img'), null, 'admin body must stay text, not markup');
+
+    const action = detail.querySelector('[data-activity-action]');
+    assert.equal(action.href, 'https://hhhyl.me/rules/summer');
+    assert.equal(action.target, '_blank');
+    assert.equal(action.rel, 'noopener noreferrer');
+
+    const cover = card.querySelector('[data-activity-cover]');
+    cover.dispatchEvent(new Event('error'));
+    assert.equal(cover.hidden, true);
+    assert.match(card.textContent, /封面不可用/);
+  } finally {
+    instance?.destroy();
+    harness.restore();
+  }
+});
+
+test('activity rewards prevent duplicate submission, update the card and wallet, and accept already-claimed replies', async () => {
+  let resolveClaim;
+  const pending = new Promise((resolve) => { resolveClaim = resolve; });
+  let attempts = 0;
+  const harness = createPlayerRuntimeHarness({
+    identity: { kind: 'registered', displayName: '立哥' },
+    activities: [
+      { id: 'reward-1', title: '首发奖励', body: '奖励正文', rewardAmount: 12, claimed: false },
+      { id: 'reward-2', title: '重复奖励', body: '重复正文', rewardAmount: 6, claimed: false },
+    ],
+    claimActivity: async (activityId) => {
+      if (activityId === 'reward-1') return pending;
+      attempts += 1;
+      throw new Error(attempts === 1 ? 'NETWORK_FAILED' : 'ACTIVITY_ALREADY_CLAIMED');
+    },
+    mapActivitiesError: (error) => (
+      String(error.message).includes('ALREADY') ? '活动奖励已经领取' : '活动领取失败，可重试'
+    ),
+  });
+  let instance;
+  try {
+    instance = player.mount();
+    await flushPromises();
+    const first = harness.activityList.querySelector('[data-activity-claim="reward-1"]');
+    first.dispatchEvent(new Event('click'));
+    first.dispatchEvent(new Event('click'));
+    assert.equal(first.disabled, true);
+    assert.equal(harness.activityCalls.filter((call) => call.type === 'claim' && call.activityId === 'reward-1').length, 1);
+    resolveClaim({ rewardAmount: 12, balance: 112, claimedAt: '2026-07-18T00:00:00.000Z' });
+    await flushPromises();
+    await flushPromises();
+    assert.equal(harness.activityList.querySelector('[data-activity-claim="reward-1"]').textContent, '已领取');
+    assert.equal(harness.economyRefreshes, 1);
+
+    let second = harness.activityList.querySelector('[data-activity-claim="reward-2"]');
+    second.dispatchEvent(new Event('click'));
+    await flushPromises();
+    assert.equal(second.disabled, false);
+    assert.equal(harness.nodes.get('#player-message').textContent, '活动领取失败，可重试');
+    second.dispatchEvent(new Event('click'));
+    await flushPromises();
+    second = harness.activityList.querySelector('[data-activity-claim="reward-2"]');
+    assert.equal(second.textContent, '已领取');
+    assert.equal(second.disabled, true);
+    assert.match(harness.activityList.textContent, /重复奖励.*已领取/);
+  } finally {
+    instance?.destroy();
+    harness.restore();
+  }
+});
+
+test('activity empty, retry, guest claim, and unavailable deep-link states use explicit Chinese copy', async () => {
+  let loads = 0;
+  const harness = createPlayerRuntimeHarness({
+    locationHref: 'https://hhhyl.me/player/?tab=activities&activity=removed-activity',
+    listActivities: async () => {
+      loads += 1;
+      if (loads === 1) throw new Error('NETWORK_FAILED');
+      if (loads === 2) return [];
+      return [{ id: 'reward', title: '登录奖励', body: '请登录', rewardAmount: 5, claimed: false }];
+    },
+    mapActivitiesError: () => '活动加载失败，请重试',
+  });
+  let instance;
+  try {
+    instance = player.mount();
+    await flushPromises();
+    assert.match(harness.activityList.textContent, /活动加载失败，请重试/);
+    harness.activityList.querySelector('[data-activity-retry]').dispatchEvent(new Event('click'));
+    await flushPromises();
+    assert.match(harness.activityList.textContent, /暂无可参与的活动/);
+    assert.match(harness.nodes.get('#player-message').textContent, /活动已下架或不可用/);
+
+    instance.refreshActivities();
+    await flushPromises();
+    const claim = harness.activityList.querySelector('[data-activity-claim="reward"]');
+    claim.dispatchEvent(new Event('click'));
+    assert.equal(harness.activityCalls.filter((call) => call.type === 'claim').length, 0);
+    assert.equal(harness.nodes.get('#player-message').textContent, '请先登录正式账号领取活动奖励');
+    assert.equal(harness.opens, 1);
+  } finally {
+    instance?.destroy();
+    harness.restore();
+  }
+});
+
+test('notifications sort newest first and keep detail read state independent from reward claims', async () => {
+  const notifications = [
+    {
+      id: 'old', activityId: null, title: '旧通知', body: '旧正文', rewardAmount: null,
+      visibleAt: '2026-07-01T00:00:00.000Z', expiresAt: null, actionUrl: null,
+      isRead: true, rewardClaimed: false,
+    },
+    {
+      id: 'new', activityId: 'activity-1', title: '新通知', body: '新正文', rewardAmount: 9,
+      visibleAt: '2026-07-18T08:00:00.000Z', expiresAt: '2099-07-30T00:00:00.000Z', actionUrl: null,
+      isRead: false, rewardClaimed: false,
+    },
+  ];
+  const harness = createPlayerRuntimeHarness({
+    identity: { kind: 'registered', displayName: '立哥' },
+    notifications,
+    markRead: async () => ({ notificationId: 'new', readAt: '2026-07-18T08:01:00.000Z' }),
+    claimNotification: async () => ({ rewardAmount: 9, balance: 109, claimedAt: '2026-07-18T08:02:00.000Z' }),
+  });
+  let instance;
+  try {
+    instance = player.mount();
+    await flushPromises();
+    const items = harness.notificationList.querySelectorAll('[data-notification-id]');
+    assert.equal(items[0].dataset.notificationId, 'new');
+    assert.match(items[0].textContent, /新正文/);
+    assert.ok(items[0].querySelector('[data-notification-unread]'));
+    assert.match(items[0].textContent, /奖励 9 金币.*未领取/);
+
+    items[0].querySelector('[data-notification-open="new"]').dispatchEvent(new Event('click'));
+    await flushPromises();
+    assert.equal(harness.notificationCalls.filter((call) => call.type === 'read').length, 1);
+    assert.equal(harness.notificationCalls.filter((call) => call.type === 'claim').length, 0);
+    assert.equal(harness.notificationList.querySelector('[data-notification-id="new"]').querySelector('[data-notification-unread]'), null);
+
+    const claim = harness.notificationList.querySelector('[data-notification-claim="new"]');
+    claim.dispatchEvent(new Event('click'));
+    claim.dispatchEvent(new Event('click'));
+    await flushPromises();
+    await flushPromises();
+    assert.equal(harness.notificationCalls.filter((call) => call.type === 'claim').length, 1);
+    assert.equal(harness.notificationList.querySelector('[data-notification-claim="new"]').textContent, '已领取');
+    assert.equal(harness.economyRefreshes, 1);
+
+    harness.notificationList.querySelector('[data-notification-activity="activity-1"]').dispatchEvent(new Event('click'));
+    assert.match(harness.urls.at(-1), /tab=activities&activity=activity-1/);
+  } finally {
+    instance?.destroy();
+    harness.restore();
+  }
+});
+
+test('notifications expose empty, retry, guest, expired, and disabled activity states', async () => {
+  let loads = 0;
+  const harness = createPlayerRuntimeHarness({
+    notifications: [],
+    listNotifications: async () => {
+      loads += 1;
+      if (loads === 1) throw new Error('NETWORK_FAILED');
+      if (loads === 2) return [];
+      return [{
+        id: 'expired', activityId: 'disabled-activity', title: '过期通知', body: '已失效正文',
+        rewardAmount: 4, visibleAt: '2020-01-01T00:00:00.000Z', expiresAt: '2020-01-02T00:00:00.000Z',
+        actionUrl: null, isRead: false, rewardClaimed: false,
+      }, {
+        id: 'retry', activityId: null, title: '可重试通知', body: '重试正文',
+        rewardAmount: 3, visibleAt: '2099-01-01T00:00:00.000Z', expiresAt: null,
+        actionUrl: null, isRead: true, rewardClaimed: false,
+      }];
+    },
+    mapNotificationsError: () => '通知操作失败，可重试',
+  });
+  let instance;
+  try {
+    instance = player.mount();
+    await flushPromises();
+    assert.match(harness.notificationList.textContent, /通知加载失败|通知操作失败，可重试/);
+    harness.notificationList.querySelector('[data-notification-retry]').dispatchEvent(new Event('click'));
+    await flushPromises();
+    assert.match(harness.notificationList.textContent, /暂无通知/);
+
+    instance.refreshNotifications();
+    await flushPromises();
+    const expired = harness.notificationList.querySelector('[data-notification-id="expired"]');
+    assert.match(expired.textContent, /已过期/);
+    assert.equal(expired.querySelector('[data-notification-claim="expired"]').disabled, true);
+    expired.querySelector('[data-notification-activity="disabled-activity"]').dispatchEvent(new Event('click'));
+    assert.equal(harness.nodes.get('#player-message').textContent, '关联活动可能已下架，请在活动页确认');
+
+    const retry = harness.notificationList.querySelector('[data-notification-claim="retry"]');
+    retry.dispatchEvent(new Event('click'));
+    assert.equal(harness.notificationCalls.filter((call) => call.type === 'claim').length, 0);
+    assert.equal(harness.nodes.get('#player-message').textContent, '请先登录正式账号领取通知奖励');
+    assert.equal(harness.opens, 1);
+  } finally {
+    instance?.destroy();
+    harness.restore();
+  }
 });
 
 test('player check-in helpers build a labeled Monday-first calendar including leap day', () => {
@@ -702,6 +1002,16 @@ test('player styles preserve the Black Obsidian system on narrow and reduced-mot
   assert.match(css, /\.checkin-day-status/);
   assert.match(css, /\.checkin-confirmation::backdrop/);
   assert.match(css, /\.checkin-day-action:disabled/);
+  assert.match(css, /\.activity-layout\s*\{[^}]*display:\s*grid/s);
+  assert.match(css, /\.activity-cover-image/);
+  assert.match(css, /\.activity-card-status/);
+  assert.match(css, /\.notification-inbox/);
+  assert.match(css, /\.notification-unread-dot/);
+  assert.match(css, /\.notification-expired-status/);
+  assert.match(css, /\.player-secondary-action:focus-visible/);
+  assert.match(css, /(?:\.activity-card|\.notification-item)[^}]*var\(--portal-line\)/s);
+  assert.match(css, /\.notification-actions[^}]*flex/s);
+  assert.match(css, /(?:\.player-primary-action|\.player-secondary-action):disabled/);
   assert.match(css, /@media\s*\(max-width:\s*759px\)/);
   assert.match(css, /overflow-x:\s*auto/);
   assert.match(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)/);

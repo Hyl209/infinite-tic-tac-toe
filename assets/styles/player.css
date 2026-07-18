@@ -207,6 +207,278 @@ body[data-view="player"] {
   background: var(--portal-ink);
 }
 
+.player-secondary-action,
+.player-secondary-link {
+  min-height: 40px;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--portal-line);
+  color: var(--portal-ink);
+  background: var(--portal-surface-strong);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 750;
+  line-height: 1.25;
+  text-decoration: none;
+  cursor: pointer;
+  transition: border-color 180ms ease, background-color 180ms ease, color 180ms ease;
+}
+
+.player-secondary-action:hover,
+.player-secondary-link:hover {
+  border-color: var(--portal-accent-soft);
+  background: var(--portal-bg);
+}
+
+.player-secondary-action:focus-visible,
+.player-secondary-link:focus-visible {
+  outline: 3px solid var(--portal-accent-soft);
+  outline-offset: 2px;
+}
+
+.player-primary-action:disabled,
+.player-secondary-action:disabled {
+  opacity: 0.56;
+  cursor: not-allowed;
+}
+
+.player-primary-action[aria-busy="true"],
+.player-secondary-action[aria-busy="true"] {
+  cursor: wait;
+}
+
+.player-state .player-secondary-action {
+  margin-top: 16px;
+}
+
+.activity-list,
+.notification-list {
+  margin-top: 24px;
+}
+
+.activity-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.18fr) minmax(280px, 0.82fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.activity-cards {
+  display: grid;
+  border-top: 1px solid var(--portal-line);
+}
+
+.activity-card {
+  min-width: 0;
+  padding: 18px 0;
+  display: grid;
+  grid-template-columns: 136px minmax(0, 1fr);
+  gap: 18px;
+  border-bottom: 1px solid var(--portal-line);
+  background: var(--portal-surface);
+  transition: background-color 180ms ease, box-shadow 180ms ease;
+}
+
+.activity-card--selected {
+  background: var(--portal-surface-strong);
+  box-shadow: inset 3px 0 0 var(--portal-accent);
+}
+
+.activity-cover {
+  min-height: 112px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--portal-line);
+  background: var(--portal-bg);
+}
+
+.activity-cover-image {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.activity-cover-fallback {
+  padding: 16px;
+  color: var(--portal-muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.activity-card-content {
+  min-width: 0;
+}
+
+.activity-card h3,
+.activity-detail h3 {
+  margin: 0;
+  color: var(--portal-ink);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.activity-card h3 {
+  font-size: 1rem;
+}
+
+.activity-card-period,
+.activity-card-reward,
+.activity-detail-period,
+.activity-detail-body {
+  margin: 8px 0 0;
+  color: var(--portal-muted);
+  font-size: 0.8rem;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.activity-card-status {
+  width: max-content;
+  margin-top: 10px;
+  padding: 4px 8px;
+  display: inline-flex;
+  border: 1px solid var(--portal-accent);
+  color: var(--portal-ink);
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.activity-card-actions,
+.activity-detail-actions,
+.notification-actions {
+  margin-top: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.activity-card-actions .player-primary-action,
+.activity-detail-actions .player-primary-action,
+.notification-actions .player-primary-action {
+  min-height: 40px;
+  margin-top: 0;
+}
+
+.activity-detail {
+  position: sticky;
+  top: calc(var(--nav-height) + 24px);
+  padding: 22px;
+  border: 1px solid var(--portal-line);
+  background: var(--portal-surface-strong);
+}
+
+.activity-detail-kicker {
+  margin: 0 0 8px;
+  color: var(--portal-accent-soft);
+  font-size: 0.72rem;
+  font-weight: 760;
+  letter-spacing: 0.08em;
+}
+
+.activity-detail-body {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--portal-line);
+  color: var(--portal-ink);
+  white-space: pre-wrap;
+}
+
+.activity-detail-status {
+  min-height: 40px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--portal-line);
+  color: var(--portal-muted);
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.notification-inbox {
+  display: grid;
+  border-top: 1px solid var(--portal-line);
+}
+
+.notification-item {
+  padding: 20px 0;
+  border-bottom: 1px solid var(--portal-line);
+  background: transparent;
+  transition: background-color 180ms ease, padding 180ms ease;
+}
+
+.notification-item--open {
+  padding-right: 18px;
+  padding-left: 18px;
+  background: var(--portal-surface-strong);
+}
+
+.notification-heading {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.notification-heading h3 {
+  min-width: 0;
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.notification-time {
+  color: var(--portal-muted);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.notification-unread-dot {
+  width: 9px;
+  height: 9px;
+  border: 1px solid var(--portal-accent-soft);
+  border-radius: 50%;
+  background: var(--portal-accent);
+  box-shadow: 0 0 0 4px color-mix(in oklch, var(--portal-accent) 15%, transparent);
+}
+
+.notification-body {
+  max-width: 70ch;
+  margin: 10px 0 0;
+  color: var(--portal-muted);
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.notification-statuses {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.notification-statuses span {
+  min-height: 28px;
+  padding: 0 9px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--portal-line);
+  color: var(--portal-muted);
+  font-size: 0.7rem;
+  font-weight: 720;
+}
+
+.notification-expired-status {
+  color: #ffb0a7 !important;
+  border-color: #8a4039 !important;
+}
+
 .checkin-calendar {
   margin-top: 24px;
   padding-bottom: 18px;
@@ -437,6 +709,14 @@ body[data-view="player"] {
   .player-shell {
     width: min(100% - 28px, 720px);
   }
+
+  .activity-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .activity-detail {
+    position: static;
+  }
 }
 
 @media (max-width: 759px) {
@@ -490,11 +770,36 @@ body[data-view="player"] {
     min-height: 108px;
     padding: 9px;
   }
+
+  .activity-card {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .activity-cover {
+    min-height: 150px;
+    aspect-ratio: 16 / 7;
+  }
+
+  .notification-heading {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .notification-time {
+    grid-column: 2;
+  }
+
+  .notification-actions > * {
+    flex: 1 1 150px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .player-tab,
   .player-primary-action,
+  .player-secondary-action,
+  .player-secondary-link,
+  .activity-card,
+  .notification-item,
   .checkin-day-action,
   .checkin-secondary-action {
     transition: none;

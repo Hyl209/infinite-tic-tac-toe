@@ -139,6 +139,8 @@
     const checkinGuest = document.querySelector('#checkin-guest-state');
     const checkinLoginButton = document.querySelector('#checkin-login-button');
     const checkinCalendar = document.querySelector('#checkin-calendar');
+    const activityList = document.querySelector('#activity-list');
+    const notificationList = document.querySelector('#notification-list');
     const message = document.querySelector('#player-message');
     if (tabButtons.length === 0 || panels.length === 0) return null;
 
@@ -157,11 +159,21 @@
     const eventController = new AbortController();
     const { signal } = eventController;
     const narrowTabs = globalScope.matchMedia?.('(max-width: 759px)') || null;
-    let currentTab = readPlayerRoute(globalScope.location?.href).tab;
+    const initialRoute = readPlayerRoute(globalScope.location?.href);
+    let currentTab = initialRoute.tab;
+    let currentActivityId = initialRoute.activity;
     let destroyed = false;
     let instance = null;
     let calendarRequest = 0;
+    let activityRequest = 0;
+    let notificationRequest = 0;
     let actionPending = false;
+    let activityItems = [];
+    let notificationItems = [];
+    let openNotificationId = null;
+    const activityClaims = new Set();
+    const notificationClaims = new Set();
+    const notificationReads = new Set();
     let identityKind = accountPanel?.getIdentity()?.kind || 'guest';
 
     function setMessage(text = '', state = '') {
@@ -193,6 +205,436 @@
       node.className = className;
       if (text) node.textContent = text;
       return node;
+    }
+
+    function formatDate(value) {
+      const date = new Date(value);
+      if (!Number.isFinite(date.getTime())) return '时间未定';
+      const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Hong_Kong',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).formatToParts(date).reduce((result, part) => {
+        if (part.type !== 'literal') result[part.type] = part.value;
+        return result;
+      }, {});
+      return `${Number(parts.year)} 年 ${Number(parts.month)} 月 ${Number(parts.day)} 日`;
+    }
+
+    function formatActivityPeriod(activity) {
+      if (activity.startsAt && activity.endsAt) {
+        return `${formatDate(activity.startsAt)} 至 ${formatDate(activity.endsAt)}`;
+      }
+      if (activity.startsAt) return `${formatDate(activity.startsAt)} 起`;
+      if (activity.endsAt) return `截至 ${formatDate(activity.endsAt)}`;
+      return '长期有效';
+    }
+
+    function createExternalLink(url, label, className, dataKey) {
+      const link = createNode('a', className, label);
+      link.href = url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.dataset[dataKey] = '';
+      return link;
+    }
+
+    function renderRetryState(container, text, dataKey, retry) {
+      if (!container) return;
+      const shell = createNode('div', 'player-state player-state--error');
+      shell.append(createNode('p', '', text));
+      const button = createNode('button', 'player-secondary-action', '重试');
+      button.type = 'button';
+      button.dataset[dataKey] = '';
+      button.addEventListener('click', () => void retry(), { signal });
+      shell.append(button);
+      container.className = 'player-placeholder';
+      container.replaceChildren(shell);
+    }
+
+    function createActivityCover(activity) {
+      const cover = createNode('div', 'activity-cover');
+      const fallback = createNode('span', 'activity-cover-fallback', activity.coverUrl ? '封面不可用' : '暂无封面');
+      if (!activity.coverUrl) {
+        cover.append(fallback);
+        return cover;
+      }
+      fallback.hidden = true;
+      const image = createNode('img', 'activity-cover-image');
+      image.src = activity.coverUrl;
+      image.alt = `${activity.title} 活动封面`;
+      image.loading = 'lazy';
+      image.referrerPolicy = 'no-referrer';
+      image.dataset.activityCover = activity.id;
+      image.addEventListener('error', () => {
+        image.hidden = true;
+        fallback.hidden = false;
+      }, { signal, once: true });
+      cover.append(image, fallback);
+      return cover;
+    }
+
+    function activityStatus(activity) {
+      const rewardAmount = Number(activity.rewardAmount || 0);
+      if (rewardAmount <= 0) return activity.claimed ? '已参与' : '查看活动';
+      return activity.claimed ? '已领取' : `领取 ${rewardAmount} 金币`;
+    }
+
+    function createActivityClaimButton(activity) {
+      const rewardAmount = Number(activity.rewardAmount || 0);
+      const button = createNode('button', 'player-primary-action', activityClaims.has(activity.id)
+        ? '领取中…'
+        : activityStatus(activity));
+      button.type = 'button';
+      button.dataset.activityClaim = activity.id;
+      button.disabled = activity.claimed || activityClaims.has(activity.id);
+      button.setAttribute('aria-busy', String(activityClaims.has(activity.id)));
+      button.setAttribute('aria-label', activity.claimed
+        ? `${activity.title}奖励已领取`
+        : `领取${activity.title}的 ${rewardAmount} 金币`);
+      button.addEventListener('click', () => void runActivityClaim(activity.id, button), { signal });
+      return button;
+    }
+
+    function renderActivityDetail(activity) {
+      const detail = createNode('article', 'activity-detail');
+      detail.dataset.activityDetail = activity.id;
+      detail.setAttribute('aria-label', `${activity.title}详情`);
+      detail.append(
+        createNode('p', 'activity-detail-kicker', '活动详情'),
+        createNode('h3', '', activity.title),
+        createNode('p', 'activity-detail-period', `有效期：${formatActivityPeriod(activity)}`),
+        createNode('p', 'activity-detail-body', activity.body || '活动暂未提供更多说明。'),
+      );
+
+      const actions = createNode('div', 'activity-detail-actions');
+      const rewardAmount = Number(activity.rewardAmount || 0);
+      if (rewardAmount > 0) {
+        actions.append(createActivityClaimButton(activity));
+      } else {
+        actions.append(createNode('span', 'activity-detail-status', activityStatus(activity)));
+      }
+      if (activity.actionUrl) {
+        actions.append(createExternalLink(
+          activity.actionUrl,
+          activity.actionLabel || '查看活动页面',
+          'player-secondary-link',
+          'activityAction',
+        ));
+      }
+      detail.append(actions);
+      return detail;
+    }
+
+    function renderActivities() {
+      if (!activityList) return;
+      if (activityItems.length === 0) {
+        activityList.className = 'player-placeholder';
+        activityList.replaceChildren(createNode('p', '', '暂无可参与的活动。'));
+        if (currentActivityId) setMessage('活动已下架或不可用', 'error');
+        return;
+      }
+
+      const layout = createNode('div', 'activity-layout');
+      const cards = createNode('div', 'activity-cards');
+      activityItems.forEach((activity) => {
+        const selected = activity.id === currentActivityId;
+        const card = createNode('article', `activity-card${selected ? ' activity-card--selected' : ''}`);
+        card.dataset.activityId = activity.id;
+        if (selected) card.setAttribute('aria-current', 'true');
+        const content = createNode('div', 'activity-card-content');
+        content.append(
+          createNode('h3', '', activity.title),
+          createNode('p', 'activity-card-period', formatActivityPeriod(activity)),
+          createNode('p', 'activity-card-reward', Number(activity.rewardAmount || 0) > 0
+            ? `奖励 ${Number(activity.rewardAmount)} 金币`
+            : '无金币奖励'),
+          createNode('span', 'activity-card-status', activityStatus(activity)),
+        );
+        const openButton = createNode('button', 'player-secondary-action', selected ? '正在查看' : '查看详情');
+        openButton.type = 'button';
+        openButton.dataset.activityOpen = activity.id;
+        openButton.disabled = selected;
+        openButton.setAttribute('aria-label', `查看${activity.title}详情`);
+        openButton.addEventListener('click', () => openActivity(activity.id), { signal });
+        const actions = createNode('div', 'activity-card-actions');
+        actions.append(openButton);
+        if (Number(activity.rewardAmount || 0) > 0) {
+          actions.append(createActivityClaimButton(activity));
+        }
+        content.append(actions);
+        card.append(createActivityCover(activity), content);
+        cards.append(card);
+      });
+      layout.append(cards);
+
+      const selectedActivity = activityItems.find((activity) => activity.id === currentActivityId);
+      if (selectedActivity) layout.append(renderActivityDetail(selectedActivity));
+      else if (currentActivityId) setMessage('活动已下架或不可用', 'error');
+      activityList.className = 'activity-list';
+      activityList.replaceChildren(layout);
+    }
+
+    function openActivity(activityId, unavailableMessage = '活动已下架或不可用') {
+      currentTab = 'activities';
+      currentActivityId = activityId;
+      const url = new URL(globalScope.location.href);
+      url.searchParams.set('tab', 'activities');
+      url.searchParams.set('activity', activityId);
+      globalScope.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+      renderTabs();
+      renderActivities();
+      if (!activityItems.some((activity) => activity.id === activityId)) {
+        setMessage(unavailableMessage, 'error');
+      }
+    }
+
+    async function refreshActivities() {
+      if (!activitiesClient) {
+        renderRetryState(activityList, '活动服务暂时不可用，请稍后重试', 'activityRetry', refreshActivities);
+        return false;
+      }
+      const request = ++activityRequest;
+      activityList?.setAttribute('aria-busy', 'true');
+      try {
+        const items = await activitiesClient.listActive();
+        if (destroyed || request !== activityRequest) return false;
+        activityItems = Array.isArray(items) ? items : [];
+        renderActivities();
+        return true;
+      } catch (error) {
+        if (destroyed || request !== activityRequest) return false;
+        const text = globalScope.PlayerActivities?.mapActivitiesError?.(error)
+          || '活动加载失败，请稍后重试';
+        renderRetryState(activityList, text, 'activityRetry', refreshActivities);
+        setMessage(text, 'error');
+        return false;
+      } finally {
+        if (!destroyed && request === activityRequest) activityList?.setAttribute('aria-busy', 'false');
+      }
+    }
+
+    async function runActivityClaim(activityId, button) {
+      const activity = activityItems.find((item) => item.id === activityId);
+      if (!activity || activity.claimed || activityClaims.has(activityId) || destroyed) return;
+      if (accountPanel?.getIdentity()?.kind !== 'registered') {
+        setMessage('请先登录正式账号领取活动奖励', 'error');
+        accountPanel?.open();
+        return;
+      }
+      activityClaims.add(activityId);
+      button.disabled = true;
+      button.textContent = '领取中…';
+      button.setAttribute('aria-busy', 'true');
+      renderActivities();
+      try {
+        const result = await activitiesClient.claimReward(activityId, createRequestId());
+        if (destroyed) return;
+        activity.claimed = true;
+        activity.claimedAt = result?.claimedAt || activity.claimedAt || null;
+        const refreshed = await refreshWallet();
+        if (destroyed) return;
+        setMessage(refreshed
+          ? `活动奖励领取成功，获得 ${formatCoinDelta(result?.rewardAmount ?? activity.rewardAmount)}`
+          : '奖励已领取，但钱包刷新失败，请刷新页面', refreshed ? 'success' : 'error');
+      } catch (error) {
+        if (destroyed) return;
+        const text = globalScope.PlayerActivities?.mapActivitiesError?.(error)
+          || '活动领取失败，请稍后重试';
+        if (text.includes('已经领取') || text.includes('已领取')) activity.claimed = true;
+        setMessage(text, activity.claimed ? 'success' : 'error');
+      } finally {
+        activityClaims.delete(activityId);
+        button.disabled = Boolean(activity.claimed);
+        button.setAttribute('aria-busy', 'false');
+        if (!destroyed) renderActivities();
+      }
+    }
+
+    function isNotificationExpired(notification) {
+      if (!notification.expiresAt) return false;
+      const expiresAt = Date.parse(notification.expiresAt);
+      return Number.isFinite(expiresAt) && expiresAt <= Date.now();
+    }
+
+    function renderNotifications() {
+      if (!notificationList) return;
+      if (notificationItems.length === 0) {
+        notificationList.className = 'player-placeholder';
+        notificationList.replaceChildren(createNode('p', '', '暂无通知。'));
+        return;
+      }
+
+      const inbox = createNode('div', 'notification-inbox');
+      [...notificationItems]
+        .sort((left, right) => (
+          (Date.parse(right.visibleAt) || 0) - (Date.parse(left.visibleAt) || 0)
+          || String(right.id).localeCompare(String(left.id))
+        ))
+        .forEach((notification) => {
+          const expired = isNotificationExpired(notification);
+          const opened = openNotificationId === notification.id;
+          const item = createNode('article', `notification-item${opened ? ' notification-item--open' : ''}`);
+          item.dataset.notificationId = notification.id;
+          const heading = createNode('div', 'notification-heading');
+          const title = createNode('h3', '', notification.title);
+          if (!notification.isRead) {
+            const unread = createNode('span', 'notification-unread-dot');
+            unread.dataset.notificationUnread = '';
+            unread.setAttribute('aria-label', '未读通知');
+            heading.append(unread);
+          }
+          heading.append(title, createNode('time', 'notification-time', formatDate(notification.visibleAt)));
+          item.append(heading, createNode('p', 'notification-body', notification.body || '该通知暂无正文。'));
+
+          const statuses = createNode('div', 'notification-statuses');
+          const rewardAmount = Number(notification.rewardAmount || 0);
+          statuses.append(createNode('span', 'notification-read-status', notification.isRead ? '已读' : '未读'));
+          if (expired) statuses.append(createNode('span', 'notification-expired-status', '已过期'));
+          if (rewardAmount > 0) {
+            statuses.append(createNode('span', 'notification-reward-status', notification.rewardClaimed
+              ? `奖励 ${rewardAmount} 金币 · 已领取`
+              : `奖励 ${rewardAmount} 金币 · 未领取`));
+          } else {
+            statuses.append(createNode('span', 'notification-reward-status', '无奖励'));
+          }
+          item.append(statuses);
+
+          const actions = createNode('div', 'notification-actions');
+          const openButton = createNode('button', 'player-secondary-action', opened ? '收起详情' : '查看详情');
+          openButton.type = 'button';
+          openButton.dataset.notificationOpen = notification.id;
+          openButton.setAttribute('aria-expanded', String(opened));
+          openButton.addEventListener('click', () => void toggleNotification(notification.id), { signal });
+          actions.append(openButton);
+          if (notification.activityId) {
+            const activityButton = createNode('button', 'player-secondary-action', '查看关联活动');
+            activityButton.type = 'button';
+            activityButton.dataset.notificationActivity = notification.activityId;
+            activityButton.addEventListener('click', () => {
+              openActivity(notification.activityId, '关联活动可能已下架，请在活动页确认');
+            }, { signal });
+            actions.append(activityButton);
+          }
+          if (notification.actionUrl) {
+            actions.append(createExternalLink(
+              notification.actionUrl,
+              '打开通知链接',
+              'player-secondary-link',
+              'notificationAction',
+            ));
+          }
+          if (rewardAmount > 0) {
+          const claimButton = createNode('button', 'player-primary-action', notificationClaims.has(notification.id)
+              ? '领取中…'
+              : notification.rewardClaimed ? '已领取' : `领取 ${rewardAmount} 金币`);
+            claimButton.type = 'button';
+            claimButton.dataset.notificationClaim = notification.id;
+            claimButton.disabled = expired || notification.rewardClaimed || notificationClaims.has(notification.id);
+            claimButton.setAttribute('aria-busy', String(notificationClaims.has(notification.id)));
+            claimButton.setAttribute('aria-label', expired
+              ? `${notification.title}奖励已过期`
+              : notification.rewardClaimed ? `${notification.title}奖励已领取` : `领取${notification.title}奖励`);
+            claimButton.addEventListener('click', () => void runNotificationClaim(notification.id, claimButton), { signal });
+            actions.append(claimButton);
+          }
+          item.append(actions);
+          inbox.append(item);
+        });
+      notificationList.className = 'notification-list';
+      notificationList.replaceChildren(inbox);
+    }
+
+    async function toggleNotification(notificationId) {
+      const notification = notificationItems.find((item) => item.id === notificationId);
+      if (!notification || destroyed) return;
+      if (openNotificationId === notificationId) {
+        openNotificationId = null;
+        renderNotifications();
+        return;
+      }
+      openNotificationId = notificationId;
+      renderNotifications();
+      if (notification.isRead || notificationReads.has(notificationId)
+          || accountPanel?.getIdentity()?.kind !== 'registered') return;
+      notificationReads.add(notificationId);
+      try {
+        const result = await notificationsClient.markRead(notificationId);
+        if (destroyed) return;
+        notification.isRead = true;
+        notification.readAt = result?.readAt || notification.readAt || null;
+        renderNotifications();
+      } catch (error) {
+        if (destroyed) return;
+        const text = globalScope.PlayerNotifications?.mapNotificationsError?.(error)
+          || '通知已读状态更新失败，请重试';
+        setMessage(text, 'error');
+      } finally {
+        notificationReads.delete(notificationId);
+      }
+    }
+
+    async function refreshNotifications() {
+      if (!notificationsClient) {
+        renderRetryState(notificationList, '通知服务暂时不可用，请稍后重试', 'notificationRetry', refreshNotifications);
+        return false;
+      }
+      const request = ++notificationRequest;
+      notificationList?.setAttribute('aria-busy', 'true');
+      try {
+        const items = await notificationsClient.list();
+        if (destroyed || request !== notificationRequest) return false;
+        notificationItems = Array.isArray(items) ? items : [];
+        renderNotifications();
+        return true;
+      } catch (error) {
+        if (destroyed || request !== notificationRequest) return false;
+        const text = globalScope.PlayerNotifications?.mapNotificationsError?.(error)
+          || '通知加载失败，请稍后重试';
+        renderRetryState(notificationList, text, 'notificationRetry', refreshNotifications);
+        setMessage(text, 'error');
+        return false;
+      } finally {
+        if (!destroyed && request === notificationRequest) notificationList?.setAttribute('aria-busy', 'false');
+      }
+    }
+
+    async function runNotificationClaim(notificationId, button) {
+      const notification = notificationItems.find((item) => item.id === notificationId);
+      if (!notification || notification.rewardClaimed || isNotificationExpired(notification)
+          || notificationClaims.has(notificationId) || destroyed) return;
+      if (accountPanel?.getIdentity()?.kind !== 'registered') {
+        setMessage('请先登录正式账号领取通知奖励', 'error');
+        accountPanel?.open();
+        return;
+      }
+      notificationClaims.add(notificationId);
+      button.disabled = true;
+      button.textContent = '领取中…';
+      button.setAttribute('aria-busy', 'true');
+      try {
+        const result = await notificationsClient.claimReward(notificationId, createRequestId());
+        if (destroyed) return;
+        notification.rewardClaimed = true;
+        notification.rewardClaimedAt = result?.claimedAt || notification.rewardClaimedAt || null;
+        const refreshed = await refreshWallet();
+        if (destroyed) return;
+        setMessage(refreshed
+          ? `通知奖励领取成功，获得 ${formatCoinDelta(result?.rewardAmount ?? notification.rewardAmount)}`
+          : '奖励已领取，但钱包刷新失败，请刷新页面', refreshed ? 'success' : 'error');
+      } catch (error) {
+        if (destroyed) return;
+        const text = globalScope.PlayerNotifications?.mapNotificationsError?.(error)
+          || '通知奖励领取失败，请稍后重试';
+        if (text.includes('奖励已领取') || text === '已领取') notification.rewardClaimed = true;
+        setMessage(text, notification.rewardClaimed ? 'success' : 'error');
+      } finally {
+        notificationClaims.delete(notificationId);
+        button.disabled = Boolean(notification.rewardClaimed);
+        button.setAttribute('aria-busy', 'false');
+        if (!destroyed) renderNotifications();
+      }
     }
 
     function setActionDisabled(disabled) {
@@ -424,7 +866,14 @@
       currentTab = normalizePlayerTab(tab);
       const url = new URL(globalScope.location.href);
       url.searchParams.set('tab', currentTab);
-      if (currentTab !== 'activities') url.searchParams.delete('activity');
+      if (currentTab !== 'activities') {
+        currentActivityId = null;
+        url.searchParams.delete('activity');
+      } else if (currentActivityId) {
+        url.searchParams.set('activity', currentActivityId);
+      } else {
+        url.searchParams.delete('activity');
+      }
       globalScope.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
       renderTabs();
     }
@@ -465,8 +914,12 @@
       if (nextKind === identityKind) return;
       identityKind = nextKind;
       calendarRequest += 1;
+      activityRequest += 1;
+      notificationRequest += 1;
       if (nextKind === 'registered') void refreshCheckinMonth();
       else renderGuestCalendar();
+      void refreshActivities();
+      void refreshNotifications();
     }) || (() => {});
 
     syncTabOrientation();
@@ -477,6 +930,8 @@
     }
     if (identityKind === 'registered' && checkinClient) void refreshCheckinMonth();
     else renderGuestCalendar();
+    void refreshActivities();
+    void refreshNotifications();
 
     instance = {
       accountClient,
@@ -485,10 +940,14 @@
       activitiesClient,
       notificationsClient,
       getTab: () => currentTab,
+      refreshActivities,
+      refreshNotifications,
       destroy() {
         if (destroyed) return;
         destroyed = true;
         calendarRequest += 1;
+        activityRequest += 1;
+        notificationRequest += 1;
         eventController.abort();
         narrowTabs?.removeEventListener?.('change', syncTabOrientation);
         unsubscribe();

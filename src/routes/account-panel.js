@@ -56,6 +56,7 @@
     const accountLogoutButton = document.querySelector('#account-logout-button');
     const accountMessage = document.querySelector('#account-message');
     const profileUsername = document.querySelector('#profile-username');
+    const profilePlayerUid = document.querySelector('#profile-player-uid');
     const profileGameName = document.querySelector('#profile-game-name');
     const walletPanel = document.querySelector('#wallet-panel');
     const walletBalance = document.querySelector('#wallet-balance');
@@ -279,6 +280,7 @@
         accountDialogTitle.textContent = '个人资料';
         accountDialogDescription.textContent = '修改后的游戏名会用于之后加入的在线房间。';
         profileUsername.textContent = identity.username;
+        if (profilePlayerUid) profilePlayerUid.textContent = identity.uid || '未分配';
         if (document.activeElement !== profileGameName) profileGameName.value = identity.displayName;
       } else {
         history = [];

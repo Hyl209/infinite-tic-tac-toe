@@ -48,6 +48,10 @@ class FakeElement extends EventTarget {
     this.attributes.set(name, String(value));
   }
 
+  removeAttribute(name) {
+    this.attributes.delete(name);
+  }
+
   getAttribute(name) {
     return this.attributes.get(name) ?? null;
   }
@@ -122,37 +126,58 @@ function createPlayerRuntimeHarness({
   claimNotification = async () => null,
   mapNotificationsError = () => '通知服务暂时不可用，请稍后重试',
   refreshEconomy = async () => ({ balance: 0, isAdmin: false, loaded: true }),
+  friends = [],
+  friendRequests = [],
+  gameInvites = [],
 } = {}) {
   const tabList = new FakeElement();
   tabList.setAttribute('aria-orientation', 'vertical');
-  const tabs = ['checkin', 'activities', 'notifications'].map((tab) => new FakeElement({ playerTab: tab }));
-  const panels = ['checkin', 'activities', 'notifications'].map((tab) => new FakeElement({ playerPanel: tab }));
+  const tabs = ['checkin', 'activities', 'notifications', 'friends'].map((tab) => new FakeElement({ playerTab: tab }));
+  const panels = ['checkin', 'activities', 'notifications', 'friends'].map((tab) => new FakeElement({ playerPanel: tab }));
   const calendar = new FakeElement();
   const activityList = new FakeElement();
   const notificationList = new FakeElement();
+  const friendSearchForm = new FakeElement({}, 'form');
+  const friendSearchInput = new FakeElement({}, 'input');
+  friendSearchForm.append(new FakeElement({}, 'button'));
+  tabs[3].id = 'player-tab-friends';
   const nodes = new Map([
     ['.player-tabs', tabList],
     ['#player-summary-name', new FakeElement()],
     ['#player-summary-kind', new FakeElement()],
+    ['#player-summary-uid', new FakeElement()],
     ['#player-summary-balance', new FakeElement()],
     ['#checkin-guest-state', new FakeElement()],
     ['#checkin-login-button', new FakeElement()],
     ['#checkin-calendar', calendar],
     ['#activity-list', activityList],
     ['#notification-list', notificationList],
+    ['#friend-search-form', friendSearchForm],
+    ['#friend-search-input', friendSearchInput],
+    ['#friend-search-result', new FakeElement()],
+    ['#incoming-friend-requests', new FakeElement()],
+    ['#outgoing-friend-requests', new FakeElement()],
+    ['#friend-list', new FakeElement()],
+    ['#game-invite-list', new FakeElement()],
+    ['#friend-message', new FakeElement()],
+    ['#player-tab-friends', tabs[3]],
     ['#player-message', new FakeElement()],
   ]);
   const media = new FakeElement();
   media.matches = false;
   const urls = [];
-  let subscriptions = 0;
-  let subscriptionListener = null;
+  const subscriptionListeners = new Set();
   let opens = 0;
   let economyRefreshes = 0;
+  let friendRealtimeSubscriptions = 0;
+  let friendRealtimeCleanups = 0;
+  let friendDisconnects = 0;
+  let friendRealtimeListener = null;
   const checkinCalls = [];
   const monthCalls = [];
   const activityCalls = [];
   const notificationCalls = [];
+  const friendCalls = [];
   const accountClient = {};
   const economyClient = { refresh: async () => ({ balance: 0, isAdmin: false, loaded: true }) };
   const checkinClient = {
@@ -193,20 +218,66 @@ function createPlayerRuntimeHarness({
       return claimNotification(notificationId, requestId);
     },
   };
+  const friendsClient = {
+    async listFriends() {
+      friendCalls.push({ type: 'list-friends' });
+      return friends;
+    },
+    async listRequests() {
+      friendCalls.push({ type: 'list-requests' });
+      return friendRequests;
+    },
+    async listInvites() {
+      friendCalls.push({ type: 'list-invites' });
+      return gameInvites;
+    },
+    async searchExact(value) {
+      friendCalls.push({ type: 'search', value });
+      return null;
+    },
+    async sendRequest(userId) {
+      friendCalls.push({ type: 'send', userId });
+    },
+    async acceptRequest(requestId) {
+      friendCalls.push({ type: 'accept', requestId });
+    },
+    async rejectRequest(requestId) {
+      friendCalls.push({ type: 'reject', requestId });
+    },
+    async removeFriend(userId) {
+      friendCalls.push({ type: 'remove', userId });
+    },
+    async declineGameInvite(inviteId) {
+      friendCalls.push({ type: 'decline', inviteId });
+    },
+    async subscribe(listener) {
+      friendCalls.push({ type: 'subscribe' });
+      friendRealtimeSubscriptions += 1;
+      friendRealtimeListener = listener;
+      let active = true;
+      return async () => {
+        if (!active) return;
+        active = false;
+        friendRealtimeCleanups += 1;
+        if (friendRealtimeListener === listener) friendRealtimeListener = null;
+      };
+    },
+    async disconnect() {
+      friendDisconnects += 1;
+    },
+  };
   const accountPanel = {
     accountClient,
     economyClient,
     getIdentity: () => ({ ...identity }),
     getEconomySnapshot: () => ({ balance: 0 }),
     subscribe(listener) {
-      subscriptions += 1;
-      subscriptionListener = listener;
+      subscriptionListeners.add(listener);
       let active = true;
       return () => {
         if (!active) return;
         active = false;
-        subscriptionListener = null;
-        subscriptions -= 1;
+        subscriptionListeners.delete(listener);
       };
     },
     open() {
@@ -219,7 +290,7 @@ function createPlayerRuntimeHarness({
   };
   const keys = [
     'document', 'location', 'history', 'matchMedia', 'HYLAccountPanel',
-    'PlayerCheckin', 'PlayerActivities', 'PlayerNotifications',
+    'PlayerCheckin', 'PlayerActivities', 'PlayerNotifications', 'PlayerFriends',
   ];
   const previous = new Map(keys.map((key) => [key, globalThis[key]]));
   globalThis.document = {
@@ -256,6 +327,10 @@ function createPlayerRuntimeHarness({
     createNotificationsClient: () => notificationsClient,
     mapNotificationsError,
   };
+  globalThis.PlayerFriends = {
+    createFriendsClient: () => friendsClient,
+    mapFriendsError: () => '好友服务暂时不可用，请稍后重试',
+  };
 
   return {
     media,
@@ -264,6 +339,7 @@ function createPlayerRuntimeHarness({
     notificationList,
     activityCalls,
     notificationCalls,
+    friendCalls,
     checkinCalls,
     monthCalls,
     nodes,
@@ -273,10 +349,16 @@ function createPlayerRuntimeHarness({
     urls,
     get opens() { return opens; },
     get economyRefreshes() { return economyRefreshes; },
-    get subscriptions() { return subscriptions; },
+    get subscriptions() { return subscriptionListeners.size; },
+    get friendRealtimeSubscriptions() { return friendRealtimeSubscriptions; },
+    get friendRealtimeCleanups() { return friendRealtimeCleanups; },
+    get friendDisconnects() { return friendDisconnects; },
+    emitFriendsChange() { friendRealtimeListener?.({ type: 'changed' }); },
     setIdentity(nextIdentity, economySnapshot = { balance: 0 }) {
       identity = nextIdentity;
-      subscriptionListener?.({ identity: { ...identity }, economySnapshot });
+      [...subscriptionListeners].forEach((listener) => {
+        listener({ identity: { ...identity }, economySnapshot });
+      });
     },
     restore() {
       for (const [key, value] of previous) {
@@ -1480,6 +1562,90 @@ test('player runtime synchronizes responsive tab orientation and arrow keys', ()
     assert.match(harness.urls[0], /tab=activities/);
   } finally {
     instance?.destroy();
+    harness.restore();
+  }
+});
+
+test('guest login starts one friends realtime subscription', async () => {
+  const harness = createPlayerRuntimeHarness();
+  let instance;
+  try {
+    instance = player.mount();
+    await flushPromises();
+    assert.equal(harness.friendRealtimeSubscriptions, 0);
+
+    harness.setIdentity({
+      kind: 'registered', username: 'account_a', displayName: '账号 A', uid: '000001',
+    });
+    await flushPromises();
+
+    assert.equal(harness.friendRealtimeSubscriptions, 1);
+    assert.equal(harness.friendCalls.filter((call) => call.type === 'list-friends').length, 1);
+  } finally {
+    instance?.destroy();
+    await flushPromises();
+    harness.restore();
+  }
+});
+
+test('opening the friends tab refreshes current friend data', async () => {
+  const harness = createPlayerRuntimeHarness({
+    identity: { kind: 'registered', username: 'account_a', displayName: '账号 A', uid: '000001' },
+  });
+  let instance;
+  try {
+    instance = player.mount();
+    await flushPromises();
+    const initialRefreshes = harness.friendCalls.filter((call) => call.type === 'list-friends').length;
+
+    harness.tabs[3].dispatchEvent(new Event('click'));
+    await flushPromises();
+
+    assert.equal(harness.urls.at(-1), '/player/?tab=friends');
+    assert.equal(
+      harness.friendCalls.filter((call) => call.type === 'list-friends').length,
+      initialRefreshes + 1,
+    );
+  } finally {
+    instance?.destroy();
+    await flushPromises();
+    harness.restore();
+  }
+});
+
+test('friends realtime subscription is cleaned across logout, relogin, and destroy', async () => {
+  const harness = createPlayerRuntimeHarness({
+    identity: { kind: 'registered', username: 'account_a', displayName: '账号 A', uid: '000001' },
+  });
+  let instance;
+  try {
+    instance = player.mount();
+    await flushPromises();
+    assert.equal(harness.friendRealtimeSubscriptions, 1);
+
+    harness.setIdentity({ kind: 'guest', displayName: '匿名玩家' });
+    await flushPromises();
+    assert.equal(harness.friendRealtimeCleanups, 1);
+
+    harness.setIdentity({
+      kind: 'registered', username: 'account_b', displayName: '账号 B', uid: '000002',
+    });
+    await flushPromises();
+    assert.equal(harness.friendRealtimeSubscriptions, 2);
+
+    harness.setIdentity({
+      kind: 'registered', username: 'account_c', displayName: '账号 C', uid: '000003',
+    });
+    await flushPromises();
+    assert.equal(harness.friendRealtimeSubscriptions, 2);
+
+    instance.destroy();
+    await flushPromises();
+    assert.equal(harness.friendRealtimeCleanups, 2);
+    assert.equal(harness.friendDisconnects, 1);
+  } finally {
+    instance?.destroy();
+    await flushPromises();
     harness.restore();
   }
 });

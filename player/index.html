@@ -19,6 +19,7 @@
     <script src="/src/services/checkin.js" defer></script>
     <script src="/src/services/activities.js" defer></script>
     <script src="/src/services/notifications.js" defer></script>
+    <script src="/src/services/friends.js" defer></script>
     <script src="/src/routes/account-panel.js" defer></script>
     <script src="/src/routes/player.js" defer></script>
   </head>
@@ -54,6 +55,7 @@
         <div class="player-summary-copy">
           <p id="player-summary-kind">游客身份</p>
           <h1 id="player-summary-name">匿名玩家</h1>
+          <p id="player-summary-uid" class="player-summary-uid" hidden>UID 000000</p>
         </div>
         <div class="player-summary-meta" aria-label="玩家摘要">
           <span>玩家中心</span>
@@ -71,6 +73,9 @@
           </button>
           <button id="player-tab-notifications" class="player-tab" type="button" role="tab" aria-selected="false" aria-controls="player-panel-notifications" data-player-tab="notifications" tabindex="-1">
             通知
+          </button>
+          <button id="player-tab-friends" class="player-tab" type="button" role="tab" aria-selected="false" aria-controls="player-panel-friends" data-player-tab="friends" tabindex="-1">
+            好友
           </button>
         </nav>
 
@@ -107,6 +112,40 @@
             <div id="notification-list" class="player-placeholder" aria-live="polite">
               <p>正在准备通知列表。</p>
             </div>
+          </section>
+
+          <section id="player-panel-friends" class="player-panel" role="tabpanel" aria-labelledby="player-tab-friends" data-player-panel="friends" tabindex="-1" hidden>
+            <header class="player-panel-heading">
+              <h2>好友</h2>
+              <p>用稳定 UID 或完整用户名找到玩家，管理申请和游戏邀请。</p>
+            </header>
+            <form id="friend-search-form" class="friend-search-form" role="search">
+              <label for="friend-search-input">查找玩家</label>
+              <div class="friend-search-row">
+                <input id="friend-search-input" name="player" type="text" maxlength="20" autocomplete="off" spellcheck="false" placeholder="输入 6 位 UID 或完整用户名" required>
+                <button class="player-primary-action" type="submit">查找玩家</button>
+              </div>
+            </form>
+            <div id="friend-search-result" class="friend-search-result" aria-live="polite"></div>
+            <div class="friend-sections">
+              <section aria-labelledby="incoming-friend-title">
+                <h3 id="incoming-friend-title">收到的申请</h3>
+                <div id="incoming-friend-requests" class="friend-request-list"></div>
+              </section>
+              <section aria-labelledby="outgoing-friend-title">
+                <h3 id="outgoing-friend-title">发出的申请</h3>
+                <div id="outgoing-friend-requests" class="friend-request-list"></div>
+              </section>
+              <section aria-labelledby="friend-list-title">
+                <h3 id="friend-list-title">好友列表</h3>
+                <div id="friend-list" class="friend-list"></div>
+              </section>
+              <section aria-labelledby="game-invite-title">
+                <h3 id="game-invite-title">游戏邀请</h3>
+                <div id="game-invite-list" class="game-invite-list"></div>
+              </section>
+            </div>
+            <p id="friend-message" class="player-message" aria-live="polite" aria-atomic="true"></p>
           </section>
 
           <p id="player-message" class="player-message" aria-live="polite" aria-atomic="true"></p>
@@ -160,6 +199,7 @@
 
           <form id="account-profile-form" class="account-form" hidden>
             <p class="account-username">登录用户名 <strong id="profile-username"></strong></p>
+            <p class="account-username">玩家 UID <strong id="profile-player-uid"></strong></p>
             <label class="account-field" for="profile-game-name">
               <span>游戏名</span>
               <input id="profile-game-name" name="gameName" type="text" maxlength="16" autocomplete="nickname" required>

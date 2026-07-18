@@ -1,7 +1,7 @@
 (function initPlayerCenter(globalScope) {
   'use strict';
 
-  const VALID_TABS = new Set(['checkin', 'activities', 'notifications']);
+  const VALID_TABS = new Set(['checkin', 'activities', 'notifications', 'friends']);
   let mounted = null;
 
   function normalizePlayerTab(value) {
@@ -134,6 +134,338 @@
       : kind;
   }
 
+  function mountFriendsPanel({ accountPanel, accountClient, getCurrentTab }) {
+    const friendsApi = globalScope.PlayerFriends;
+    const searchForm = document.querySelector('#friend-search-form');
+    const searchInput = document.querySelector('#friend-search-input');
+    const searchResult = document.querySelector('#friend-search-result');
+    const incomingList = document.querySelector('#incoming-friend-requests');
+    const outgoingList = document.querySelector('#outgoing-friend-requests');
+    const friendList = document.querySelector('#friend-list');
+    const inviteList = document.querySelector('#game-invite-list');
+    const friendMessage = document.querySelector('#friend-message');
+    const friendTab = document.querySelector('#player-tab-friends');
+    if (!accountClient || typeof friendsApi?.createFriendsClient !== 'function'
+      || !searchForm || !searchInput || !searchResult || !incomingList
+      || !outgoingList || !friendList || !inviteList) return null;
+
+    const friendsClient = friendsApi.createFriendsClient({ accountClient });
+    const controller = new AbortController();
+    const { signal } = controller;
+    const pendingActions = new Set();
+    let friends = [];
+    let requests = [];
+    let invites = [];
+    let foundPlayer = null;
+    let refreshVersion = 0;
+    let destroyed = false;
+    let unsubscribeRealtime = null;
+    let realtimeSubscriptionPending = false;
+    let realtimeSubscriptionVersion = 0;
+
+    function createNode(tagName, className = '', text = '') {
+      const node = document.createElement(tagName);
+      node.className = className;
+      if (text) node.textContent = text;
+      return node;
+    }
+
+    function setMessage(text = '', state = '') {
+      if (!friendMessage) return;
+      friendMessage.textContent = text;
+      friendMessage.dataset.state = state;
+    }
+
+    function formatTime(value) {
+      const date = new Date(value);
+      if (!Number.isFinite(date.getTime())) return '尚无在线记录';
+      return new Intl.DateTimeFormat('zh-CN', {
+        timeZone: 'Asia/Hong_Kong', month: 'numeric', day: 'numeric',
+        hour: '2-digit', minute: '2-digit', hour12: false,
+      }).format(date);
+    }
+
+    function empty(text) {
+      return createNode('p', 'friend-empty-state', text);
+    }
+
+    function playerCopy(player, meta = '') {
+      const copy = createNode('div', 'friend-player-copy');
+      copy.append(
+        createNode('strong', '', player.displayName || player.username || '玩家'),
+        createNode('span', 'friend-player-uid', `UID ${player.uid}`),
+        createNode('small', '', meta || `@${player.username}`),
+      );
+      return copy;
+    }
+
+    function actionButton(label, action, key, variant = 'secondary') {
+      const button = createNode('button', `friend-action player-${variant}-action`, label);
+      button.type = 'button';
+      button.disabled = pendingActions.has(key);
+      button.addEventListener('click', () => void runAction(key, action), { signal });
+      return button;
+    }
+
+    function renderRequests() {
+      const incoming = requests.filter((request) => request.direction === 'incoming');
+      const outgoing = requests.filter((request) => request.direction === 'outgoing');
+      incomingList.replaceChildren(...(incoming.length ? incoming.map((request) => {
+        const item = createNode('article', 'friend-row');
+        const actions = createNode('div', 'friend-row-actions');
+        actions.append(
+          actionButton('接受申请', () => friendsClient.acceptRequest(request.id), `accept:${request.id}`, 'primary'),
+          actionButton('拒绝申请', () => friendsClient.rejectRequest(request.id), `reject:${request.id}`),
+        );
+        item.append(playerCopy(request.player, `@${request.player.username}`), actions);
+        return item;
+      }) : [empty('暂无收到的好友申请。')]));
+      outgoingList.replaceChildren(...(outgoing.length ? outgoing.map((request) => {
+        const item = createNode('article', 'friend-row');
+        item.append(playerCopy(request.player, `已向 @${request.player.username} 发出申请`));
+        return item;
+      }) : [empty('暂无发出的好友申请。')]));
+    }
+
+    function renderFriends() {
+      friendList.replaceChildren(...(friends.length ? friends.map((friend) => {
+        const item = createNode('article', 'friend-row');
+        const status = createNode('span', 'friend-status', friend.online
+          ? '在线' : `最近在线 ${formatTime(friend.lastSeenAt)}`);
+        status.dataset.online = String(friend.online);
+        const actions = createNode('div', 'friend-row-actions');
+        actions.append(actionButton('删除好友', async () => {
+          const confirmed = typeof globalScope.confirm !== 'function'
+            || globalScope.confirm(`确认删除好友 ${friend.displayName}？`);
+          if (confirmed) await friendsClient.removeFriend(friend.id);
+        }, `remove:${friend.id}`));
+        item.append(playerCopy(friend, `@${friend.username}`), status, actions);
+        return item;
+      }) : [empty('还没有好友，可以先按 UID 或用户名查找。')]));
+    }
+
+    function inviteUrl(invite) {
+      const gameUrl = new URL('/game/', globalScope.location?.href || 'https://hhhyl.me/');
+      return globalScope.OnlineGame?.buildInviteUrl
+        ? globalScope.OnlineGame.buildInviteUrl(gameUrl, invite.roomCode, invite.gameType)
+        : `${gameUrl}?game=${encodeURIComponent(invite.gameType)}&room=${encodeURIComponent(invite.roomCode)}`;
+    }
+
+    function renderInvites() {
+      const incoming = invites.filter((invite) => invite.direction === 'incoming' && invite.status === 'pending');
+      inviteList.replaceChildren(...(incoming.length ? incoming.map((invite) => {
+        const item = createNode('article', 'friend-row game-invite-row');
+        const gameName = invite.gameType === 'gomoku' ? '五子棋' : '无限井字棋';
+        const wager = invite.wagerAmount > 0 ? `彩头 ${invite.wagerAmount} 金币` : '无彩头';
+        const actions = createNode('div', 'friend-row-actions');
+        const enter = createNode('a', 'friend-action player-primary-action', '进入房间');
+        enter.href = inviteUrl(invite);
+        actions.append(
+          enter,
+          actionButton('拒绝邀请', () => friendsClient.declineGameInvite(invite.id), `decline:${invite.id}`),
+        );
+        item.append(
+          playerCopy(invite.sender, `${gameName} · ${wager} · ${formatTime(invite.expiresAt)}失效`),
+          actions,
+        );
+        return item;
+      }) : [empty('暂无待处理的游戏邀请。')]));
+    }
+
+    function renderSearchResult() {
+      if (!foundPlayer) {
+        searchResult.replaceChildren();
+        return;
+      }
+      const item = createNode('article', 'friend-search-player friend-row');
+      const actions = createNode('div', 'friend-row-actions');
+      const state = foundPlayer.relationshipState;
+      if (state === 'none') {
+        actions.append(actionButton('发送申请', () => friendsClient.sendRequest(foundPlayer.id), `send:${foundPlayer.id}`, 'primary'));
+      } else if (state === 'incoming') {
+        const request = requests.find((entry) => entry.direction === 'incoming' && entry.player.id === foundPlayer.id);
+        if (request) actions.append(actionButton('接受申请', () => friendsClient.acceptRequest(request.id), `accept:${request.id}`, 'primary'));
+      } else if (state === 'friends') {
+        actions.append(createNode('span', 'friend-relationship-label', '已是好友'));
+      } else if (state === 'outgoing') {
+        actions.append(createNode('span', 'friend-relationship-label', '申请已发送'));
+      } else {
+        actions.append(createNode('span', 'friend-relationship-label', '这是你自己'));
+      }
+      item.append(playerCopy(foundPlayer, `@${foundPlayer.username}`), actions);
+      searchResult.replaceChildren(item);
+    }
+
+    function updatePendingCount() {
+      if (!friendTab) return;
+      const count = requests.filter((request) => request.direction === 'incoming').length
+        + invites.filter((invite) => invite.direction === 'incoming' && invite.status === 'pending').length;
+      friendTab.dataset.pendingCount = String(count);
+      friendTab.setAttribute('aria-label', count > 0 ? `好友，${count} 项待处理` : '好友');
+      if (getCurrentTab() === 'friends') friendTab.dataset.seenCount = String(count);
+    }
+
+    function render() {
+      renderRequests();
+      renderFriends();
+      renderInvites();
+      renderSearchResult();
+      updatePendingCount();
+    }
+
+    function renderGuest() {
+      friends = [];
+      requests = [];
+      invites = [];
+      foundPlayer = null;
+      incomingList.replaceChildren(empty('登录正式账号后可接收好友申请。'));
+      outgoingList.replaceChildren(empty('登录正式账号后可发送好友申请。'));
+      friendList.replaceChildren(empty('登录正式账号后可管理好友。'));
+      inviteList.replaceChildren(empty('登录正式账号后可接收游戏邀请。'));
+      searchResult.replaceChildren();
+      searchInput.disabled = true;
+      searchForm.querySelector('button')?.setAttribute('disabled', '');
+      setMessage('请先登录正式账号使用好友功能。');
+      updatePendingCount();
+    }
+
+    async function refresh({ preserveMessage = false } = {}) {
+      if (destroyed) return false;
+      if (accountPanel?.getIdentity()?.kind !== 'registered') {
+        renderGuest();
+        return false;
+      }
+      searchInput.disabled = false;
+      searchForm.querySelector('button')?.removeAttribute('disabled');
+      const version = ++refreshVersion;
+      incomingList.setAttribute('aria-busy', 'true');
+      try {
+        const [nextFriends, nextRequests, nextInvites] = await Promise.all([
+          friendsClient.listFriends(), friendsClient.listRequests(), friendsClient.listInvites(),
+        ]);
+        if (destroyed || version !== refreshVersion) return false;
+        friends = nextFriends;
+        requests = nextRequests;
+        invites = nextInvites;
+        render();
+        if (!preserveMessage) setMessage();
+        return true;
+      } catch (error) {
+        if (!destroyed && version === refreshVersion) {
+          setMessage(friendsApi.mapFriendsError(error), 'error');
+        }
+        return false;
+      } finally {
+        if (!destroyed && version === refreshVersion) incomingList.removeAttribute('aria-busy');
+      }
+    }
+
+    async function runAction(key, action) {
+      if (pendingActions.has(key) || destroyed) return;
+      pendingActions.add(key);
+      render();
+      setMessage('正在处理。');
+      try {
+        await action();
+        if (destroyed) return;
+        setMessage('操作成功。', 'success');
+        foundPlayer = null;
+        await refresh({ preserveMessage: true });
+      } catch (error) {
+        if (!destroyed) setMessage(friendsApi.mapFriendsError(error), 'error');
+      } finally {
+        pendingActions.delete(key);
+        if (!destroyed) render();
+      }
+    }
+
+    searchForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (destroyed || accountPanel?.getIdentity()?.kind !== 'registered') {
+        accountPanel?.open();
+        return;
+      }
+      const value = searchInput.value;
+      setMessage('正在查找玩家。');
+      searchInput.disabled = true;
+      try {
+        foundPlayer = await friendsClient.searchExact(value);
+        if (destroyed) return;
+        renderSearchResult();
+        setMessage(foundPlayer ? '' : '没有找到该玩家。', foundPlayer ? '' : 'error');
+      } catch (error) {
+        if (!destroyed) setMessage(friendsApi.mapFriendsError(error), 'error');
+      } finally {
+        if (!destroyed) searchInput.disabled = false;
+      }
+    }, { signal });
+
+    async function stopRealtimeSubscription() {
+      realtimeSubscriptionVersion += 1;
+      realtimeSubscriptionPending = false;
+      const cleanup = unsubscribeRealtime;
+      unsubscribeRealtime = null;
+      await cleanup?.();
+    }
+
+    async function ensureRealtimeSubscription() {
+      if (destroyed || realtimeSubscriptionPending || unsubscribeRealtime
+        || accountPanel?.getIdentity()?.kind !== 'registered') return;
+      const version = ++realtimeSubscriptionVersion;
+      realtimeSubscriptionPending = true;
+      try {
+        const cleanup = await friendsClient.subscribe(() => {
+          if (destroyed) return;
+          setMessage('好友状态已更新。');
+          void refresh({ preserveMessage: true });
+        });
+        if (destroyed || version !== realtimeSubscriptionVersion
+          || accountPanel?.getIdentity()?.kind !== 'registered') {
+          await cleanup();
+          return;
+        }
+        unsubscribeRealtime = cleanup;
+      } catch {
+        // Realtime is an enhancement; list refreshes and actions remain available.
+      } finally {
+        if (version === realtimeSubscriptionVersion) realtimeSubscriptionPending = false;
+      }
+    }
+
+    const unsubscribeAccount = accountPanel?.subscribe((state) => {
+      refreshVersion += 1;
+      foundPlayer = null;
+      if (state?.identity?.kind === 'registered') {
+        void refresh();
+        void ensureRealtimeSubscription();
+      } else {
+        void stopRealtimeSubscription();
+        renderGuest();
+      }
+    }) || (() => {});
+
+    if (accountPanel?.getIdentity()?.kind === 'registered') {
+      void refresh();
+      void ensureRealtimeSubscription();
+    } else {
+      renderGuest();
+    }
+
+    return {
+      friendsClient,
+      refresh,
+      async destroy() {
+        if (destroyed) return;
+        destroyed = true;
+        refreshVersion += 1;
+        controller.abort();
+        unsubscribeAccount();
+        await stopRealtimeSubscription();
+        await friendsClient.disconnect();
+      },
+    };
+  }
+
   function mount() {
     if (mounted || typeof document === 'undefined') return mounted;
 
@@ -142,6 +474,7 @@
     const tabList = document.querySelector('.player-tabs');
     const summaryName = document.querySelector('#player-summary-name');
     const summaryKind = document.querySelector('#player-summary-kind');
+    const summaryUid = document.querySelector('#player-summary-uid');
     const summaryBalance = document.querySelector('#player-summary-balance');
     const checkinGuest = document.querySelector('#checkin-guest-state');
     const checkinLoginButton = document.querySelector('#checkin-login-button');
@@ -184,6 +517,11 @@
     const notificationReads = new Map();
     const notificationReadFailures = new Set();
     let identityKey = getAccountKey(accountPanel?.getIdentity());
+    const friendsPanel = mountFriendsPanel({
+      accountPanel,
+      accountClient,
+      getCurrentTab: () => currentTab,
+    });
 
     function setMessage(text = '', state = '', source = '') {
       if (!message) return;
@@ -207,6 +545,10 @@
       const registered = identity.kind === 'registered';
       if (summaryName) summaryName.textContent = identity.displayName || '匿名玩家';
       if (summaryKind) summaryKind.textContent = registered ? '正式玩家' : '游客身份';
+      if (summaryUid) {
+        summaryUid.hidden = !registered;
+        summaryUid.textContent = registered && identity.uid ? `UID ${identity.uid}` : '';
+      }
       if (summaryBalance) {
         summaryBalance.hidden = !registered;
         summaryBalance.textContent = `金币 ${Number(economySnapshot.balance || 0)}`;
@@ -959,6 +1301,7 @@
       }
       globalScope.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
       renderTabs();
+      if (currentTab === 'friends') void friendsPanel?.refresh();
     }
 
     function focusTab(index) {
@@ -1042,6 +1385,7 @@
       checkinClient,
       activitiesClient,
       notificationsClient,
+      friendsClient: friendsPanel?.friendsClient || null,
       getTab: () => currentTab,
       refreshActivities,
       refreshNotifications,
@@ -1055,6 +1399,7 @@
         eventController.abort();
         narrowTabs?.removeEventListener?.('change', syncTabOrientation);
         unsubscribe();
+        void friendsPanel?.destroy();
         if (mounted === instance) mounted = null;
       },
     };

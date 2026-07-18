@@ -3,6 +3,151 @@
   font-family: "Onest", "Microsoft YaHei UI", "PingFang SC", system-ui, sans-serif;
 }
 
+.player-summary-uid {
+  margin: 0.35rem 0 0;
+  color: var(--portal-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.friend-search-form {
+  display: grid;
+  gap: 0.65rem;
+  margin-bottom: 1rem;
+}
+
+.friend-search-form > label,
+.friend-sections h3 {
+  color: var(--portal-ink);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.friend-search-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.65rem;
+}
+
+.friend-search-row input {
+  min-width: 0;
+  border: 1px solid var(--portal-line);
+  border-radius: 0.7rem;
+  background: var(--portal-bg);
+  color: var(--portal-ink);
+  padding: 0.75rem 0.85rem;
+}
+
+.friend-search-row input::placeholder {
+  color: var(--portal-muted);
+}
+
+.friend-search-row input:focus-visible,
+.friend-action:focus-visible {
+  outline: 2px solid var(--portal-accent-soft);
+  outline-offset: 2px;
+}
+
+.friend-search-result:not(:empty) {
+  margin-bottom: 1.25rem;
+}
+
+.friend-sections {
+  display: grid;
+  gap: 1.35rem;
+}
+
+.friend-sections > section {
+  min-width: 0;
+}
+
+.friend-request-list,
+.friend-list,
+.game-invite-list {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.6rem;
+}
+
+.friend-row {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 0.8rem;
+  border: 1px solid var(--portal-line);
+  border-radius: 0.75rem;
+  background: var(--portal-surface);
+}
+
+.friend-player-copy {
+  display: grid;
+  min-width: 0;
+  gap: 0.16rem;
+}
+
+.friend-player-copy strong,
+.friend-player-copy small {
+  overflow-wrap: anywhere;
+}
+
+.friend-player-copy small,
+.friend-player-uid,
+.friend-empty-state,
+.friend-relationship-label {
+  color: var(--portal-muted);
+}
+
+.friend-player-uid {
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.friend-status {
+  flex: 0 0 auto;
+  color: var(--portal-muted);
+  font-size: 0.82rem;
+}
+
+.friend-status[data-online="true"] {
+  color: oklch(0.78 0.16 150);
+}
+
+.friend-row-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.45rem;
+}
+
+.friend-action {
+  min-height: 2.35rem;
+  text-decoration: none;
+}
+
+.friend-empty-state {
+  margin: 0;
+  padding: 0.8rem 0;
+}
+
+@media (max-width: 759px) {
+  .friend-search-form,
+  .friend-search-row {
+    grid-template-columns: 1fr;
+  }
+
+  .friend-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .friend-row-actions {
+    justify-content: flex-start;
+    width: 100%;
+  }
+}
+
 body[data-view="player"] {
   min-width: 320px;
   margin: 0;

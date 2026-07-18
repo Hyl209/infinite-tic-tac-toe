@@ -567,6 +567,53 @@ test('notifications sort newest first and keep detail read state independent fro
   }
 });
 
+test('failed notification mark-read exposes an explicit single-submit retry that stays independent from rewards', async () => {
+  let resolveRetry;
+  const retryPending = new Promise((resolve) => { resolveRetry = resolve; });
+  let attempts = 0;
+  const harness = createPlayerRuntimeHarness({
+    identity: { kind: 'registered', displayName: '立哥' },
+    notifications: [{
+      id: 'read-retry', activityId: null, title: '需要重试', body: '通知正文', rewardAmount: 8,
+      visibleAt: '2026-07-18T08:00:00.000Z', expiresAt: null, actionUrl: null,
+      isRead: false, rewardClaimed: false,
+    }],
+    markRead: async () => {
+      attempts += 1;
+      if (attempts === 1) throw new Error('NETWORK_FAILED');
+      return retryPending;
+    },
+    mapNotificationsError: () => '标记已读失败，请重试',
+  });
+  let instance;
+  try {
+    instance = player.mount();
+    await flushPromises();
+    harness.notificationList.querySelector('[data-notification-open="read-retry"]')
+      .dispatchEvent(new Event('click'));
+    await flushPromises();
+
+    const retry = harness.notificationList.querySelector('[data-notification-read-retry="read-retry"]');
+    assert.ok(retry);
+    assert.equal(retry.textContent, '重试标记已读');
+    assert.ok(harness.notificationList.querySelector('[data-notification-unread]'));
+
+    retry.dispatchEvent(new Event('click'));
+    retry.dispatchEvent(new Event('click'));
+    assert.equal(retry.disabled, true);
+    assert.equal(harness.notificationCalls.filter((call) => call.type === 'read').length, 2);
+    assert.equal(harness.notificationCalls.filter((call) => call.type === 'claim').length, 0);
+
+    resolveRetry({ notificationId: 'read-retry', readAt: '2026-07-18T08:01:00.000Z' });
+    await flushPromises();
+    assert.equal(harness.notificationList.querySelector('[data-notification-unread]'), null);
+    assert.equal(harness.notificationList.querySelector('[data-notification-read-retry="read-retry"]'), null);
+  } finally {
+    instance?.destroy();
+    harness.restore();
+  }
+});
+
 test('notifications expose empty, retry, guest, expired, and disabled activity states', async () => {
   let loads = 0;
   const harness = createPlayerRuntimeHarness({

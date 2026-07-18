@@ -174,6 +174,7 @@
     const activityClaims = new Set();
     const notificationClaims = new Set();
     const notificationReads = new Set();
+    const notificationReadFailures = new Set();
     let identityKind = accountPanel?.getIdentity()?.kind || 'guest';
 
     function setMessage(text = '', state = '') {
@@ -508,6 +509,22 @@
           openButton.setAttribute('aria-expanded', String(opened));
           openButton.addEventListener('click', () => void toggleNotification(notification.id), { signal });
           actions.append(openButton);
+          if (opened && !notification.isRead && notificationReadFailures.has(notification.id)) {
+            const retryRead = createNode('button', 'player-secondary-action', notificationReads.has(notification.id)
+              ? '正在标记…'
+              : '重试标记已读');
+            retryRead.type = 'button';
+            retryRead.dataset.notificationReadRetry = notification.id;
+            retryRead.disabled = notificationReads.has(notification.id);
+            retryRead.setAttribute('aria-busy', String(notificationReads.has(notification.id)));
+            retryRead.addEventListener('click', () => {
+              retryRead.disabled = true;
+              retryRead.textContent = '正在标记…';
+              retryRead.setAttribute('aria-busy', 'true');
+              void markNotificationRead(notification.id);
+            }, { signal });
+            actions.append(retryRead);
+          }
           if (notification.activityId) {
             const activityButton = createNode('button', 'player-secondary-action', '查看关联活动');
             activityButton.type = 'button';
@@ -546,6 +563,29 @@
       notificationList.replaceChildren(inbox);
     }
 
+    async function markNotificationRead(notificationId) {
+      const notification = notificationItems.find((item) => item.id === notificationId);
+      if (!notification || notification.isRead || notificationReads.has(notificationId)
+          || accountPanel?.getIdentity()?.kind !== 'registered' || destroyed) return;
+      notificationReads.add(notificationId);
+      notificationReadFailures.delete(notificationId);
+      try {
+        const result = await notificationsClient.markRead(notificationId);
+        if (destroyed) return;
+        notification.isRead = true;
+        notification.readAt = result?.readAt || notification.readAt || null;
+      } catch (error) {
+        if (destroyed) return;
+        notificationReadFailures.add(notificationId);
+        const text = globalScope.PlayerNotifications?.mapNotificationsError?.(error)
+          || '通知已读状态更新失败，请重试';
+        setMessage(text, 'error');
+      } finally {
+        notificationReads.delete(notificationId);
+        if (!destroyed) renderNotifications();
+      }
+    }
+
     async function toggleNotification(notificationId) {
       const notification = notificationItems.find((item) => item.id === notificationId);
       if (!notification || destroyed) return;
@@ -556,23 +596,7 @@
       }
       openNotificationId = notificationId;
       renderNotifications();
-      if (notification.isRead || notificationReads.has(notificationId)
-          || accountPanel?.getIdentity()?.kind !== 'registered') return;
-      notificationReads.add(notificationId);
-      try {
-        const result = await notificationsClient.markRead(notificationId);
-        if (destroyed) return;
-        notification.isRead = true;
-        notification.readAt = result?.readAt || notification.readAt || null;
-        renderNotifications();
-      } catch (error) {
-        if (destroyed) return;
-        const text = globalScope.PlayerNotifications?.mapNotificationsError?.(error)
-          || '通知已读状态更新失败，请重试';
-        setMessage(text, 'error');
-      } finally {
-        notificationReads.delete(notificationId);
-      }
+      await markNotificationRead(notificationId);
     }
 
     async function refreshNotifications() {

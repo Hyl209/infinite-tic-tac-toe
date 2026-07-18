@@ -1020,8 +1020,10 @@ function createGameFriendsHarness({
   identity = { kind: 'registered', userId: 'owner-1' },
   friends = [],
   invites = [],
+  listFriendData = async () => friends,
   listInviteData = async () => invites,
   sendGameInvite = async () => 'invite-1',
+  cancelGameInvite = async () => undefined,
 } = {}) {
   const nodes = new Map([
     ['#invite-friend-button', new FakeInviteElement('button')],
@@ -1042,7 +1044,7 @@ function createGameFriendsHarness({
   const friendsClient = {
     async listFriends() {
       calls.push({ type: 'list-friends' });
-      return friends;
+      return listFriendData();
     },
     async listInvites() {
       calls.push({ type: 'list-invites' });
@@ -1054,6 +1056,7 @@ function createGameFriendsHarness({
     },
     async cancelGameInvite(inviteId) {
       calls.push({ type: 'cancel', inviteId });
+      return cancelGameInvite(inviteId);
     },
     async subscribe(listener) {
       calls.push({ type: 'subscribe' });
@@ -1262,6 +1265,248 @@ test('game friends keeps a scalar invite id cancellable when the post-send refre
     await controller?.destroy();
     harness.restore();
   }
+});
+
+test('switching rooms during send resets busy state and ignores the old send outcome', async (t) => {
+  for (const outcome of ['resolve', 'reject']) {
+    await t.test(outcome, async () => {
+      const pendingSend = deferred();
+      const friend = { id: 'friend-1', uid: '000123', displayName: '好友', online: true };
+      const harness = createGameFriendsHarness({
+        friends: [friend],
+        sendGameInvite: () => pendingSend.promise,
+      });
+      let controller;
+      try {
+        controller = loadGameFriendsController().mount({ accountPanel: harness.accountPanel });
+        controller.setWaitingRoom({
+          roomId: 'room-a', status: 'waiting', playerMark: 'X', playerNames: { O: null },
+        });
+        harness.nodes.get('#invite-friend-button').click();
+        await flushGameFriends();
+        harness.nodes.get('#friend-invite-list').querySelectorAll('button')
+          .find((button) => button.dataset.action === 'invite').click();
+        await flushGameFriends();
+
+        controller.setWaitingRoom({
+          roomId: 'room-b', status: 'waiting', playerMark: 'X', playerNames: { O: null },
+        });
+        assert.equal(harness.nodes.get('#friend-invite-dialog').open, false);
+        harness.nodes.get('#invite-friend-button').click();
+        await flushGameFriends();
+        const nextInvite = harness.nodes.get('#friend-invite-list').querySelectorAll('button')
+          .find((button) => button.dataset.action === 'invite');
+        assert.ok(nextInvite);
+        assert.equal(nextInvite.disabled, false);
+
+        if (outcome === 'resolve') pendingSend.resolve('invite-a');
+        else pendingSend.reject(new Error('send failed'));
+        await flushGameFriends();
+        await flushGameFriends();
+        assert.equal(
+          harness.nodes.get('#friend-invite-list').querySelectorAll('button')
+            .some((button) => button.dataset.action === 'cancel'),
+          false,
+        );
+        assert.doesNotMatch(harness.nodes.get('#friend-invite-message').textContent, /等待回应|send failed/);
+      } finally {
+        await controller?.destroy();
+        harness.restore();
+      }
+    });
+  }
+});
+
+test('registered identity changes isolate late list, send, and cancel responses', async (t) => {
+  await t.test('list', async () => {
+    const lateList = deferred();
+    let identityKey = 'a';
+    const harness = createGameFriendsHarness({
+      identity: { kind: 'registered', userId: 'a' },
+      listFriendData: () => identityKey === 'a'
+        ? lateList.promise
+        : [{ id: 'friend-b', uid: '000002', displayName: 'B 好友', online: true }],
+    });
+    let controller;
+    try {
+      controller = loadGameFriendsController().mount({ accountPanel: harness.accountPanel });
+      controller.setWaitingRoom({
+        roomId: 'room-1', status: 'waiting', playerMark: 'X', playerNames: { O: null },
+      });
+      harness.nodes.get('#invite-friend-button').click();
+      await flushGameFriends();
+      identityKey = 'b';
+      harness.emitIdentity({ kind: 'registered', userId: 'b' });
+      assert.equal(harness.nodes.get('#friend-invite-dialog').open, false);
+      assert.doesNotMatch(harness.nodes.get('#friend-invite-list').textContent, /A 好友/);
+      assert.equal(harness.nodes.get('#friend-invite-message').textContent, '');
+      harness.nodes.get('#invite-friend-button').click();
+      await flushGameFriends();
+      assert.match(harness.nodes.get('#friend-invite-list').textContent, /B 好友/);
+      lateList.resolve([{ id: 'friend-a', uid: '000001', displayName: 'A 好友', online: true }]);
+      await flushGameFriends();
+      assert.match(harness.nodes.get('#friend-invite-list').textContent, /B 好友/);
+      assert.doesNotMatch(harness.nodes.get('#friend-invite-list').textContent, /A 好友/);
+    } finally {
+      await controller?.destroy();
+      harness.restore();
+    }
+  });
+
+  await t.test('send', async () => {
+    const lateSend = deferred();
+    let identityKey = 'a';
+    const harness = createGameFriendsHarness({
+      identity: { kind: 'registered', userId: 'a' },
+      listFriendData: async () => [{
+        id: `friend-${identityKey}`, uid: identityKey === 'a' ? '000001' : '000002',
+        displayName: `${identityKey.toUpperCase()} 好友`, online: true,
+      }],
+      sendGameInvite: () => lateSend.promise,
+    });
+    let controller;
+    try {
+      controller = loadGameFriendsController().mount({ accountPanel: harness.accountPanel });
+      controller.setWaitingRoom({
+        roomId: 'room-1', status: 'waiting', playerMark: 'X', playerNames: { O: null },
+      });
+      harness.nodes.get('#invite-friend-button').click();
+      await flushGameFriends();
+      harness.nodes.get('#friend-invite-list').querySelectorAll('button')
+        .find((button) => button.dataset.action === 'invite').click();
+      identityKey = 'b';
+      harness.emitIdentity({ kind: 'registered', userId: 'b' });
+      harness.nodes.get('#invite-friend-button').click();
+      await flushGameFriends();
+      assert.match(harness.nodes.get('#friend-invite-list').textContent, /B 好友/);
+      lateSend.resolve('invite-a');
+      await flushGameFriends();
+      assert.doesNotMatch(harness.nodes.get('#friend-invite-message').textContent, /等待回应/);
+      assert.equal(
+        harness.nodes.get('#friend-invite-list').querySelectorAll('button')
+          .some((button) => button.dataset.action === 'cancel'),
+        false,
+      );
+    } finally {
+      await controller?.destroy();
+      harness.restore();
+    }
+  });
+
+  await t.test('cancel', async () => {
+    const lateCancel = deferred();
+    let identityKey = 'a';
+    const inviteFor = (key) => ({
+      id: `invite-${key}`, gameId: 'room-1', direction: 'outgoing', status: 'pending',
+      recipient: { id: `friend-${key}`, uid: key === 'a' ? '000001' : '000002', displayName: `${key.toUpperCase()} 好友` },
+    });
+    const harness = createGameFriendsHarness({
+      identity: { kind: 'registered', userId: 'a' },
+      listInviteData: async () => [inviteFor(identityKey)],
+      cancelGameInvite: () => lateCancel.promise,
+    });
+    let controller;
+    try {
+      controller = loadGameFriendsController().mount({ accountPanel: harness.accountPanel });
+      controller.setWaitingRoom({
+        roomId: 'room-1', status: 'waiting', playerMark: 'X', playerNames: { O: null },
+      });
+      harness.nodes.get('#invite-friend-button').click();
+      await flushGameFriends();
+      harness.nodes.get('#friend-invite-list').querySelectorAll('button')
+        .find((button) => button.dataset.action === 'cancel').click();
+      identityKey = 'b';
+      harness.emitIdentity({ kind: 'registered', userId: 'b' });
+      harness.nodes.get('#invite-friend-button').click();
+      await flushGameFriends();
+      assert.match(harness.nodes.get('#friend-invite-list').textContent, /B 好友/);
+      lateCancel.resolve();
+      await flushGameFriends();
+      assert.match(harness.nodes.get('#friend-invite-list').textContent, /B 好友/);
+      assert.doesNotMatch(harness.nodes.get('#friend-invite-message').textContent, /已取消/);
+    } finally {
+      await controller?.destroy();
+      harness.restore();
+    }
+  });
+});
+
+test('late cancel results cannot mutate a new room or a destroyed controller', async (t) => {
+  await t.test('room change', async () => {
+    const lateCancel = deferred();
+    let invites = [{
+      id: 'invite-a', gameId: 'room-a', direction: 'outgoing', status: 'pending',
+      recipient: { id: 'friend-a', uid: '000001', displayName: 'A 好友' },
+    }];
+    const harness = createGameFriendsHarness({
+      listInviteData: async () => invites,
+      cancelGameInvite: () => lateCancel.promise,
+    });
+    let controller;
+    try {
+      controller = loadGameFriendsController().mount({ accountPanel: harness.accountPanel });
+      controller.setWaitingRoom({
+        roomId: 'room-a', status: 'waiting', playerMark: 'X', playerNames: { O: null },
+      });
+      harness.nodes.get('#invite-friend-button').click();
+      await flushGameFriends();
+      harness.nodes.get('#friend-invite-list').querySelectorAll('button')
+        .find((button) => button.dataset.action === 'cancel').click();
+      invites = [{
+        id: 'invite-b', gameId: 'room-b', direction: 'outgoing', status: 'pending',
+        recipient: { id: 'friend-b', uid: '000002', displayName: 'B 好友' },
+      }];
+      controller.setWaitingRoom({
+        roomId: 'room-b', status: 'waiting', playerMark: 'X', playerNames: { O: null },
+      });
+      harness.nodes.get('#invite-friend-button').click();
+      await flushGameFriends();
+      lateCancel.resolve();
+      await flushGameFriends();
+      assert.match(harness.nodes.get('#friend-invite-list').textContent, /B 好友/);
+      assert.doesNotMatch(harness.nodes.get('#friend-invite-message').textContent, /已取消/);
+    } finally {
+      await controller?.destroy();
+      harness.restore();
+    }
+  });
+
+  await t.test('destroy', async () => {
+    const lateCancel = deferred();
+    const messages = [];
+    const harness = createGameFriendsHarness({
+      invites: [{
+        id: 'invite-a', gameId: 'room-a', direction: 'outgoing', status: 'pending',
+        recipient: { id: 'friend-a', uid: '000001', displayName: 'A 好友' },
+      }],
+      cancelGameInvite: () => lateCancel.promise,
+    });
+    let controller;
+    try {
+      controller = loadGameFriendsController().mount({
+        accountPanel: harness.accountPanel,
+        onMessage: (text, state) => messages.push({ text, state }),
+      });
+      controller.setWaitingRoom({
+        roomId: 'room-a', status: 'waiting', playerMark: 'X', playerNames: { O: null },
+      });
+      harness.nodes.get('#invite-friend-button').click();
+      await flushGameFriends();
+      harness.nodes.get('#friend-invite-list').querySelectorAll('button')
+        .find((button) => button.dataset.action === 'cancel').click();
+      await controller.destroy();
+      controller = null;
+      const messageCount = messages.length;
+      lateCancel.reject(new Error('late cancel failure'));
+      await flushGameFriends();
+      assert.equal(messages.length, messageCount);
+      assert.equal(harness.nodes.get('#friend-invite-list').textContent, '');
+      assert.equal(harness.nodes.get('#friend-invite-message').textContent, '');
+    } finally {
+      await controller?.destroy();
+      harness.restore();
+    }
+  });
 });
 
 test('setWaitingRoom(null) and destroy close the dialog and clean realtime/client state', async () => {

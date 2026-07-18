@@ -18,12 +18,37 @@
     let pendingInvite = null;
     let busy = false;
     let destroyed = false;
-    let requestVersion = 0;
+    let generation = 0;
+    let activeIdentityKey = getIdentityKey();
     let unsubscribeRealtime = null;
     let realtimeStart = null;
 
+    function getIdentityKey(identity = accountPanel.getIdentity?.()) {
+      if (identity?.kind !== 'registered') return identity?.kind || 'guest';
+      return `registered:${identity.uid ?? identity.userId ?? identity.username ?? ''}`;
+    }
+
     function isRegistered() {
       return accountPanel.getIdentity?.().kind === 'registered';
+    }
+
+    function captureLifecycle(inviteId = null) {
+      return {
+        generation,
+        roomId: waitingRoom?.roomId || null,
+        identityKey: activeIdentityKey,
+        inviteId,
+      };
+    }
+
+    function isCurrentLifecycle(lifecycle) {
+      return Boolean(
+        !destroyed
+        && lifecycle.generation === generation
+        && lifecycle.roomId === (waitingRoom?.roomId || null)
+        && lifecycle.identityKey === activeIdentityKey
+        && lifecycle.identityKey === getIdentityKey(),
+      );
     }
 
     function isEligibleRoom(game) {
@@ -132,45 +157,48 @@
 
     async function startRealtime() {
       if (unsubscribeRealtime || realtimeStart || !waitingRoom || !isRegistered()) return;
-      const roomId = waitingRoom.roomId;
-      realtimeStart = friendsClient.subscribe(() => void refresh({ loadFriends: dialog.open }))
+      const lifecycle = captureLifecycle();
+      const start = friendsClient.subscribe(() => {
+        if (isCurrentLifecycle(lifecycle)) void refresh({ loadFriends: dialog.open });
+      })
         .then(async (cleanup) => {
-          realtimeStart = null;
-          if (destroyed || waitingRoom?.roomId !== roomId) {
+          if (!isCurrentLifecycle(lifecycle)) {
             await cleanup?.();
             return;
           }
           unsubscribeRealtime = cleanup;
         })
         .catch((error) => {
-          realtimeStart = null;
-          if (waitingRoom?.roomId === roomId) {
+          if (isCurrentLifecycle(lifecycle)) {
             setMessage(friendsApi.mapFriendsError?.(error) || '好友服务暂时不可用', 'error');
           }
+        })
+        .finally(() => {
+          if (realtimeStart === start) realtimeStart = null;
         });
-      await realtimeStart;
+      realtimeStart = start;
+      await start;
     }
 
     async function refresh({ loadFriends = false } = {}) {
       if (!waitingRoom || !isRegistered()) return;
-      const version = ++requestVersion;
-      const roomId = waitingRoom.roomId;
+      const lifecycle = captureLifecycle();
       try {
         const [nextInvites, nextFriends] = await Promise.all([
           friendsClient.listInvites(),
-          loadFriends ? friendsClient.listFriends() : Promise.resolve(friends),
+          loadFriends ? friendsClient.listFriends() : Promise.resolve(null),
         ]);
-        if (destroyed || version !== requestVersion || waitingRoom?.roomId !== roomId) return;
+        if (!isCurrentLifecycle(lifecycle)) return;
         pendingInvite = nextInvites.find((invite) => (
           invite.direction === 'outgoing'
           && invite.status === 'pending'
-          && invite.gameId === roomId
+          && invite.gameId === lifecycle.roomId
         )) || null;
-        friends = nextFriends;
+        if (loadFriends) friends = nextFriends;
         busy = false;
         render();
       } catch (error) {
-        if (destroyed || version !== requestVersion || waitingRoom?.roomId !== roomId) return;
+        if (!isCurrentLifecycle(lifecycle)) return;
         busy = false;
         setMessage(friendsApi.mapFriendsError?.(error) || '好友服务暂时不可用', 'error');
         render();
@@ -188,20 +216,22 @@
 
     async function sendInvite(friend) {
       if (!isEligibleRoom(waitingRoom) || busy || pendingInvite) return;
-      const roomId = waitingRoom.roomId;
+      const lifecycle = captureLifecycle();
       busy = true;
       setMessage('正在发送邀请');
       render();
       try {
-        const result = await friendsClient.sendGameInvite(roomId, friend.id);
-        if (!isEligibleRoom(waitingRoom) || waitingRoom.roomId !== roomId) return;
-        pendingInvite = { id: result, gameId: roomId, recipient: friend, status: 'pending' };
+        const result = await friendsClient.sendGameInvite(lifecycle.roomId, friend.id);
+        if (!isCurrentLifecycle(lifecycle) || !isEligibleRoom(waitingRoom)) return;
+        pendingInvite = {
+          id: result, gameId: lifecycle.roomId, recipient: friend, status: 'pending',
+        };
         busy = false;
         setMessage('邀请已发送，等待回应', 'success');
         render();
         await refresh();
       } catch (error) {
-        if (!waitingRoom || waitingRoom.roomId !== roomId) return;
+        if (!isCurrentLifecycle(lifecycle)) return;
         busy = false;
         setMessage(friendsApi.mapFriendsError?.(error) || '好友服务暂时不可用', 'error');
         render();
@@ -211,24 +241,27 @@
     async function cancelInvite() {
       if (!pendingInvite?.id || busy) return;
       const inviteId = pendingInvite.id;
+      const lifecycle = captureLifecycle(inviteId);
       busy = true;
       render();
       try {
         await friendsClient.cancelGameInvite(inviteId);
+        if (!isCurrentLifecycle(lifecycle) || pendingInvite?.id !== lifecycle.inviteId) return;
         pendingInvite = null;
         busy = false;
         setMessage('邀请已取消', 'success');
         render();
       } catch (error) {
+        if (!isCurrentLifecycle(lifecycle) || pendingInvite?.id !== lifecycle.inviteId) return;
         busy = false;
         setMessage(friendsApi.mapFriendsError?.(error) || '好友服务暂时不可用', 'error');
         render();
       }
     }
 
-    function clearWaitingRoom() {
-      requestVersion += 1;
-      waitingRoom = null;
+    function resetLifecycle(nextRoom = null) {
+      generation += 1;
+      waitingRoom = nextRoom;
       friends = [];
       pendingInvite = null;
       busy = false;
@@ -238,6 +271,10 @@
       return stopRealtime();
     }
 
+    function clearWaitingRoom() {
+      return resetLifecycle(null);
+    }
+
     function setWaitingRoom(gameOrNull) {
       if (destroyed) return controller;
       if (!isEligibleRoom(gameOrNull)) {
@@ -245,28 +282,34 @@
         return controller;
       }
       const roomChanged = waitingRoom?.roomId !== gameOrNull.roomId;
-      waitingRoom = gameOrNull;
       if (roomChanged) {
-        requestVersion += 1;
-        friends = [];
-        pendingInvite = null;
-        setMessage();
-        void stopRealtime().then(() => startRealtime());
+        void resetLifecycle(gameOrNull).then(() => startRealtime());
+      } else {
+        waitingRoom = gameOrNull;
+        render();
       }
-      render();
       void refresh();
       return controller;
     }
 
     async function destroy() {
       if (destroyed) return;
+      generation += 1;
       destroyed = true;
-      requestVersion += 1;
       inviteButton.removeEventListener('click', openDialog);
       closeButton.removeEventListener('click', closeDialog);
       dialog.removeEventListener('click', closeOnBackdrop);
       unsubscribeAccount?.();
-      await clearWaitingRoom();
+      waitingRoom = null;
+      friends = [];
+      pendingInvite = null;
+      busy = false;
+      if (dialog.open) dialog.close();
+      message.textContent = '';
+      message.dataset.state = '';
+      onMessage?.('', '');
+      render();
+      await stopRealtime();
       await friendsClient.disconnect();
     }
 
@@ -281,9 +324,21 @@
     inviteButton.addEventListener('click', openDialog);
     closeButton.addEventListener('click', closeDialog);
     dialog.addEventListener('click', closeOnBackdrop);
-    const unsubscribeAccount = accountPanel.subscribe?.(() => {
-      if (!isRegistered()) void clearWaitingRoom();
-      else render();
+    const unsubscribeAccount = accountPanel.subscribe?.(({ identity } = {}) => {
+      const nextIdentityKey = getIdentityKey(identity);
+      if (nextIdentityKey === activeIdentityKey) {
+        render();
+        return;
+      }
+      activeIdentityKey = nextIdentityKey;
+      const nextRoom = identity?.kind === 'registered' && isEligibleRoom(waitingRoom)
+        ? waitingRoom
+        : null;
+      void resetLifecycle(nextRoom).then(() => {
+        if (!nextRoom || destroyed) return;
+        void startRealtime();
+        void refresh();
+      });
     });
     inviteButton.hidden = true;
 

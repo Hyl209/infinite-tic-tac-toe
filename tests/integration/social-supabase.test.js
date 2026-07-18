@@ -27,7 +27,9 @@ function functionBody(sql, name, nextName) {
 function acceptanceTemplate(sql, start, end) {
   const from = sql.indexOf(start);
   const to = sql.indexOf(end, from + start.length);
-  return from < 0 ? '' : sql.slice(from, to < 0 ? undefined : to);
+  if (from < 0) return '';
+  assert.notEqual(to, -1, `missing acceptance template end marker: ${end}`);
+  return sql.slice(from, to);
 }
 
 test('social acceptance verifier is read-only and covers UID, ACL, RLS, RPC, timing, and operator checks', () => {
@@ -78,6 +80,18 @@ test('social acceptance verifier is read-only and covers UID, ACL, RLS, RPC, tim
   assert.match(sql, /concurrent/i);
   assert.match(sql, /PLAYER_UID_IMMUTABLE/i);
   assert.match(sql, /BEGIN[\s\S]*ROLLBACK/i);
+
+  for (const [table, firstColumn, secondColumn] of [
+    ['friend_requests', 'requester_id', 'recipient_id'],
+    ['friendships', 'user_low', 'user_high'],
+    ['game_invites', 'sender_id', 'recipient_id'],
+  ]) {
+    const policyCheck = new RegExp(
+      `tablename = '${table}'[\\s\\S]*qual is not null[\\s\\S]*auth\\.uid[\\s\\S]*${firstColumn}[\\s\\S]*${secondColumn}`,
+      'i',
+    );
+    assert.match(sql, policyCheck);
+  }
 });
 
 test('social write acceptance templates are copyable, isolated, and assert trigger and RPC behavior', () => {
@@ -108,12 +122,22 @@ test('social write acceptance templates are copyable, isolated, and assert trigg
     assert.match(template, /set_config\s*\(\s*'request\.jwt\.claim\.sub'/i);
     assert.match(template, /set_config\s*\(\s*'request\.jwt\.claim\.role'\s*,\s*'authenticated'/i);
     assert.match(template, /SET LOCAL ROLE authenticated;/i);
-    assert.match(template, /target_id[\s\S]*send_friend_request\s*\(\s*target_id\s*\)/i);
+    assert.match(template, /count\s*\(\s*\*\s*\)[\s\S]*array_agg\s*\([^)]*user_id[^)]*\)[\s\S]*INTO\s+v_match_count\s*,\s*v_target_id/i);
+    assert.match(template, /v_match_count\s*<>\s*1[\s\S]*v_target_id is null[\s\S]*RAISE EXCEPTION/i);
+    assert.match(template, /v_request_id\s*:=\s*public\.send_friend_request\s*\(\s*v_target_id\s*\)/i);
+    assert.match(template, /v_request_id is null[\s\S]*RAISE EXCEPTION/i);
     assert.match(template, /ROLLBACK;/i);
   }
   assert.match(uidRequest, /search_player_by_uid\s*\(/i);
   assert.match(usernameRequest, /search_player_by_username\s*\(/i);
   assert.match(sql, /uid_000000_present[\s\S]*uid_000001_present/i);
+});
+
+test('acceptance template helper rejects a missing end marker', () => {
+  assert.throws(
+    () => acceptanceTemplate('TEMPLATE: START only', 'TEMPLATE: START', 'TEMPLATE: END'),
+    /missing acceptance template end marker/i,
+  );
 });
 
 test('社交迁移是增量迁移且 setup 同步包含完整功能', () => {

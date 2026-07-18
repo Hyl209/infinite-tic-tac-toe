@@ -169,11 +169,19 @@ begin
     where schemaname = 'public' and tablename = 'friend_requests'
       and policyname = 'friend request participants can read'
       and cmd = 'SELECT' and roles @> array['authenticated']::name[]
+      and qual is not null
+      and lower(regexp_replace(qual, '[[:space:]]+', '', 'g')) like '%auth.uid()%'
+      and lower(regexp_replace(qual, '[[:space:]]+', '', 'g')) like '%requester_id%'
+      and lower(regexp_replace(qual, '[[:space:]]+', '', 'g')) like '%recipient_id%'
   ) or not exists (
     select 1 from pg_policies
     where schemaname = 'public' and tablename = 'friendships'
       and policyname = 'friends can read their relationships'
       and cmd = 'SELECT' and roles @> array['authenticated']::name[]
+      and qual is not null
+      and lower(regexp_replace(qual, '[[:space:]]+', '', 'g')) like '%auth.uid()%'
+      and lower(regexp_replace(qual, '[[:space:]]+', '', 'g')) like '%user_low%'
+      and lower(regexp_replace(qual, '[[:space:]]+', '', 'g')) like '%user_high%'
   ) or not exists (
     select 1 from pg_policies
     where schemaname = 'public' and tablename = 'player_presence'
@@ -184,6 +192,10 @@ begin
     where schemaname = 'public' and tablename = 'game_invites'
       and policyname = 'game invite participants can read'
       and cmd = 'SELECT' and roles @> array['authenticated']::name[]
+      and qual is not null
+      and lower(regexp_replace(qual, '[[:space:]]+', '', 'g')) like '%auth.uid()%'
+      and lower(regexp_replace(qual, '[[:space:]]+', '', 'g')) like '%sender_id%'
+      and lower(regexp_replace(qual, '[[:space:]]+', '', 'g')) like '%recipient_id%'
   ) then
     raise exception 'participant-only RLS policy baseline missing';
   end if;
@@ -436,12 +448,25 @@ select
 -- END;
 -- $verify_friend_uid_context$;
 -- SET LOCAL ROLE authenticated;
--- WITH target AS (
---   SELECT player.user_id AS target_id
---   FROM public.search_player_by_uid(current_setting('verify_social.target_uid')::integer) AS player
--- )
--- SELECT public.send_friend_request(target_id)
--- FROM target;
+-- DO $verify_friend_uid_request$
+-- DECLARE
+--   v_match_count integer;
+--   v_target_id uuid;
+--   v_request_id uuid;
+-- BEGIN
+--   SELECT count(*), (array_agg(player.user_id))[1]
+--   INTO v_match_count, v_target_id
+--   FROM public.search_player_by_uid(current_setting('verify_social.target_uid')::integer) AS player;
+--   IF v_match_count <> 1 OR v_target_id IS NULL THEN
+--     RAISE EXCEPTION 'UID_SEARCH_EXPECTED_ONE_TARGET_GOT_%', v_match_count;
+--   END IF;
+--   v_request_id := public.send_friend_request(v_target_id);
+--   IF v_request_id IS NULL THEN
+--     RAISE EXCEPTION 'UID_FRIEND_REQUEST_RETURNED_NULL';
+--   END IF;
+--   RAISE NOTICE 'uid friend request id=%', v_request_id;
+-- END;
+-- $verify_friend_uid_request$;
 -- ROLLBACK;
 
 -- TEMPLATE: FRIEND REQUEST BY USERNAME
@@ -478,12 +503,25 @@ select
 -- END;
 -- $verify_friend_username_context$;
 -- SET LOCAL ROLE authenticated;
--- WITH target AS (
---   SELECT player.user_id AS target_id
---   FROM public.search_player_by_username(current_setting('verify_social.target_username')) AS player
--- )
--- SELECT public.send_friend_request(target_id)
--- FROM target;
+-- DO $verify_friend_username_request$
+-- DECLARE
+--   v_match_count integer;
+--   v_target_id uuid;
+--   v_request_id uuid;
+-- BEGIN
+--   SELECT count(*), (array_agg(player.user_id))[1]
+--   INTO v_match_count, v_target_id
+--   FROM public.search_player_by_username(current_setting('verify_social.target_username')) AS player;
+--   IF v_match_count <> 1 OR v_target_id IS NULL THEN
+--     RAISE EXCEPTION 'USERNAME_SEARCH_EXPECTED_ONE_TARGET_GOT_%', v_match_count;
+--   END IF;
+--   v_request_id := public.send_friend_request(v_target_id);
+--   IF v_request_id IS NULL THEN
+--     RAISE EXCEPTION 'USERNAME_FRIEND_REQUEST_RETURNED_NULL';
+--   END IF;
+--   RAISE NOTICE 'username friend request id=%', v_request_id;
+-- END;
+-- $verify_friend_username_request$;
 -- ROLLBACK;
 
 -- END OPT-IN WRITE ACCEPTANCE

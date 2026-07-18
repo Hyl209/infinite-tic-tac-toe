@@ -16,6 +16,8 @@
     INVALID_GAME_NAME: '游戏名需为 1 至 16 个字符',
     PROFILE_REQUIRED: '请先完成个人资料',
     PROFILE_SAVE_FAILED: '个人资料保存失败，请稍后重试',
+    PLAYER_UID_EXHAUSTED: '玩家 UID 已发放完毕，请联系管理员',
+    PLAYER_UID_IMMUTABLE: '玩家 UID 不可修改',
   };
 
   function normalizeUsername(value) {
@@ -48,6 +50,13 @@
     return `${username}@${USERNAME_EMAIL_DOMAIN}`;
   }
 
+  function formatPlayerUid(value) {
+    if (value == null) return null;
+    const uid = Number(value);
+    if (!Number.isInteger(uid) || uid < 0 || uid > 999999) throw new Error('INVALID_PLAYER_UID');
+    return String(uid).padStart(6, '0');
+  }
+
   function getGuestName({
     storage = globalScope.localStorage,
     random = Math.random,
@@ -69,7 +78,14 @@
   }
 
   function mapAccountError(error) {
-    const message = error?.message || String(error || '');
+    const message = [
+      error?.code,
+      error?.message,
+      error?.details,
+      error?.cause?.code,
+      error?.cause?.message,
+      error?.cause?.details,
+    ].filter(Boolean).join(' ') || String(error || '');
     const stableCode = Object.keys(ERROR_MESSAGES).find((code) => message.includes(code));
     if (stableCode) return ERROR_MESSAGES[stableCode];
     if (/already registered|duplicate key|23505/i.test(message)) return '这个用户名已被使用';
@@ -81,6 +97,7 @@
   function guestIdentity(guestName) {
     return {
       kind: 'guest',
+      uid: null,
       username: null,
       displayName: guestName,
       needsProfile: false,
@@ -145,7 +162,7 @@
       const client = await getSupabaseClient();
       const result = await client
         .from('profiles')
-        .select('username, game_name')
+        .select('username, game_name, player_uid')
         .eq('id', userId)
         .maybeSingle();
       if (result.error) throw result.error;
@@ -157,6 +174,7 @@
       const username = profile?.username || fallbackUsername;
       return {
         kind: 'registered',
+        uid: formatPlayerUid(profile?.player_uid),
         username,
         displayName: profile?.game_name || username,
         needsProfile: !profile,
@@ -204,16 +222,28 @@
       return { normalizedUsername, normalizedGameName };
     }
 
-    async function saveProfile(user, username, gameName) {
+    async function createProfile(user, username, gameName) {
       const client = await getSupabaseClient();
       const payload = { id: user.id, username, game_name: gameName };
       const result = await client
         .from('profiles')
-        .upsert(payload, { onConflict: 'id' })
-        .select('username, game_name')
+        .insert(payload)
+        .select('username, game_name, player_uid')
         .single();
       if (result.error) throw new Error('PROFILE_SAVE_FAILED', { cause: result.error });
       return result.data || payload;
+    }
+
+    async function updateProfile(user, gameName) {
+      const client = await getSupabaseClient();
+      const result = await client
+        .from('profiles')
+        .update({ game_name: gameName })
+        .eq('id', user.id)
+        .select('username, game_name, player_uid')
+        .single();
+      if (result.error) throw new Error('PROFILE_SAVE_FAILED', { cause: result.error });
+      return result.data;
     }
 
     async function register({ username, password, gameName }) {
@@ -240,7 +270,7 @@
       });
       if (updateResult.error) throw updateResult.error;
       user = updateResult.data.user;
-      const profile = await saveProfile(user, normalizedUsername, normalizedGameName);
+      const profile = await createProfile(user, normalizedUsername, normalizedGameName);
       return setIdentity(registeredIdentity(user, profile));
     }
 
@@ -264,7 +294,7 @@
       if (sessionResult.error) throw sessionResult.error;
       const user = sessionResult.data.session?.user;
       if (!user || user.is_anonymous || !identity.username) throw new Error('PROFILE_REQUIRED');
-      const profile = await saveProfile(user, identity.username, gameName);
+      const profile = await updateProfile(user, gameName);
       return setIdentity(registeredIdentity(user, profile));
     }
 
@@ -310,6 +340,7 @@
     GUEST_NAME_STORAGE_KEY,
     USERNAME_EMAIL_DOMAIN,
     createAccountClient,
+    formatPlayerUid,
     getGuestName,
     isValidGameName,
     isValidPassword,

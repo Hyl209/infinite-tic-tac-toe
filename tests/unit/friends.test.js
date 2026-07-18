@@ -106,7 +106,7 @@ test('searchExact routes six ASCII digits to UID and normalized full names to us
     { name: 'search_player_by_uid', params: { p_player_uid: 123 } },
     { name: 'search_player_by_username', params: { p_username: 'player_02' } },
   ]);
-  await assert.rejects(() => client.searchExact('123'), { message: 'INVALID_USERNAME' });
+  await assert.rejects(() => client.searchExact('12'), { message: 'INVALID_USERNAME' });
   await assert.rejects(() => client.searchExact('１２３４５６'), { message: 'INVALID_USERNAME' });
 });
 

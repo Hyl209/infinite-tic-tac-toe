@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const migrationPath = './database/supabase/migrations/20260718_stats.sql';
 const guestHistoryMigrationPath = './database/supabase/migrations/20260719_stats_guest_history.sql';
 const seasonAdminMigrationPath = './database/supabase/migrations/20260720_stats_season_admin.sql';
+const historyAmbiguityMigrationPath = './database/supabase/migrations/20260723_stats_history_ambiguity.sql';
 
 function read(path) {
   return fs.existsSync(path) ? fs.readFileSync(path, 'utf8') : '';
@@ -24,6 +25,10 @@ function readGuestHistoryMigration() {
 
 function readSeasonAdminMigration() {
   return read(seasonAdminMigrationPath);
+}
+
+function readHistoryAmbiguityMigration() {
+  return read(historyAmbiguityMigrationPath);
 }
 
 test('Supabase migrations use unique versions', () => {
@@ -58,6 +63,17 @@ test('完整初始化脚本包含赛季管理迁移且后续不再覆盖管理 R
       new RegExp(`create\\s+or\\s+replace\\s+function\\s+public\\.${rpc}\\b`, 'i'),
       `${rpc} must not be redefined after the season admin migration`,
     );
+  }
+});
+
+test('战绩历史 RPC 使用表别名避免输出列 id 歧义', () => {
+  assert.equal(fs.existsSync(historyAmbiguityMigrationPath), true);
+  for (const sql of [readHistoryAmbiguityMigration(), readSetupSql()]) {
+    const start = sql.lastIndexOf('create or replace function public.get_my_match_history');
+    const end = sql.indexOf('$$;', start) + 3;
+    const fn = sql.slice(start, end);
+    assert.match(fn, /from public\.profiles as profile\s+where profile\.id\s*=\s*v_user/i);
+    assert.doesNotMatch(fn, /from public\.profiles\s+where id\s*=\s*v_user/i);
   }
 });
 

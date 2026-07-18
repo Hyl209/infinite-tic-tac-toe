@@ -195,7 +195,7 @@
       try {
         const result = await friendsClient.sendGameInvite(roomId, friend.id);
         if (!isEligibleRoom(waitingRoom) || waitingRoom.roomId !== roomId) return;
-        pendingInvite = { id: result?.id, gameId: roomId, recipient: friend, status: 'pending' };
+        pendingInvite = { id: result, gameId: roomId, recipient: friend, status: 'pending' };
         busy = false;
         setMessage('邀请已发送，等待回应', 'success');
         render();

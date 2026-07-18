@@ -1020,7 +1020,8 @@ function createGameFriendsHarness({
   identity = { kind: 'registered', userId: 'owner-1' },
   friends = [],
   invites = [],
-  sendGameInvite = async () => ({ id: 'invite-1' }),
+  listInviteData = async () => invites,
+  sendGameInvite = async () => 'invite-1',
 } = {}) {
   const nodes = new Map([
     ['#invite-friend-button', new FakeInviteElement('button')],
@@ -1045,7 +1046,7 @@ function createGameFriendsHarness({
     },
     async listInvites() {
       calls.push({ type: 'list-invites' });
-      return invites;
+      return listInviteData();
     },
     async sendGameInvite(gameId, friendId) {
       calls.push({ type: 'send', gameId, friendId });
@@ -1160,6 +1161,8 @@ test('game friends reuses the account client and gates invitations to a register
 
 test('game friends invites an offline friend with a send lock, padded UID, pending state, and cancel', async () => {
   const pendingSend = deferred();
+  const postSendRefresh = deferred();
+  let sent = false;
   const friend = {
     id: 'friend-1', uid: '000123', username: 'offline_friend', displayName: '离线好友', online: false,
   };
@@ -1167,15 +1170,12 @@ test('game friends invites an offline friend with a send lock, padded UID, pendi
   const harness = createGameFriendsHarness({
     friends: [friend],
     invites,
+    async listInviteData() {
+      return sent ? postSendRefresh.promise : invites;
+    },
     async sendGameInvite() {
       const result = await pendingSend.promise;
-      invites.push({
-        id: result.id,
-        gameId: 'room-1',
-        direction: 'outgoing',
-        recipient: friend,
-        status: 'pending',
-      });
+      sent = true;
       return result;
     },
   });
@@ -1201,13 +1201,57 @@ test('game friends invites an offline friend with a send lock, padded UID, pendi
       true,
     );
 
-    pendingSend.resolve({ id: 'invite-1' });
-    await flushGameFriends();
+    pendingSend.resolve('invite-1');
     await flushGameFriends();
     assert.match(harness.nodes.get('#friend-invite-message').textContent, /邀请已发送，等待回应/);
     assert.match(list.textContent, /离线好友/);
     assert.match(list.textContent, /UID 000123/);
     const cancelButton = list.querySelectorAll('button').find((button) => button.dataset.action === 'cancel');
+    assert.ok(cancelButton);
+    cancelButton.click();
+    await flushGameFriends();
+    assert.deepEqual(harness.calls.find((call) => call.type === 'cancel'), {
+      type: 'cancel', inviteId: 'invite-1',
+    });
+    postSendRefresh.resolve([]);
+    await flushGameFriends();
+  } finally {
+    await controller?.destroy();
+    harness.restore();
+  }
+});
+
+test('game friends keeps a scalar invite id cancellable when the post-send refresh fails', async () => {
+  const friend = {
+    id: 'friend-1', uid: '000123', username: 'friend', displayName: '好友', online: true,
+  };
+  let sent = false;
+  const harness = createGameFriendsHarness({
+    friends: [friend],
+    async listInviteData() {
+      if (sent) throw new Error('refresh failed');
+      return [];
+    },
+    async sendGameInvite() {
+      sent = true;
+      return 'invite-1';
+    },
+  });
+  let controller;
+  try {
+    controller = loadGameFriendsController().mount({ accountPanel: harness.accountPanel });
+    controller.setWaitingRoom({
+      roomId: 'room-1', status: 'waiting', playerMark: 'X', playerNames: { O: null },
+    });
+    harness.nodes.get('#invite-friend-button').click();
+    await flushGameFriends();
+    harness.nodes.get('#friend-invite-list').querySelectorAll('button')
+      .find((button) => button.dataset.action === 'invite').click();
+    await flushGameFriends();
+    await flushGameFriends();
+
+    const cancelButton = harness.nodes.get('#friend-invite-list').querySelectorAll('button')
+      .find((button) => button.dataset.action === 'cancel');
     assert.ok(cancelButton);
     cancelButton.click();
     await flushGameFriends();

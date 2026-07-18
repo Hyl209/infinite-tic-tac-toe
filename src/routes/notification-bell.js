@@ -32,12 +32,16 @@
     let pendingRefresh = null;
     let siteUnreadCount = 0;
     let socialPendingCount = 0;
+    let siteCountKnown = false;
+    let socialCountKnown = false;
     let socialCountVersion = 0;
     let destroyed = false;
 
     function clearBadge() {
       siteUnreadCount = 0;
       socialPendingCount = 0;
+      siteCountKnown = false;
+      socialCountKnown = false;
       badge.hidden = true;
       badge.textContent = '';
       bell.setAttribute('aria-label', '查看通知');
@@ -48,6 +52,17 @@
       badge.textContent = text;
       badge.hidden = !text;
       bell.setAttribute('aria-label', text ? `${text} 条未读通知` : '查看通知');
+    }
+
+    function renderVerifiedCounts() {
+      if (!siteCountKnown && !socialCountKnown) {
+        clearBadge();
+        return;
+      }
+      renderUnread(
+        (siteCountKnown ? siteUnreadCount : 0)
+        + (socialCountKnown ? socialPendingCount : 0),
+      );
     }
 
     async function countSocialPending() {
@@ -74,31 +89,30 @@
           if (destroyed || version !== requestVersion) return;
           notificationsClient ||= notificationsApi.createNotificationsClient({ accountClient });
           if (currentIdentity.kind === 'registered') {
+            try {
+              void Promise.resolve(notificationsClient.list({ limit: 5 })).catch(() => {});
+            } catch { /* The list result is not needed for the badge count. */ }
             const [siteResult, socialResult] = await Promise.allSettled([
-              Promise.all([
-                notificationsClient.list({ limit: 5 }),
-                notificationsClient.countUnread(),
-              ]).then(([, unreadCount]) => unreadCount),
+              notificationsClient.countUnread(),
               countSocialPending(),
             ]);
             if (!destroyed && version === requestVersion) {
-              if (siteResult.status === 'rejected') {
-                if (socialVersion === socialCountVersion) clearBadge();
-                return;
+              if (siteResult.status === 'fulfilled') {
+                siteUnreadCount = Math.max(0, Math.floor(Number(siteResult.value) || 0));
+                siteCountKnown = true;
               }
-              siteUnreadCount = Math.max(0, Math.floor(Number(siteResult.value) || 0));
               if (socialResult.status === 'fulfilled' && socialVersion === socialCountVersion) {
                 socialPendingCount = Math.max(0, Math.floor(Number(socialResult.value) || 0));
+                socialCountKnown = true;
               }
-              renderUnread(siteUnreadCount + socialPendingCount);
+              renderVerifiedCounts();
             }
           } else {
             await notificationsClient.list({ limit: 5 });
             if (!destroyed && version === requestVersion) clearBadge();
           }
         } catch (_) {
-          if (!destroyed && version === requestVersion
-            && socialVersion === socialCountVersion) clearBadge();
+          if (!destroyed && version === requestVersion) renderVerifiedCounts();
         }
       })();
 
@@ -126,7 +140,8 @@
       if (destroyed || identity.kind !== 'registered') return;
       socialCountVersion += 1;
       socialPendingCount = Math.max(0, Math.floor(Number(event?.detail?.count) || 0));
-      renderUnread(siteUnreadCount + socialPendingCount);
+      socialCountKnown = true;
+      renderVerifiedCounts();
     }
 
     const unsubscribeAccount = accountPanel.subscribe?.(handleAccountState) || (() => {});

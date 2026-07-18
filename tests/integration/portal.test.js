@@ -871,3 +871,45 @@ test('shared social toasts stay visible, responsive, focusable, and motion-safe'
   assert.match(css, /@media\s*\(max-width:\s*540px\)[\s\S]*\.social-toast-region/s);
   assert.match(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*\.social-toast[^}]*animation:\s*none/s);
 });
+
+test('notification bell commits whichever notification count sources succeed', async (t) => {
+  const cases = [
+    { name: 'count fails', failList: false, failCount: true, expected: '2' },
+    { name: 'unused list fails', failList: true, failCount: false, expected: '6' },
+    { name: 'list and count fail', failList: true, failCount: true, expected: '2' },
+  ];
+  for (const scenario of cases) {
+    await t.test(scenario.name, async () => {
+      const harness = createNotificationBellHarness({
+        identity: { kind: 'registered', username: `player-${scenario.name}` },
+      });
+      const controller = notificationBell.mount({
+        document: harness.document,
+        accountPanel: harness.accountPanel,
+        notificationsApi: {
+          createNotificationsClient: () => ({
+            list: async () => {
+              if (scenario.failList) throw new Error('LIST_FAILED');
+              return [];
+            },
+            countUnread: async () => {
+              if (scenario.failCount) throw new Error('COUNT_FAILED');
+              return 4;
+            },
+          }),
+        },
+        friendsApi: {
+          createFriendsClient: () => ({
+            listRequests: async () => [{ id: 'request-1', direction: 'incoming' }],
+            listInvites: async () => [{ id: 'invite-1', direction: 'incoming', status: 'pending' }],
+            disconnect: async () => {},
+          }),
+        },
+      });
+
+      await controller.refresh();
+      assert.equal(harness.badge.textContent, scenario.expected);
+      controller.destroy();
+    });
+  }
+});

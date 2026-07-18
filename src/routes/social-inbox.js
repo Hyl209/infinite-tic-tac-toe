@@ -126,7 +126,9 @@
         unsubscribeRealtime = cleanup;
         if (realtimeVersion === baselineRealtimeVersion) await refresh({ version, client });
       } catch {
-        if (!destroyed && version === lifecycleVersion && client === friendsClient) emitCount(0);
+        if (!destroyed && version === lifecycleVersion && client === friendsClient) {
+          await refresh({ version, client });
+        }
       }
     }
 

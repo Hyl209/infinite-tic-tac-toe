@@ -85,6 +85,7 @@ function createSocialInboxHarness({
   listRequests = async () => [],
   listInvites = async () => [],
   onSubscribe = null,
+  subscribeError = null,
 } = {}) {
   const region = new FakeSocialElement();
   const document = new EventTarget();
@@ -125,6 +126,7 @@ function createSocialInboxHarness({
           this.subscriptions += 1;
           realtimeListener = listener;
           onSubscribe?.(listener, identityKey);
+          if (subscribeError) throw subscribeError;
           let active = true;
           return async () => {
             if (!active) return;
@@ -791,4 +793,81 @@ test('notification bell preserves a newer social event when an older social load
   await oldRefresh;
   assert.equal(harness.badge.textContent, '11');
   controller.destroy();
+});
+
+test('social inbox falls back to a silent database baseline when realtime subscribe fails', async () => {
+  let requestCalls = 0;
+  let inviteCalls = 0;
+  const harness = createSocialInboxHarness({
+    identity: { kind: 'registered', username: 'player-a' },
+    listRequests: async () => {
+      requestCalls += 1;
+      return [{ id: 'request-1', direction: 'incoming', player: { displayName: '玩家乙' } }];
+    },
+    listInvites: async () => {
+      inviteCalls += 1;
+      return [{
+        id: 'invite-1', direction: 'incoming', status: 'pending', sender: { displayName: '玩家丙' },
+      }];
+    },
+    subscribeError: new Error('CHANNEL_ERROR'),
+  });
+  const controller = socialInbox.mount({
+    document: harness.document,
+    accountPanel: harness.accountPanel,
+    friendsApi: harness.friendsApi,
+  });
+
+  await flushAsyncWork();
+  assert.equal(harness.socialCounts.at(-1), 2);
+  assert.equal(harness.region.children.length, 0);
+  assert.equal(requestCalls, 1);
+  assert.equal(inviteCalls, 1);
+  controller.destroy();
+});
+
+test('notification bell keeps site unread when social database calls partially or fully fail', async (t) => {
+  for (const failure of ['requests', 'invites', 'both']) {
+    await t.test(failure, async () => {
+      const harness = createNotificationBellHarness({
+        identity: { kind: 'registered', username: `player-${failure}` },
+      });
+      const controller = notificationBell.mount({
+        document: harness.document,
+        accountPanel: harness.accountPanel,
+        notificationsApi: {
+          createNotificationsClient: () => ({
+            list: async () => [],
+            countUnread: async () => 4,
+          }),
+        },
+        friendsApi: {
+          createFriendsClient: () => ({
+            listRequests: async () => {
+              if (failure === 'requests' || failure === 'both') throw new Error('REQUESTS_FAILED');
+              return [];
+            },
+            listInvites: async () => {
+              if (failure === 'invites' || failure === 'both') throw new Error('INVITES_FAILED');
+              return [];
+            },
+            disconnect: async () => {},
+          }),
+        },
+      });
+
+      await controller.refresh();
+      assert.equal(harness.badge.textContent, '4');
+      controller.destroy();
+    });
+  }
+});
+
+test('shared social toasts stay visible, responsive, focusable, and motion-safe', () => {
+  const css = fs.readFileSync('./assets/styles/portal.css', 'utf8');
+  assert.match(css, /\.social-toast-region\s*\{[^}]*position:\s*fixed[^}]*top:[^;}]*env\(safe-area-inset-top\)[^}]*z-index:\s*\d+[^}]*max-width:/s);
+  assert.match(css, /\.social-toast\s*\{[^}]*pointer-events:\s*auto[^}]*animation:/s);
+  assert.match(css, /\.social-toast[^}]*:focus-visible[^}]*\{[^}]*outline:/s);
+  assert.match(css, /@media\s*\(max-width:\s*540px\)[\s\S]*\.social-toast-region/s);
+  assert.match(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*\.social-toast[^}]*animation:\s*none/s);
 });

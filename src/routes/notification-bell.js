@@ -74,15 +74,21 @@
           if (destroyed || version !== requestVersion) return;
           notificationsClient ||= notificationsApi.createNotificationsClient({ accountClient });
           if (currentIdentity.kind === 'registered') {
-            const [, unreadCount, socialCount] = await Promise.all([
-              notificationsClient.list({ limit: 5 }),
-              notificationsClient.countUnread(),
+            const [siteResult, socialResult] = await Promise.allSettled([
+              Promise.all([
+                notificationsClient.list({ limit: 5 }),
+                notificationsClient.countUnread(),
+              ]).then(([, unreadCount]) => unreadCount),
               countSocialPending(),
             ]);
             if (!destroyed && version === requestVersion) {
-              siteUnreadCount = Math.max(0, Math.floor(Number(unreadCount) || 0));
-              if (socialVersion === socialCountVersion) {
-                socialPendingCount = Math.max(0, Math.floor(Number(socialCount) || 0));
+              if (siteResult.status === 'rejected') {
+                if (socialVersion === socialCountVersion) clearBadge();
+                return;
+              }
+              siteUnreadCount = Math.max(0, Math.floor(Number(siteResult.value) || 0));
+              if (socialResult.status === 'fulfilled' && socialVersion === socialCountVersion) {
+                socialPendingCount = Math.max(0, Math.floor(Number(socialResult.value) || 0));
               }
               renderUnread(siteUnreadCount + socialPendingCount);
             }

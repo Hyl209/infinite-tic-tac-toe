@@ -233,6 +233,79 @@ body[data-view]:not([data-view="portal"]) .site-nav {
   line-height: 1;
 }
 
+.social-toast-region {
+  position: fixed;
+  top: calc(var(--nav-height) + 16px + env(safe-area-inset-top));
+  right: max(16px, env(safe-area-inset-right));
+  z-index: 60;
+  width: min(calc(100% - 32px), 420px);
+  max-width: 420px;
+  display: grid;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.social-toast {
+  padding: 15px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px 14px;
+  border: 1px solid var(--portal-line);
+  border-radius: 14px;
+  color: var(--portal-ink);
+  background: var(--portal-surface-strong);
+  box-shadow: 0 18px 48px rgb(0 0 0 / 0.38);
+  pointer-events: auto;
+  animation: social-toast-in 180ms ease-out;
+}
+
+.social-toast p {
+  grid-column: 1 / -1;
+  margin: 0;
+  line-height: 1.55;
+}
+
+.social-toast a,
+.social-toast button {
+  min-height: 38px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--portal-line);
+  border-radius: 9px;
+  color: var(--portal-ink);
+  background: transparent;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 720;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.social-toast a {
+  justify-self: start;
+  border-color: var(--portal-accent-soft);
+  background: oklch(0.24 0.04 265 / 0.94);
+}
+
+.social-toast a:focus-visible,
+.social-toast button:focus-visible {
+  outline: 2px solid var(--portal-accent-soft);
+  outline-offset: 3px;
+}
+
+@keyframes social-toast-in {
+  from {
+    transform: translateY(-8px);
+  }
+
+  to {
+    transform: translateY(0);
+  }
+}
+
 .site-nav .account-button {
   min-width: 168px;
   min-height: 46px;
@@ -875,6 +948,14 @@ body[data-view]:not([data-view="portal"]) .admin-shell {
 }
 
 @media (max-width: 540px) {
+  .social-toast-region {
+    top: calc(var(--nav-height) + 10px + env(safe-area-inset-top));
+    right: 12px;
+    left: 12px;
+    width: auto;
+    max-width: none;
+  }
+
   .site-brand > span:last-child {
     display: none;
   }
@@ -964,6 +1045,10 @@ body[data-view]:not([data-view="portal"]) .admin-shell {
   .portal-hero-copy,
   .portal-section-heading {
     transform: none !important;
+  }
+
+  .social-toast {
+    animation: none;
   }
 }
 

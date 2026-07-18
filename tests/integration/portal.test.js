@@ -27,10 +27,21 @@ try {
 function createNotificationBellHarness({ identity, unreadCounts = [] }) {
   const listeners = new Map();
   const badge = { hidden: true, textContent: '' };
+  const bell = {
+    ariaLabel: '查看通知',
+    getAttribute(name) {
+      return name === 'aria-label' ? this.ariaLabel : null;
+    },
+    setAttribute(name, value) {
+      if (name === 'aria-label') this.ariaLabel = value;
+    },
+  };
   const document = {
     visibilityState: 'visible',
     querySelector(selector) {
-      return selector === '#notification-unread-count' ? badge : null;
+      if (selector === '#notification-unread-count') return badge;
+      if (selector === '#notification-bell') return bell;
+      return null;
     },
     addEventListener(type, listener) {
       listeners.set(type, listener);
@@ -77,6 +88,7 @@ function createNotificationBellHarness({ identity, unreadCounts = [] }) {
     accountClient,
     accountPanel,
     badge,
+    bell,
     calls,
     document,
     emitIdentity(nextIdentity) {
@@ -171,9 +183,10 @@ test('通知服务等待账号初始化完成后再创建', async () => {
   let finishInitialize;
   const initialized = new Promise((resolve) => { finishInitialize = resolve; });
   const badge = { hidden: true, textContent: '' };
+  const bell = { setAttribute() {} };
   const document = {
     visibilityState: 'visible',
-    querySelector: () => badge,
+    querySelector: (selector) => (selector === '#notification-bell' ? bell : badge),
     addEventListener() {},
     removeEventListener() {},
   };
@@ -239,12 +252,14 @@ test('通知铃铛复用账号客户端，注册账号显示上限徽标而游�
   assert.equal(harness.calls.filter((call) => call.type === 'count').length, 1);
   assert.equal(harness.badge.hidden, false);
   assert.equal(harness.badge.textContent, '99+');
+  assert.equal(harness.bell.getAttribute('aria-label'), '99+ 条未读通知');
 
   harness.emitIdentity({ kind: 'guest', username: null, displayName: '匿名玩家' });
   await flushAsyncWork();
   assert.equal(harness.calls.filter((call) => call.type === 'list').length, 2);
   assert.equal(harness.calls.filter((call) => call.type === 'count').length, 1);
   assert.equal(harness.badge.hidden, true);
+  assert.equal(harness.bell.getAttribute('aria-label'), '查看通知');
   controller.destroy();
 });
 
@@ -270,7 +285,8 @@ test('通知铃铛只在页面重新可见时刷新，且旧账号请求和销�
           async countUnread() {
             harness.calls.push({ type: 'count' });
             unreadCall += 1;
-            return unreadCall === 1 ? oldUnread : 2;
+            if (unreadCall === 1) return oldUnread;
+            return unreadCall === 2 ? 3 : 0;
           },
         };
       },
@@ -279,10 +295,12 @@ test('通知铃铛只在页面重新可见时刷新，且旧账号请求和销�
 
   harness.emitIdentity({ kind: 'registered', username: 'player-b', displayName: '玩家 B' });
   await flushAsyncWork();
-  assert.equal(harness.badge.textContent, '2');
+  assert.equal(harness.badge.textContent, '3');
+  assert.equal(harness.bell.getAttribute('aria-label'), '3 条未读通知');
   resolveOldUnread(72);
   await flushAsyncWork();
-  assert.equal(harness.badge.textContent, '2');
+  assert.equal(harness.badge.textContent, '3');
+  assert.equal(harness.bell.getAttribute('aria-label'), '3 条未读通知');
 
   const listCalls = () => harness.calls.filter((call) => call.type === 'list').length;
   const beforeVisibility = listCalls();
@@ -292,6 +310,8 @@ test('通知铃铛只在页面重新可见时刷新，且旧账号请求和销�
   harness.emitVisibility('visible');
   await flushAsyncWork();
   assert.equal(listCalls(), beforeVisibility + 1);
+  assert.equal(harness.badge.hidden, true);
+  assert.equal(harness.bell.getAttribute('aria-label'), '查看通知');
 
   controller.destroy();
   const beforeDestroy = listCalls();

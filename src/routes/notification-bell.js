@@ -16,8 +16,9 @@
     const accountPanel = options.accountPanel || globalScope.HYLAccountPanel?.mount();
     const notificationsApi = options.notificationsApi || globalScope.PlayerNotifications;
     const accountClient = accountPanel?.accountClient;
+    const bell = documentRef?.querySelector('#notification-bell');
     const badge = documentRef?.querySelector('#notification-unread-count');
-    if (!documentRef || !accountPanel || !accountClient || !badge
+    if (!documentRef || !accountPanel || !accountClient || !bell || !badge
       || typeof notificationsApi?.createNotificationsClient !== 'function') return null;
 
     const accountReady = typeof accountClient.initialize === 'function'
@@ -32,12 +33,14 @@
     function clearBadge() {
       badge.hidden = true;
       badge.textContent = '';
+      bell.setAttribute('aria-label', '查看通知');
     }
 
     function renderUnread(count) {
       const text = formatUnreadCount(count);
       badge.textContent = text;
       badge.hidden = !text;
+      bell.setAttribute('aria-label', text ? `${text} 条未读通知` : '查看通知');
     }
 
     function refresh() {

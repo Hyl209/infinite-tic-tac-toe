@@ -8,12 +8,13 @@ const {
 } = require('../../src/services/notifications');
 
 function fakeClient(options = {}) {
-  const user = Object.prototype.hasOwnProperty.call(options, 'user') ? options.user : { id: 'user-1' };
-  const identityKind = options.identityKind || (user ? 'registered' : 'guest');
+  let user = Object.prototype.hasOwnProperty.call(options, 'user') ? options.user : { id: 'user-1' };
+  let identityKind = options.identityKind || (user ? 'registered' : 'guest');
   const rpcResults = options.rpcResults || [];
   const calls = [];
   const channels = [];
   const removed = [];
+  const identityListeners = new Set();
   let channelError = null;
   let getSupabaseClientCalls = 0;
   let getSessionCalls = 0;
@@ -56,10 +57,20 @@ function fakeClient(options = {}) {
     removed,
     get getSupabaseClientCalls() { return getSupabaseClientCalls; },
     get getSessionCalls() { return getSessionCalls; },
+    get identitySubscriberCount() { return identityListeners.size; },
     getIdentity() { return { kind: identityKind }; },
     async getSupabaseClient() {
       getSupabaseClientCalls += 1;
       return supabase;
+    },
+    subscribe(listener) {
+      identityListeners.add(listener);
+      return () => identityListeners.delete(listener);
+    },
+    async setIdentity(kind, nextUser) {
+      identityKind = kind;
+      user = nextUser;
+      await Promise.all(Array.from(identityListeners, (listener) => listener({ kind })));
     },
     failNextChannel() {
       channelError = true;
@@ -184,6 +195,53 @@ test('registered concurrent subscribers share one channel, ignore payload, filte
   assert.equal(supabase.removed.length, 1);
 });
 
+test('active subscription rebuilds its channel when guest registers or registered user changes', async () => {
+  const supabase = fakeClient({ user: null });
+  const notifications = createNotificationsClient({ accountClient: supabase });
+  const off = await notifications.subscribe(() => {});
+
+  assert.equal(supabase.channels.length, 1);
+  assert.equal(supabase.channels[0].handlers.length, 1);
+  assert.equal(supabase.identitySubscriberCount, 1);
+
+  await supabase.setIdentity('registered', { id: 'user-a' });
+  assert.equal(supabase.channels.length, 2);
+  assert.equal(supabase.removed[0], supabase.channels[0]);
+  assert.equal(
+    supabase.channels[1].handlers[1].filter.filter,
+    'user_id=eq.user-a',
+  );
+
+  await supabase.setIdentity('registered', { id: 'user-b' });
+  assert.equal(supabase.channels.length, 3);
+  assert.equal(supabase.removed[1], supabase.channels[1]);
+  assert.equal(
+    supabase.channels[2].handlers[1].filter.filter,
+    'user_id=eq.user-b',
+  );
+
+  await supabase.setIdentity('guest', null);
+  assert.equal(supabase.channels.length, 4);
+  assert.equal(supabase.removed[2], supabase.channels[2]);
+  assert.equal(supabase.channels[3].handlers.length, 1);
+
+  const switchingToC = supabase.setIdentity('registered', { id: 'user-c' });
+  const switchingToD = supabase.setIdentity('registered', { id: 'user-d' });
+  await Promise.all([switchingToC, switchingToD]);
+  assert.equal(supabase.channels.length, 5);
+  assert.equal(supabase.removed[3], supabase.channels[3]);
+  assert.equal(
+    supabase.channels[4].handlers[1].filter.filter,
+    'user_id=eq.user-d',
+  );
+
+  await off();
+  assert.equal(supabase.removed[4], supabase.channels[4]);
+  assert.equal(supabase.identitySubscriberCount, 0);
+  await supabase.setIdentity('guest', null);
+  assert.equal(supabase.channels.length, 5);
+});
+
 test('guest subscription watches only public notifications and failed init can retry', async () => {
   const supabase = fakeClient({ user: null });
   const notifications = createNotificationsClient({ accountClient: supabase });
@@ -196,6 +254,29 @@ test('guest subscription watches only public notifications and failed init can r
   assert.equal(supabase.getSessionCalls, 0);
   assert.deepEqual(supabase.channels[1].handlers[0].filter, { event: '*', schema: 'public', table: 'site_notifications' });
   await off();
+});
+
+test('scalar and single-row RPCs reject missing or invalid successful responses', async () => {
+  const supabase = fakeClient({ rpcResults: [
+    { data: null, error: null },
+    { data: 'not-a-number', error: null },
+    { data: null, error: null },
+    { data: [], error: null },
+    { data: null, error: null },
+    { data: [], error: null },
+  ] });
+  const notifications = createNotificationsClient({ accountClient: supabase });
+
+  await assert.rejects(() => notifications.countUnread(), { message: 'INVALID_NOTIFICATION_RESPONSE' });
+  await assert.rejects(() => notifications.countUnread(), { message: 'INVALID_NOTIFICATION_RESPONSE' });
+  await assert.rejects(() => notifications.markRead('n1'), { message: 'INVALID_NOTIFICATION_RESPONSE' });
+  await assert.rejects(() => notifications.claimReward('n1', 'req-1'), { message: 'INVALID_NOTIFICATION_RESPONSE' });
+  await assert.rejects(() => notifications.adminPublish({}), { message: 'INVALID_NOTIFICATION_RESPONSE' });
+  await assert.rejects(() => notifications.adminDisable('n1'), { message: 'INVALID_NOTIFICATION_RESPONSE' });
+  assert.equal(
+    mapNotificationsError({ code: 'INVALID_NOTIFICATION_RESPONSE' }),
+    '通知服务返回了无效数据，请稍后重试',
+  );
 });
 
 test('maps stable notification errors and requires an account client', async () => {

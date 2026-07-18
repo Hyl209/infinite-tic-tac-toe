@@ -22,6 +22,7 @@
     CHECKIN_RULE_DATE_INVALID: '签到规则生效日期无效',
     CHECKIN_RULE_DATE_EXISTS: '该生效日期已存在签到规则',
     INSUFFICIENT_COINS: '金币不足',
+    INVALID_CHECKIN_RESPONSE: '签到服务返回了无效数据，请稍后重试',
   };
 
   function errorCode(error) {
@@ -74,6 +75,12 @@
 
   function firstRpcRow(data) {
     return Array.isArray(data) ? data[0] : data;
+  }
+
+  function requiredRpcRow(data) {
+    var row = firstRpcRow(data);
+    if (!row || typeof row !== 'object' || Array.isArray(row)) fail('INVALID_CHECKIN_RESPONSE');
+    return row;
   }
 
   function mapDay(row) {
@@ -152,7 +159,7 @@
     async function checkIn(requestId) {
       requireRegistered();
       requireRequestId(requestId);
-      return mapResult(firstRpcRow(await callRpc('perform_daily_checkin', {
+      return mapResult(requiredRpcRow(await callRpc('perform_daily_checkin', {
         p_request_id: requestId,
       })));
     }
@@ -163,7 +170,7 @@
       if (paymentMethod === 'item') fail('ITEM_PAYMENT_UNAVAILABLE');
       if (paymentMethod !== 'coins') fail('INVALID_PAYMENT_METHOD');
       requireRequestId(requestId);
-      return mapResult(firstRpcRow(await callRpc('perform_makeup_checkin', {
+      return mapResult(requiredRpcRow(await callRpc('perform_makeup_checkin', {
         p_date: date,
         p_payment_method: paymentMethod,
         p_request_id: requestId,
@@ -179,7 +186,7 @@
     async function adminCreateRule(rule) {
       requireRegistered();
       rule = rule || {};
-      return mapRule(firstRpcRow(await callRpc('admin_create_checkin_rule', {
+      return mapRule(requiredRpcRow(await callRpc('admin_create_checkin_rule', {
         p_effective_from: rule.effectiveFrom ?? null,
         p_monday_reward: nullableNumber(rule.mondayReward),
         p_tuesday_reward: nullableNumber(rule.tuesdayReward),

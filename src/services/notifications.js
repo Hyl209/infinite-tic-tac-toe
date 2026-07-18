@@ -20,6 +20,7 @@
     NOTIFICATION_NO_REWARD: '该通知没有奖励',
     NOTIFICATION_ALREADY_CLAIMED: '奖励已领取',
     REQUEST_ID_REQUIRED: '缺少请求 ID',
+    INVALID_NOTIFICATION_RESPONSE: '通知服务返回了无效数据，请稍后重试',
   };
 
   function errorCode(error) {
@@ -76,6 +77,21 @@
     return Array.isArray(data) ? data[0] : data;
   }
 
+  function requiredRpcRow(data) {
+    var row = firstRpcRow(data);
+    if (!row || typeof row !== 'object' || Array.isArray(row)) fail('INVALID_NOTIFICATION_RESPONSE');
+    return row;
+  }
+
+  function requiredNumber(value) {
+    var type = typeof value;
+    if ((type !== 'number' && type !== 'bigint' && type !== 'string') ||
+        (type === 'string' && value.trim() === '')) fail('INVALID_NOTIFICATION_RESPONSE');
+    var number = Number(value);
+    if (!Number.isFinite(number)) fail('INVALID_NOTIFICATION_RESPONSE');
+    return number;
+  }
+
   function normalizeLimit(value) {
     if (value == null) return 20;
     var number = Number(value);
@@ -102,7 +118,10 @@
     var listeners = new Set();
     var channel = null;
     var channelSupabase = null;
-    var channelPromise = null;
+    var channelVersion = 0;
+    var channelQueue = Promise.resolve();
+    var latestChannelPromise = null;
+    var unsubscribeIdentity = null;
 
     async function getSupabaseClient() {
       var supabase = await accountClient.getSupabaseClient();
@@ -136,12 +155,12 @@
 
     async function countUnread() {
       requireRegistered();
-      return Number(await callRpc('count_unread_site_notifications'));
+      return requiredNumber(await callRpc('count_unread_site_notifications'));
     }
 
     async function markRead(notificationId) {
       requireRegistered();
-      var row = firstRpcRow(await callRpc('mark_site_notification_read', {
+      var row = requiredRpcRow(await callRpc('mark_site_notification_read', {
         p_notification_id: notificationId,
       }));
       return {
@@ -153,7 +172,7 @@
     async function claimReward(notificationId, requestId) {
       requireRegistered();
       if (requestId == null || requestId === '') fail('REQUEST_ID_REQUIRED');
-      var row = firstRpcRow(await callRpc('claim_site_notification_reward', {
+      var row = requiredRpcRow(await callRpc('claim_site_notification_reward', {
         p_notification_id: notificationId,
         p_request_id: requestId,
       }));
@@ -173,7 +192,7 @@
     async function adminPublish(notification) {
       requireRegistered();
       notification = notification || {};
-      return adminNotification(firstRpcRow(await callRpc('admin_publish_site_notification', {
+      return adminNotification(requiredRpcRow(await callRpc('admin_publish_site_notification', {
         p_title: notification.title,
         p_body: notification.body,
         p_reward_amount: nullableNumber(notification.rewardAmount),
@@ -184,7 +203,7 @@
 
     async function adminDisable(notificationId) {
       requireRegistered();
-      return adminNotification(firstRpcRow(await callRpc('admin_disable_site_notification', {
+      return adminNotification(requiredRpcRow(await callRpc('admin_disable_site_notification', {
         p_notification_id: notificationId,
       })));
     }
@@ -201,7 +220,15 @@
       }
     }
 
-    async function initializeChannel() {
+    async function clearChannel() {
+      var current = channel;
+      var supabase = channelSupabase;
+      channel = null;
+      channelSupabase = null;
+      await remove(current, supabase);
+    }
+
+    async function buildChannel() {
       var supabase = await getSupabaseClient();
       if (typeof supabase.channel !== 'function') fail('ACCOUNT_CLIENT_REQUIRED');
       var user = null;
@@ -216,8 +243,6 @@
         if (!user) fail('REGISTERED_ACCOUNT_REQUIRED');
       }
       var current = supabase.channel('player-notifications');
-      channel = current;
-      channelSupabase = supabase;
       current.on('postgres_changes', {
         event: '*', schema: 'public', table: 'site_notifications',
       }, notifyListeners);
@@ -226,37 +251,88 @@
           event: '*', schema: 'public', table: 'notification_reads', filter: 'user_id=eq.' + user.id,
         }, notifyListeners);
       }
-      await new Promise(function (resolve, reject) {
-        current.subscribe(function (status) {
-          if (status === 'SUBSCRIBED') resolve();
-          else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-            reject(new Error(status));
-          }
+      try {
+        await new Promise(function (resolve, reject) {
+          current.subscribe(function (status) {
+            if (status === 'SUBSCRIBED') resolve();
+            else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+              reject(new Error(status));
+            }
+          });
         });
+      } catch (error) {
+        await remove(current, supabase);
+        throw error;
+      }
+      return { channel: current, supabase: supabase };
+    }
+
+    function requestChannelRefresh() {
+      var requestedVersion = ++channelVersion;
+      var pending = channelQueue.then(async function () {
+        if (requestedVersion !== channelVersion || listeners.size === 0) return;
+        await clearChannel();
+        if (requestedVersion !== channelVersion || listeners.size === 0) return;
+        var built = await buildChannel();
+        if (requestedVersion !== channelVersion || listeners.size === 0) {
+          await remove(built.channel, built.supabase);
+          return;
+        }
+        channel = built.channel;
+        channelSupabase = built.supabase;
       });
-      return current;
+      channelQueue = pending.catch(function () {});
+      latestChannelPromise = pending;
+      pending.then(function () {
+        if (latestChannelPromise === pending) latestChannelPromise = null;
+      }, function () {
+        if (latestChannelPromise === pending) latestChannelPromise = null;
+      });
+      return pending;
+    }
+
+    async function ensureChannel() {
+      while (listeners.size > 0 && !channel) {
+        await (latestChannelPromise || requestChannelRefresh());
+      }
+    }
+
+    function startIdentitySubscription() {
+      if (unsubscribeIdentity || typeof accountClient.subscribe !== 'function') return;
+      var cleanup = accountClient.subscribe(function () {
+        if (listeners.size === 0) return;
+        return requestChannelRefresh().catch(function () {});
+      });
+      unsubscribeIdentity = typeof cleanup === 'function' ? cleanup : function () {};
+    }
+
+    function stopIdentitySubscription() {
+      if (!unsubscribeIdentity) return;
+      var cleanup = unsubscribeIdentity;
+      unsubscribeIdentity = null;
+      cleanup();
+    }
+
+    async function stopChannel() {
+      var stoppedVersion = ++channelVersion;
+      stopIdentitySubscription();
+      await channelQueue;
+      if (listeners.size === 0 && stoppedVersion === channelVersion) await clearChannel();
     }
 
     async function subscribe(listener) {
       if (typeof listener !== 'function') throw new TypeError('listener must be a function');
+      var wasEmpty = listeners.size === 0;
       listeners.add(listener);
-      var pending = channelPromise;
-      if (!pending) {
-        pending = initializeChannel();
-        channelPromise = pending;
+      if (wasEmpty) {
+        startIdentitySubscription();
+        requestChannelRefresh();
       }
       try {
-        await pending;
+        await ensureChannel();
       } catch (error) {
         listeners.delete(listener);
-        if (channelPromise === pending) {
-          var failedChannel = channel;
-          var failedSupabase = channelSupabase;
-          channel = null;
-          channelSupabase = null;
-          channelPromise = null;
-          await remove(failedChannel, failedSupabase);
-        }
+        if (listeners.size === 0) await stopChannel();
         throw error;
       }
 
@@ -265,14 +341,7 @@
         if (cleaned) return;
         cleaned = true;
         listeners.delete(listener);
-        if (listeners.size === 0 && channel) {
-          var current = channel;
-          var currentSupabase = channelSupabase;
-          channel = null;
-          channelSupabase = null;
-          channelPromise = null;
-          await remove(current, currentSupabase);
-        }
+        if (listeners.size === 0) await stopChannel();
       };
     }
 

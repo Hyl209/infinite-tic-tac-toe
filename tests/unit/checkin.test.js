@@ -176,3 +176,26 @@ test('admin lists explicit rules and creates one with nine parameters', async ()
     } },
   ]);
 });
+
+test('single-row check-in RPCs reject missing successful responses', async () => {
+  const accountClient = fakeAccount({ rpcResults: [
+    { data: null, error: null },
+    { data: [], error: null },
+    { data: null, error: null },
+  ] });
+  const client = createCheckinClient({ accountClient });
+
+  await assert.rejects(() => client.checkIn('req-1'), { message: 'INVALID_CHECKIN_RESPONSE' });
+  await assert.rejects(
+    () => client.makeUp('2026-07-01', 'coins', 'req-2'),
+    { message: 'INVALID_CHECKIN_RESPONSE' },
+  );
+  await assert.rejects(
+    () => client.adminCreateRule({}),
+    { message: 'INVALID_CHECKIN_RESPONSE' },
+  );
+  assert.equal(
+    mapCheckinError({ code: 'INVALID_CHECKIN_RESPONSE' }),
+    '签到服务返回了无效数据，请稍后重试',
+  );
+});

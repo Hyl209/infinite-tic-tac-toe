@@ -10,10 +10,19 @@
     ACTIVITY_NOT_STARTED: '活动尚未开始',
     ACTIVITY_ENDED: '活动已结束',
     ACTIVITY_ALREADY_CLAIMED: '活动奖励已经领取',
+    INVALID_ACTIVITY_RESPONSE: '活动服务返回了无效数据，请稍后重试',
   };
 
   function firstRpcRow(data) {
     return Array.isArray(data) ? data[0] : data;
+  }
+
+  function requiredRpcRow(data) {
+    const row = firstRpcRow(data);
+    if (!row || typeof row !== 'object' || Array.isArray(row)) {
+      throw new Error('INVALID_ACTIVITY_RESPONSE');
+    }
+    return row;
   }
 
   function mapActivity(row = {}) {
@@ -73,10 +82,10 @@
 
     async function claimReward(activityId, requestId) {
       requireRegistered();
-      const row = firstRpcRow(await callRpc('claim_activity_reward', {
+      const row = requiredRpcRow(await callRpc('claim_activity_reward', {
         p_activity_id: activityId,
         p_request_id: requestId,
-      })) || {};
+      }));
       return {
         rewardAmount: Number(row.reward_amount ?? 0),
         balance: Number(row.balance ?? 0),
@@ -92,7 +101,7 @@
 
     async function adminSave(input = {}) {
       requireRegistered();
-      const row = firstRpcRow(await callRpc('admin_save_activity', {
+      const row = requiredRpcRow(await callRpc('admin_save_activity', {
         p_id: input.id ?? null,
         p_title: input.title ?? null,
         p_body: input.body ?? null,
@@ -103,15 +112,15 @@
         p_starts_at: input.startsAt ?? null,
         p_ends_at: input.endsAt ?? null,
         p_reward_amount: Number(input.rewardAmount ?? 0),
-      })) || {};
+      }));
       return mapAdminActivity(row);
     }
 
     async function adminUnpublish(activityId) {
       requireRegistered();
-      const row = firstRpcRow(await callRpc('admin_unpublish_activity', {
+      const row = requiredRpcRow(await callRpc('admin_unpublish_activity', {
         p_activity_id: activityId,
-      })) || {};
+      }));
       return mapAdminActivity(row);
     }
 

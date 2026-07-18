@@ -199,6 +199,28 @@ test('管理员保存传递十个参数和空值并可下架活动', async () =>
   ]);
 });
 
+test('single-row activity RPCs reject missing successful responses', async () => {
+  const fake = createFakeAccount();
+  fake.responses.set('claim_activity_reward', { data: null, error: null });
+  fake.responses.set('admin_save_activity', { data: [], error: null });
+  fake.responses.set('admin_unpublish_activity', { data: null, error: null });
+  const client = activities.createActivitiesClient({ accountClient: fake.accountClient });
+
+  await assert.rejects(
+    client.claimReward('activity-1', 'request-1'),
+    { message: 'INVALID_ACTIVITY_RESPONSE' },
+  );
+  await assert.rejects(client.adminSave({}), { message: 'INVALID_ACTIVITY_RESPONSE' });
+  await assert.rejects(
+    client.adminUnpublish('activity-1'),
+    { message: 'INVALID_ACTIVITY_RESPONSE' },
+  );
+  assert.equal(
+    activities.mapActivitiesError(new Error('INVALID_ACTIVITY_RESPONSE')),
+    '活动服务返回了无效数据，请稍后重试',
+  );
+});
+
 test('活动错误码映射成稳定中文提示', () => {
   const expected = new Map([
     ['REGISTERED_ACCOUNT_REQUIRED', '请先登录正式账号'],

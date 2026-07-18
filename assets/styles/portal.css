@@ -153,6 +153,86 @@ body[data-view]:not([data-view="portal"]) .site-nav {
   display: none;
 }
 
+.player-nav-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.player-center-link,
+.notification-bell {
+  min-width: 42px;
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--portal-line);
+  border-radius: 12px;
+  color: var(--portal-muted);
+  background: oklch(0.19 0.018 265 / 0.88);
+  text-decoration: none;
+  transition: border-color 160ms ease, color 160ms ease, background-color 160ms ease;
+}
+
+.player-center-link {
+  gap: 7px;
+  padding: 0 12px;
+  font-size: 0.78rem;
+  font-weight: 720;
+}
+
+.player-nav-icon {
+  width: 18px;
+  height: 18px;
+  order: -1;
+  display: inline-flex;
+}
+
+.player-nav-icon svg,
+.notification-bell > svg {
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.notification-bell {
+  position: relative;
+  width: 42px;
+  padding: 10px;
+}
+
+.notification-bell:hover,
+.notification-bell:focus-visible,
+.player-center-link:hover,
+.player-center-link:focus-visible {
+  border-color: var(--portal-accent-soft);
+  color: var(--portal-ink);
+  background: oklch(0.24 0.04 265 / 0.94);
+}
+
+.notification-unread-count {
+  position: absolute;
+  top: -6px;
+  right: -7px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--portal-bg);
+  border-radius: 999px;
+  color: white;
+  background: var(--portal-accent);
+  font-size: 0.64rem;
+  font-weight: 850;
+  line-height: 1;
+}
+
 .site-nav .account-button {
   min-width: 168px;
   min-height: 46px;
@@ -800,12 +880,35 @@ body[data-view]:not([data-view="portal"]) .admin-shell {
   }
 
   .site-nav .account-button {
-    min-width: 104px;
-    max-width: 118px;
+    width: 42px;
+    min-width: 42px;
+    max-width: 42px;
+    padding: 4px;
   }
 
-  .site-nav .account-display-name {
-    max-width: 64px;
+  .site-nav .account-button-copy {
+    display: none;
+  }
+
+  .player-nav-actions {
+    gap: 5px;
+  }
+
+  .player-center-link,
+  .notification-bell {
+    width: 40px;
+    min-width: 40px;
+    min-height: 40px;
+  }
+
+  .player-center-link {
+    padding: 0;
+    font-size: 0;
+  }
+
+  .player-nav-icon {
+    width: 18px;
+    height: 18px;
   }
 
   .portal-hero-actions {

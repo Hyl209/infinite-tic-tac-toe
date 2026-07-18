@@ -105,8 +105,12 @@ button {
   transition: border-color 180ms ease, background-color 180ms ease, transform 180ms ease;
 }
 
-.game-site-nav .account-button {
+.game-site-nav .player-nav-actions {
   margin-left: auto;
+}
+
+.game-site-nav .account-button {
+  margin-left: 0;
 }
 
 .account-button:hover {
@@ -1873,6 +1877,11 @@ legend {
     position: static;
     width: 100%;
     min-width: 0;
+  }
+
+  .game-site-nav .account-button {
+    width: auto;
+    min-width: 126px;
   }
 
   .account-dialog {

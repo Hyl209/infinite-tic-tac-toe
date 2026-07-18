@@ -16,10 +16,12 @@
     <script src="/src/utils/room-code.js" defer></script>
     <script src="/src/services/online.js" defer></script>
     <script src="/src/services/account.js" defer></script>
+    <script src="/src/services/notifications.js" defer></script>
     <script src="/src/services/economy.js" defer></script>
     <script src="/src/services/stats.js" defer></script>
     <script src="/src/routes/account-panel.js" defer></script>
     <script src="/src/routes/portal.js" defer></script>
+    <script src="/src/routes/notification-bell.js" defer></script>
   </head>
   <body>
     <a class="skip-link" href="#site-main">跳到主要内容</a>
@@ -49,6 +51,16 @@
           <a href="#games" data-portal-section="games">游戏</a>
           <a href="#updates" data-portal-section="updates">动态</a>
         </nav>
+
+        <div class="player-nav-actions">
+          <a class="player-center-link" href="/player/" aria-label="玩家中心">玩家中心<span class="player-nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="8" r="3.25"></circle><path d="M5.5 19c.6-3.3 3-5.2 6.5-5.2s5.9 1.9 6.5 5.2"></path></svg>
+          </span></a>
+          <a id="notification-bell" class="notification-bell" href="/player/?tab=notifications" aria-label="查看通知">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6.5 9.5a5.5 5.5 0 0 1 11 0c0 5 2 5.5 2 7H4.5c0-1.5 2-2 2-7Z"></path><path d="M9.7 19a2.5 2.5 0 0 0 4.6 0"></path></svg>
+            <span id="notification-unread-count" class="notification-unread-count" hidden>0</span>
+          </a>
+        </div>
 
         <button id="account-button" class="account-button" type="button" aria-haspopup="dialog" aria-controls="account-dialog">
           <span class="account-avatar" aria-hidden="true">游</span>

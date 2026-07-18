@@ -4,6 +4,7 @@ const fs = require('node:fs');
 
 let portalContent = {};
 let portal = {};
+let notificationBell = {};
 
 try {
   portalContent = require('../../src/config/portal.js');
@@ -15,6 +16,85 @@ try {
   portal = require('../../src/routes/portal.js');
 } catch {
   portal = {};
+}
+
+try {
+  notificationBell = require('../../src/routes/notification-bell.js');
+} catch {
+  notificationBell = {};
+}
+
+function createNotificationBellHarness({ identity, unreadCounts = [] }) {
+  const listeners = new Map();
+  const badge = { hidden: true, textContent: '' };
+  const document = {
+    visibilityState: 'visible',
+    querySelector(selector) {
+      return selector === '#notification-unread-count' ? badge : null;
+    },
+    addEventListener(type, listener) {
+      listeners.set(type, listener);
+    },
+    removeEventListener(type, listener) {
+      if (listeners.get(type) === listener) listeners.delete(type);
+    },
+  };
+  let currentIdentity = identity;
+  let accountListener = null;
+  let accountCleanupCount = 0;
+  const accountClient = {};
+  const accountPanel = {
+    accountClient,
+    getIdentity: () => ({ ...currentIdentity }),
+    subscribe(listener) {
+      accountListener = listener;
+      return () => {
+        accountCleanupCount += 1;
+        accountListener = null;
+      };
+    },
+  };
+  const calls = [];
+  const notificationsClient = {
+    async list(options) {
+      calls.push({ type: 'list', options });
+      return [];
+    },
+    async countUnread() {
+      calls.push({ type: 'count' });
+      const next = unreadCounts.shift();
+      return typeof next === 'function' ? next() : next;
+    },
+  };
+  const notificationsApi = {
+    createNotificationsClient(options) {
+      calls.push({ type: 'create', options });
+      return notificationsClient;
+    },
+  };
+
+  return {
+    accountClient,
+    accountPanel,
+    badge,
+    calls,
+    document,
+    emitIdentity(nextIdentity) {
+      currentIdentity = nextIdentity;
+      accountListener?.({ identity: { ...nextIdentity } });
+    },
+    emitVisibility(state) {
+      document.visibilityState = state;
+      listeners.get('visibilitychange')?.();
+    },
+    get accountCleanupCount() {
+      return accountCleanupCount;
+    },
+  };
+}
+
+async function flushAsyncWork() {
+  await new Promise((resolve) => setImmediate(resolve));
 }
 
 test('默认页面提供 HYL Space 门户并按工具、作品、游戏、动态排序', () => {
@@ -68,6 +148,157 @@ test('门户加载独立内容、样式、动效和本地 GSAP 资源', () => {
   assert.match(html, /src="\/src\/routes\/account-panel\.js"[^>]*defer/);
   assert.match(html, /src="\/src\/routes\/portal\.js"[^>]*defer/);
   assert.match(html, /id="account-dialog"/);
+});
+
+test('门户导航提供玩家中心和可访问的通知入口', () => {
+  const html = fs.readFileSync('./index.html', 'utf8');
+  const navStart = html.indexOf('class="site-nav"');
+  const mainStart = html.indexOf('id="site-main"');
+  const navMarkup = html.slice(navStart, mainStart);
+
+  assert.match(navMarkup, /href="\/player\/"[^>]*>[^<]*玩家中心/);
+  assert.match(navMarkup, /id="notification-bell"[^>]*href="\/player\/\?tab=notifications"/);
+  assert.match(navMarkup, /id="notification-bell"[^>]*aria-label="[^"]*通知[^"]*"/);
+  assert.match(navMarkup, /id="notification-unread-count"[^>]*hidden/);
+  assert.match(
+    html,
+    /src="\/src\/services\/account\.js"[^>]*defer[\s\S]*src="\/src\/services\/notifications\.js"[^>]*defer[\s\S]*src="\/src\/routes\/account-panel\.js"[^>]*defer[\s\S]*src="\/src\/routes\/notification-bell\.js"[^>]*defer/,
+  );
+});
+
+test('通知服务等待账号初始化完成后再创建', async () => {
+  let finishInitialize;
+  const initialized = new Promise((resolve) => { finishInitialize = resolve; });
+  const badge = { hidden: true, textContent: '' };
+  const document = {
+    visibilityState: 'visible',
+    querySelector: () => badge,
+    addEventListener() {},
+    removeEventListener() {},
+  };
+  let createCount = 0;
+  const accountClient = { initialize: () => initialized };
+  const controller = notificationBell.mount({
+    document,
+    accountPanel: {
+      accountClient,
+      getIdentity: () => ({ kind: 'guest', username: null }),
+      subscribe: () => () => {},
+    },
+    notificationsApi: {
+      createNotificationsClient() {
+        createCount += 1;
+        return { list: async () => [], countUnread: async () => 0 };
+      },
+    },
+  });
+
+  assert.equal(createCount, 0);
+  finishInitialize();
+  await controller.refresh();
+  assert.equal(createCount, 1);
+  controller.destroy();
+});
+
+test('通知铃铛复用账号客户端，注册账号显示上限徽标而游客只保留入口', async () => {
+  assert.equal(typeof notificationBell.mount, 'function');
+  const harness = createNotificationBellHarness({
+    identity: { kind: 'registered', username: 'player-a', displayName: '玩家 A' },
+    unreadCounts: [108],
+  });
+  const controller = notificationBell.mount({
+    document: harness.document,
+    accountPanel: harness.accountPanel,
+    notificationsApi: {
+      createNotificationsClient(options) {
+        return harness.calls.find((call) => call.type === 'create')
+          ? null
+          : (() => {
+              const api = createNotificationBellHarness;
+              void api;
+              harness.calls.push({ type: 'create', options });
+              return {
+                list: async (listOptions) => {
+                  harness.calls.push({ type: 'list', options: listOptions });
+                  return [];
+                },
+                countUnread: async () => {
+                  harness.calls.push({ type: 'count' });
+                  return 108;
+                },
+              };
+            })();
+      },
+    },
+  });
+  await controller.refresh();
+
+  assert.equal(harness.calls[0].options.accountClient, harness.accountClient);
+  assert.deepEqual(harness.calls.find((call) => call.type === 'list').options, { limit: 5 });
+  assert.equal(harness.calls.filter((call) => call.type === 'count').length, 1);
+  assert.equal(harness.badge.hidden, false);
+  assert.equal(harness.badge.textContent, '99+');
+
+  harness.emitIdentity({ kind: 'guest', username: null, displayName: '匿名玩家' });
+  await flushAsyncWork();
+  assert.equal(harness.calls.filter((call) => call.type === 'list').length, 2);
+  assert.equal(harness.calls.filter((call) => call.type === 'count').length, 1);
+  assert.equal(harness.badge.hidden, true);
+  controller.destroy();
+});
+
+test('通知铃铛只在页面重新可见时刷新，且旧账号请求和销毁后事件不能回写', async () => {
+  assert.equal(typeof notificationBell.mount, 'function');
+  let resolveOldUnread;
+  const oldUnread = new Promise((resolve) => { resolveOldUnread = resolve; });
+  const harness = createNotificationBellHarness({
+    identity: { kind: 'registered', username: 'player-a', displayName: '玩家 A' },
+  });
+  let unreadCall = 0;
+  const controller = notificationBell.mount({
+    document: harness.document,
+    accountPanel: harness.accountPanel,
+    notificationsApi: {
+      createNotificationsClient({ accountClient }) {
+        harness.calls.push({ type: 'create', options: { accountClient } });
+        return {
+          async list(options) {
+            harness.calls.push({ type: 'list', options });
+            return [];
+          },
+          async countUnread() {
+            harness.calls.push({ type: 'count' });
+            unreadCall += 1;
+            return unreadCall === 1 ? oldUnread : 2;
+          },
+        };
+      },
+    },
+  });
+
+  harness.emitIdentity({ kind: 'registered', username: 'player-b', displayName: '玩家 B' });
+  await flushAsyncWork();
+  assert.equal(harness.badge.textContent, '2');
+  resolveOldUnread(72);
+  await flushAsyncWork();
+  assert.equal(harness.badge.textContent, '2');
+
+  const listCalls = () => harness.calls.filter((call) => call.type === 'list').length;
+  const beforeVisibility = listCalls();
+  harness.emitVisibility('hidden');
+  await flushAsyncWork();
+  assert.equal(listCalls(), beforeVisibility);
+  harness.emitVisibility('visible');
+  await flushAsyncWork();
+  assert.equal(listCalls(), beforeVisibility + 1);
+
+  controller.destroy();
+  const beforeDestroy = listCalls();
+  harness.emitIdentity({ kind: 'registered', username: 'player-c', displayName: '玩家 C' });
+  harness.emitVisibility('visible');
+  await flushAsyncWork();
+  assert.equal(listCalls(), beforeDestroy);
+  assert.equal(harness.accountCleanupCount, 1);
 });
 
 test('门户配置使用统一字段且占位内容不提供假链接', () => {

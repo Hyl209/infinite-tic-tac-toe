@@ -287,7 +287,7 @@ apply_coin_delta(
 
 - [ ] **Step 5: 实现签到 RPC**
 
-`get_checkin_month(p_month date)` 只接受本月或过去月份，返回目标月每天的奖励、签到状态、签到类型、今天和补签费用。
+`get_checkin_month(p_month date)` 只接受本月或过去月份，返回目标月每天的奖励、签到状态、签到类型、今天和补签费用。已签到日期必须优先返回不可变事实记录 `player_checkins.reward_amount`；未签到日期才按该日期生效规则计算，避免“先签到、后新增今日规则”改变历史展示。
 
 `perform_daily_checkin(p_request_id uuid)` 以香港今天为日期，锁定用户钱包，插入签到记录并发放对应星期奖励。
 
@@ -642,6 +642,7 @@ count_unread_site_notifications：跨分页、过期和停用通知计算正确
 并发活动领取/通知领取/当天签到：唯一记录和单笔流水
 金币不足补签：签到、扣费、奖励全部回滚
 同一 request/稳定幂等键重试：余额和流水守恒
+用户先签到、管理员后新增今日生效规则：月历仍显示 player_checkins 中的实际奖励快照
 ```
 
 - [ ] **Step 3: 运行全部自动测试**

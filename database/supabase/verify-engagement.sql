@@ -70,22 +70,28 @@ begin
      or not has_function_privilege('anon', 'public.list_site_notifications(timestamptz,uuid,integer)', 'EXECUTE') then
     raise exception 'visitor RPC ACL baseline missing';
   end if;
+  if (select count(*) from pg_policies where schemaname = 'public' and tablename = 'site_notifications'
+        and cmd in ('SELECT','ALL')) <> 1 then raise exception 'unexpected site notification SELECT policy'; end if;
   if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'site_notifications'
         and policyname = 'visitors can read active site notifications' and cmd = 'SELECT'
-        and 'anon' = any(roles) and 'authenticated' = any(roles)
+        and permissive = 'PERMISSIVE'
+        and roles @> array['anon','authenticated']::name[]
+        and roles <@ array['anon','authenticated']::name[]
         and lower(regexp_replace(coalesce(qual, ''), '[[:space:]]+', '', 'g')) =
             '((is_active=true)and(visible_at<=now())and((expires_atisnull)or(expires_at>now())))') then
     raise exception 'site notification SELECT policy baseline missing';
   end if;
+  if (select count(*) from pg_policies where schemaname = 'public' and tablename = 'notification_reads'
+        and cmd in ('SELECT','ALL')) <> 1 then raise exception 'unexpected notification read SELECT policy'; end if;
   if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'notification_reads'
         and policyname = 'players can read own notification reads' and cmd = 'SELECT'
-        and 'authenticated' = any(roles)
+        and permissive = 'PERMISSIVE' and roles = array['authenticated']::name[]
         and lower(regexp_replace(coalesce(qual, ''), '[[:space:]]+', '', 'g')) = '(auth.uid()=user_id)') then
     raise exception 'notification read SELECT policy baseline missing';
   end if;
 
   foreach v_name in array array['activity_claims','notification_claims','player_checkins'] loop
-    if not exists (select 1 from pg_trigger where not tgisinternal and tgenabled <> 'D'
+    if not exists (select 1 from pg_trigger where not tgisinternal and tgenabled in ('O','A')
           and tgname = 'engagement_record_immutable' and tgrelid = to_regclass('public.' || v_name)
           and tgfoid = to_regprocedure('public.prevent_engagement_record_mutation()')
           and tgtype = 27

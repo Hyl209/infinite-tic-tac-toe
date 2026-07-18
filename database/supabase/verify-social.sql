@@ -291,20 +291,199 @@ select count(*) as out_of_range_uid_count
 from public.profiles
 where player_uid not between 0 and 999999 or player_uid is null;
 
--- Authenticated exact-search acceptance (run from a real registered-player session):
--- SELECT * FROM public.search_player_by_uid(0); -- must return UID 000000 exactly, if present
--- SELECT * FROM public.search_player_by_uid(1); -- must return UID 000001 exactly, if present
--- SELECT * FROM public.search_player_by_username('<complete_username>'); -- full normalized username only
+with uid_slots as (
+  select
+    count(*) as profile_count,
+    count(*) filter (where player_uid = 0 and public.format_player_uid(player_uid) = '000000') as uid_000000_count,
+    count(*) filter (where player_uid = 1 and public.format_player_uid(player_uid) = '000001') as uid_000001_count
+  from public.profiles
+)
+select
+  profile_count,
+  case when profile_count < 1 then null else uid_000000_count = 1 end as uid_000000_present,
+  case when profile_count < 2 then null else uid_000001_count = 1 end as uid_000001_present
+from uid_slots;
 
--- OPT-IN WRITE ACCEPTANCE: never execute on an unconfirmed project.
--- Each write scenario must run in an isolated real authenticated session and roll back.
--- UID immutable check:
+select
+  not has_column_privilege('authenticated', 'public.profiles', 'player_uid', 'INSERT')
+    as authenticated_insert_player_uid_revoked,
+  not has_column_privilege('authenticated', 'public.profiles', 'player_uid', 'UPDATE')
+    as authenticated_update_player_uid_revoked;
+
+-- Authenticated exact-search spot checks after choosing real test fixtures:
+-- SELECT * FROM public.search_player_by_uid(0);
+-- SELECT * FROM public.search_player_by_uid(1);
+-- SELECT * FROM public.search_player_by_username('<complete_username>');
+
+-- OPT-IN WRITE ACCEPTANCE: never execute these templates on an unconfirmed or production project.
+-- Copy one complete template at a time into an isolated SQL session after removing the leading `-- `.
+-- The default execution path of this file ends above and remains read-only.
+
+-- TEMPLATE: UID IMMUTABILITY
 -- BEGIN;
--- UPDATE public.profiles SET player_uid = player_uid + 1 WHERE id = auth.uid(); -- expect PLAYER_UID_IMMUTABLE
+-- SET LOCAL ROLE postgres;
+-- DO $verify_uid_immutable$
+-- DECLARE
+--   v_profile_id uuid;
+--   v_original_uid integer;
+--   v_caught_expected_error boolean := false;
+-- BEGIN
+--   SELECT profile.id, profile.player_uid
+--   INTO v_profile_id, v_original_uid
+--   FROM public.profiles AS profile
+--   ORDER BY profile.created_at, profile.id
+--   LIMIT 1;
+--   IF v_profile_id IS NULL THEN
+--     RAISE EXCEPTION 'VERIFY_REQUIRES_ONE_PROFILE';
+--   END IF;
+--   BEGIN
+--     UPDATE public.profiles
+--     SET player_uid = CASE WHEN v_original_uid = 999999 THEN 999998 ELSE v_original_uid + 1 END
+--     WHERE id = v_profile_id;
+--   EXCEPTION WHEN OTHERS THEN
+--     IF SQLERRM = 'PLAYER_UID_IMMUTABLE' THEN
+--       v_caught_expected_error := true;
+--     ELSE
+--       RAISE EXCEPTION 'EXPECTED_PLAYER_UID_IMMUTABLE_GOT_%', SQLERRM;
+--     END IF;
+--   END;
+--   IF NOT v_caught_expected_error THEN
+--     RAISE EXCEPTION 'PLAYER_UID_UPDATE_UNEXPECTEDLY_SUCCEEDED';
+--   END IF;
+-- END;
+-- $verify_uid_immutable$;
 -- ROLLBACK;
---
--- Concurrent registration check: create two real Auth registrations concurrently in separate isolated
--- test sessions, let the profile INSERT triggers allocate UIDs, then ROLLBACK any transaction-scoped
--- fixtures and rerun the duplicate/range/order reports above. Expect zero duplicates and consecutive UIDs.
--- Friend acceptance: A calls search_player_by_uid or search_player_by_username, sends to B, B accepts;
--- repeat both exact-search paths in separate BEGIN/ROLLBACK fixtures and expect one friendship only.
+
+-- Concurrent-registration warning: PostgreSQL sequences are non-transactional. Profile/Auth rows roll
+-- back, but each attempted registration permanently consumes one test UID. Use an isolated disposable project.
+-- Run Session A and Session B at the same time, then compare their formatted_player_uid values: they must differ.
+
+-- TEMPLATE: CONCURRENT REGISTRATION SESSION A
+-- BEGIN;
+-- SET LOCAL ROLE postgres;
+-- CREATE TEMP TABLE verify_registration_actor_a (id uuid PRIMARY KEY) ON COMMIT DROP;
+-- WITH inserted_user AS (
+--   INSERT INTO auth.users (id, aud, role, created_at, updated_at)
+--   VALUES (gen_random_uuid(), 'authenticated', 'authenticated', now(), now())
+--   RETURNING id
+-- )
+-- INSERT INTO verify_registration_actor_a (id)
+-- SELECT id FROM inserted_user;
+-- INSERT INTO public.profiles (id, username, game_name)
+-- SELECT actor.id, 'va_' || left(replace(actor.id::text, '-', ''), 12), 'Verify A'
+-- FROM verify_registration_actor_a AS actor;
+-- SELECT
+--   'session_a' AS session_name,
+--   profile.player_uid,
+--   lpad(profile.player_uid::text, 6, '0') AS formatted_player_uid
+-- FROM public.profiles AS profile
+-- JOIN verify_registration_actor_a AS actor ON actor.id = profile.id;
+-- ROLLBACK;
+
+-- TEMPLATE: CONCURRENT REGISTRATION SESSION B
+-- BEGIN;
+-- SET LOCAL ROLE postgres;
+-- CREATE TEMP TABLE verify_registration_actor_b (id uuid PRIMARY KEY) ON COMMIT DROP;
+-- WITH inserted_user AS (
+--   INSERT INTO auth.users (id, aud, role, created_at, updated_at)
+--   VALUES (gen_random_uuid(), 'authenticated', 'authenticated', now(), now())
+--   RETURNING id
+-- )
+-- INSERT INTO verify_registration_actor_b (id)
+-- SELECT id FROM inserted_user;
+-- INSERT INTO public.profiles (id, username, game_name)
+-- SELECT actor.id, 'vb_' || left(replace(actor.id::text, '-', ''), 12), 'Verify B'
+-- FROM verify_registration_actor_b AS actor;
+-- SELECT
+--   'session_b' AS session_name,
+--   profile.player_uid,
+--   lpad(profile.player_uid::text, 6, '0') AS formatted_player_uid
+-- FROM public.profiles AS profile
+-- JOIN verify_registration_actor_b AS actor ON actor.id = profile.id;
+-- ROLLBACK;
+
+-- TEMPLATE: FRIEND REQUEST BY UID
+-- BEGIN;
+-- SET LOCAL ROLE postgres;
+-- DO $verify_friend_uid_context$
+-- DECLARE
+--   v_actor_id uuid;
+--   v_target_uid integer;
+-- BEGIN
+--   SELECT actor.id, target.player_uid
+--   INTO v_actor_id, v_target_uid
+--   FROM public.profiles AS actor
+--   CROSS JOIN public.profiles AS target
+--   WHERE actor.id <> target.id
+--     AND NOT EXISTS (
+--       SELECT 1 FROM public.friendships AS friendship
+--       WHERE (friendship.user_low = actor.id AND friendship.user_high = target.id)
+--          OR (friendship.user_low = target.id AND friendship.user_high = actor.id)
+--     )
+--     AND NOT EXISTS (
+--       SELECT 1 FROM public.friend_requests AS request
+--       WHERE (request.requester_id = actor.id AND request.recipient_id = target.id)
+--          OR (request.requester_id = target.id AND request.recipient_id = actor.id)
+--     )
+--   ORDER BY actor.created_at, actor.id, target.created_at, target.id
+--   LIMIT 1;
+--   IF v_actor_id IS NULL THEN
+--     RAISE EXCEPTION 'VERIFY_REQUIRES_TWO_UNRELATED_PROFILES';
+--   END IF;
+--   PERFORM set_config('request.jwt.claim.sub', v_actor_id::text, true);
+--   PERFORM set_config('request.jwt.claim.role', 'authenticated', true);
+--   PERFORM set_config('verify_social.target_uid', v_target_uid::text, true);
+-- END;
+-- $verify_friend_uid_context$;
+-- SET LOCAL ROLE authenticated;
+-- WITH target AS (
+--   SELECT player.user_id AS target_id
+--   FROM public.search_player_by_uid(current_setting('verify_social.target_uid')::integer) AS player
+-- )
+-- SELECT public.send_friend_request(target_id)
+-- FROM target;
+-- ROLLBACK;
+
+-- TEMPLATE: FRIEND REQUEST BY USERNAME
+-- BEGIN;
+-- SET LOCAL ROLE postgres;
+-- DO $verify_friend_username_context$
+-- DECLARE
+--   v_actor_id uuid;
+--   v_target_username text;
+-- BEGIN
+--   SELECT actor.id, target.username
+--   INTO v_actor_id, v_target_username
+--   FROM public.profiles AS actor
+--   CROSS JOIN public.profiles AS target
+--   WHERE actor.id <> target.id
+--     AND NOT EXISTS (
+--       SELECT 1 FROM public.friendships AS friendship
+--       WHERE (friendship.user_low = actor.id AND friendship.user_high = target.id)
+--          OR (friendship.user_low = target.id AND friendship.user_high = actor.id)
+--     )
+--     AND NOT EXISTS (
+--       SELECT 1 FROM public.friend_requests AS request
+--       WHERE (request.requester_id = actor.id AND request.recipient_id = target.id)
+--          OR (request.requester_id = target.id AND request.recipient_id = actor.id)
+--     )
+--   ORDER BY actor.created_at, actor.id, target.created_at, target.id
+--   LIMIT 1;
+--   IF v_actor_id IS NULL THEN
+--     RAISE EXCEPTION 'VERIFY_REQUIRES_TWO_UNRELATED_PROFILES';
+--   END IF;
+--   PERFORM set_config('request.jwt.claim.sub', v_actor_id::text, true);
+--   PERFORM set_config('request.jwt.claim.role', 'authenticated', true);
+--   PERFORM set_config('verify_social.target_username', v_target_username, true);
+-- END;
+-- $verify_friend_username_context$;
+-- SET LOCAL ROLE authenticated;
+-- WITH target AS (
+--   SELECT player.user_id AS target_id
+--   FROM public.search_player_by_username(current_setting('verify_social.target_username')) AS player
+-- )
+-- SELECT public.send_friend_request(target_id)
+-- FROM target;
+-- ROLLBACK;
+
+-- END OPT-IN WRITE ACCEPTANCE

@@ -24,6 +24,12 @@ function functionBody(sql, name, nextName) {
   return start < 0 ? '' : sql.slice(start, end < 0 ? undefined : end);
 }
 
+function acceptanceTemplate(sql, start, end) {
+  const from = sql.indexOf(start);
+  const to = sql.indexOf(end, from + start.length);
+  return from < 0 ? '' : sql.slice(from, to < 0 ? undefined : to);
+}
+
 test('social acceptance verifier is read-only and covers UID, ACL, RLS, RPC, timing, and operator checks', () => {
   const sql = read(verifyPath);
   assert.notEqual(sql, '', 'missing database/supabase/verify-social.sql');
@@ -72,6 +78,42 @@ test('social acceptance verifier is read-only and covers UID, ACL, RLS, RPC, tim
   assert.match(sql, /concurrent/i);
   assert.match(sql, /PLAYER_UID_IMMUTABLE/i);
   assert.match(sql, /BEGIN[\s\S]*ROLLBACK/i);
+});
+
+test('social write acceptance templates are copyable, isolated, and assert trigger and RPC behavior', () => {
+  const sql = read(verifyPath);
+  const immutable = acceptanceTemplate(sql, 'TEMPLATE: UID IMMUTABILITY', 'TEMPLATE: CONCURRENT REGISTRATION SESSION A');
+  assert.match(immutable, /BEGIN;[\s\S]*SET LOCAL ROLE postgres;/i);
+  assert.match(immutable, /DO \$verify_uid_immutable\$[\s\S]*UPDATE public\.profiles[\s\S]*SET player_uid/i);
+  assert.match(immutable, /SQLERRM[\s\S]*PLAYER_UID_IMMUTABLE/i);
+  assert.match(immutable, /ROLLBACK;/i);
+  assert.match(sql, /has_column_privilege\s*\(\s*'authenticated'[\s\S]*'player_uid'[\s\S]*'UPDATE'/i);
+
+  const sessionA = acceptanceTemplate(sql, 'TEMPLATE: CONCURRENT REGISTRATION SESSION A', 'TEMPLATE: CONCURRENT REGISTRATION SESSION B');
+  const sessionB = acceptanceTemplate(sql, 'TEMPLATE: CONCURRENT REGISTRATION SESSION B', 'TEMPLATE: FRIEND REQUEST BY UID');
+  for (const session of [sessionA, sessionB]) {
+    assert.match(session, /BEGIN;[\s\S]*INSERT INTO auth\.users/i);
+    assert.match(session, /gen_random_uuid\(\)/i);
+    assert.match(session, /INSERT INTO public\.profiles\s*\(\s*id\s*,\s*username\s*,\s*game_name\s*\)/i);
+    assert.match(session, /lpad\s*\(\s*profile\.player_uid::text\s*,\s*6\s*,\s*'0'\s*\)/i);
+    assert.match(session, /ROLLBACK;/i);
+    assert.doesNotMatch(session, /[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i);
+    assert.doesNotMatch(session, /\b[^\s']+@[^\s']+\b/);
+  }
+
+  const uidRequest = acceptanceTemplate(sql, 'TEMPLATE: FRIEND REQUEST BY UID', 'TEMPLATE: FRIEND REQUEST BY USERNAME');
+  const usernameRequest = acceptanceTemplate(sql, 'TEMPLATE: FRIEND REQUEST BY USERNAME', 'END OPT-IN WRITE ACCEPTANCE');
+  for (const template of [uidRequest, usernameRequest]) {
+    assert.match(template, /BEGIN;/i);
+    assert.match(template, /set_config\s*\(\s*'request\.jwt\.claim\.sub'/i);
+    assert.match(template, /set_config\s*\(\s*'request\.jwt\.claim\.role'\s*,\s*'authenticated'/i);
+    assert.match(template, /SET LOCAL ROLE authenticated;/i);
+    assert.match(template, /target_id[\s\S]*send_friend_request\s*\(\s*target_id\s*\)/i);
+    assert.match(template, /ROLLBACK;/i);
+  }
+  assert.match(uidRequest, /search_player_by_uid\s*\(/i);
+  assert.match(usernameRequest, /search_player_by_username\s*\(/i);
+  assert.match(sql, /uid_000000_present[\s\S]*uid_000001_present/i);
 });
 
 test('社交迁移是增量迁移且 setup 同步包含完整功能', () => {

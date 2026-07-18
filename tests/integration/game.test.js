@@ -1509,6 +1509,90 @@ test('late cancel results cannot mutate a new room or a destroyed controller', a
   });
 });
 
+test('same-lifecycle refreshes only commit the newest response', async () => {
+  const refresh1 = deferred();
+  const refresh2 = deferred();
+  let request = 0;
+  const invite = (suffix, uid) => ({
+    id: `invite-${suffix}`, gameId: 'room-1', direction: 'outgoing', status: 'pending',
+    recipient: { id: `friend-${suffix}`, uid, displayName: `${suffix.toUpperCase()} 好友` },
+  });
+  const harness = createGameFriendsHarness({
+    listInviteData() {
+      request += 1;
+      return request === 1 ? refresh1.promise : refresh2.promise;
+    },
+  });
+  let controller;
+  try {
+    controller = loadGameFriendsController().mount({ accountPanel: harness.accountPanel });
+    controller.setWaitingRoom({
+      roomId: 'room-1', status: 'waiting', playerMark: 'X', playerNames: { O: null },
+    });
+    await flushGameFriends();
+    harness.emitRealtime();
+    await flushGameFriends();
+    assert.equal(harness.calls.filter((call) => call.type === 'list-invites').length, 2);
+
+    refresh2.resolve([invite('b', '000002')]);
+    await flushGameFriends();
+    assert.match(harness.nodes.get('#friend-invite-list').textContent, /B 好友/);
+    refresh1.resolve([invite('a', '000001')]);
+    await flushGameFriends();
+    assert.match(harness.nodes.get('#friend-invite-list').textContent, /B 好友/);
+    assert.doesNotMatch(harness.nodes.get('#friend-invite-list').textContent, /A 好友/);
+  } finally {
+    await controller?.destroy();
+    harness.restore();
+  }
+});
+
+test('a refresh started before cancel cannot revive the cancelled pending invite', async () => {
+  const staleRefresh = deferred();
+  const pendingInvite = {
+    id: 'invite-a', gameId: 'room-1', direction: 'outgoing', status: 'pending',
+    recipient: { id: 'friend-a', uid: '000001', displayName: 'A 好友' },
+  };
+  let request = 0;
+  const harness = createGameFriendsHarness({
+    listInviteData() {
+      request += 1;
+      return request === 1 ? [pendingInvite] : staleRefresh.promise;
+    },
+  });
+  let controller;
+  try {
+    controller = loadGameFriendsController().mount({ accountPanel: harness.accountPanel });
+    controller.setWaitingRoom({
+      roomId: 'room-1', status: 'waiting', playerMark: 'X', playerNames: { O: null },
+    });
+    await flushGameFriends();
+    assert.match(harness.nodes.get('#friend-invite-list').textContent, /A 好友/);
+
+    harness.emitRealtime();
+    await flushGameFriends();
+    harness.nodes.get('#friend-invite-list').querySelectorAll('button')
+      .find((button) => button.dataset.action === 'cancel').click();
+    await flushGameFriends();
+    assert.equal(
+      harness.nodes.get('#friend-invite-list').querySelectorAll('button')
+        .some((button) => button.dataset.action === 'cancel'),
+      false,
+    );
+
+    staleRefresh.resolve([pendingInvite]);
+    await flushGameFriends();
+    assert.equal(
+      harness.nodes.get('#friend-invite-list').querySelectorAll('button')
+        .some((button) => button.dataset.action === 'cancel'),
+      false,
+    );
+  } finally {
+    await controller?.destroy();
+    harness.restore();
+  }
+});
+
 test('setWaitingRoom(null) and destroy close the dialog and clean realtime/client state', async () => {
   const harness = createGameFriendsHarness({
     friends: [{ id: 'friend-1', uid: '000123', displayName: '好友', online: true }],

@@ -19,6 +19,7 @@
     let busy = false;
     let destroyed = false;
     let generation = 0;
+    let refreshRequestId = 0;
     let activeIdentityKey = getIdentityKey();
     let unsubscribeRealtime = null;
     let realtimeStart = null;
@@ -183,12 +184,13 @@
     async function refresh({ loadFriends = false } = {}) {
       if (!waitingRoom || !isRegistered()) return;
       const lifecycle = captureLifecycle();
+      const requestId = ++refreshRequestId;
       try {
         const [nextInvites, nextFriends] = await Promise.all([
           friendsClient.listInvites(),
           loadFriends ? friendsClient.listFriends() : Promise.resolve(null),
         ]);
-        if (!isCurrentLifecycle(lifecycle)) return;
+        if (!isCurrentLifecycle(lifecycle) || requestId !== refreshRequestId) return;
         pendingInvite = nextInvites.find((invite) => (
           invite.direction === 'outgoing'
           && invite.status === 'pending'
@@ -198,7 +200,7 @@
         busy = false;
         render();
       } catch (error) {
-        if (!isCurrentLifecycle(lifecycle)) return;
+        if (!isCurrentLifecycle(lifecycle) || requestId !== refreshRequestId) return;
         busy = false;
         setMessage(friendsApi.mapFriendsError?.(error) || '好友服务暂时不可用', 'error');
         render();
@@ -223,6 +225,7 @@
       try {
         const result = await friendsClient.sendGameInvite(lifecycle.roomId, friend.id);
         if (!isCurrentLifecycle(lifecycle) || !isEligibleRoom(waitingRoom)) return;
+        refreshRequestId += 1;
         pendingInvite = {
           id: result, gameId: lifecycle.roomId, recipient: friend, status: 'pending',
         };
@@ -247,6 +250,7 @@
       try {
         await friendsClient.cancelGameInvite(inviteId);
         if (!isCurrentLifecycle(lifecycle) || pendingInvite?.id !== lifecycle.inviteId) return;
+        refreshRequestId += 1;
         pendingInvite = null;
         busy = false;
         setMessage('邀请已取消', 'success');
@@ -261,6 +265,7 @@
 
     function resetLifecycle(nextRoom = null) {
       generation += 1;
+      refreshRequestId += 1;
       waitingRoom = nextRoom;
       friends = [];
       pendingInvite = null;
@@ -295,6 +300,7 @@
     async function destroy() {
       if (destroyed) return;
       generation += 1;
+      refreshRequestId += 1;
       destroyed = true;
       inviteButton.removeEventListener('click', openDialog);
       closeButton.removeEventListener('click', closeDialog);
@@ -337,7 +343,7 @@
       void resetLifecycle(nextRoom).then(() => {
         if (!nextRoom || destroyed) return;
         void startRealtime();
-        void refresh();
+        if (!dialog.open) void refresh();
       });
     });
     inviteButton.hidden = true;

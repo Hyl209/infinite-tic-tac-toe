@@ -33,30 +33,32 @@ test('页面加载战绩服务并提供分开的个人历史和排行榜入口',
 });
 
 test('管理后台提供赛季开启结束和历史列表', () => {
-  const html = fs.readFileSync('./game/index.html', 'utf8');
+  const html = fs.readFileSync('./admin/index.html', 'utf8');
+  const gameHtml = fs.readFileSync('./game/index.html', 'utf8');
   for (const id of [
     'admin-season-form',
-    'admin-season-name',
     'admin-current-season',
     'end-current-season-button',
     'admin-season-list',
   ]) {
     assert.match(html, new RegExp(`id="${id}"`));
   }
-  assert.match(html, /id="admin-title">管理后台</);
-  assert.match(html, /id="open-admin-button"[^>]*>管理后台</);
+  assert.match(html, /name="seasonName"/);
+  assert.match(gameHtml, /id="open-admin-button"[^>]*>管理后台</);
 });
 
 test('页面控制器接入战绩查询、分页、排行榜和赛季管理', () => {
   const source = fs.readFileSync('./src/routes/game.js', 'utf8');
+  const adminSource = fs.readFileSync('./src/routes/admin.js', 'utf8');
   const accountSource = fs.readFileSync('./src/routes/account-panel.js', 'utf8');
   assert.match(accountSource, /createStatsClient\(\{[\s\S]*accountClient/);
   assert.match(source, /statsClient\.listSeasons/);
   assert.match(accountSource, /statsClient\.getHistory/);
   assert.match(accountSource, /statsClient\.getMyStandings/);
   assert.match(source, /statsClient\.getLeaderboard/);
-  assert.match(source, /statsClient\.startSeason/);
-  assert.match(source, /statsClient\.endSeason/);
+  assert.match(adminSource, /statsClient\.listSeasons/);
+  assert.match(adminSource, /statsClient\.startSeason/);
+  assert.match(adminSource, /statsClient\.endSeason/);
   assert.match(accountSource, /beforeFinishedAt/);
   assert.match(accountSource, /beforeId/);
 });

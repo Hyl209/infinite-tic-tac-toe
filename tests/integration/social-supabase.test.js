@@ -1,0 +1,118 @@
+'use strict';
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+
+const migrationPath = './database/supabase/migrations/20260723_social.sql';
+const setupPath = './database/supabase/setup.sql';
+
+function read(path) {
+  return fs.existsSync(path) ? fs.readFileSync(path, 'utf8') : '';
+}
+
+function socialSqlFiles() {
+  return [read(migrationPath), read(setupPath)];
+}
+
+function functionBody(sql, name, nextName) {
+  const start = sql.indexOf(`create or replace function public.${name}`);
+  const end = nextName ? sql.indexOf(`create or replace function public.${nextName}`, start + 1) : -1;
+  return start < 0 ? '' : sql.slice(start, end < 0 ? undefined : end);
+}
+
+test('社交迁移是增量迁移且 setup 同步包含完整功能', () => {
+  const migration = read(migrationPath);
+  assert.notEqual(migration, '');
+  assert.doesNotMatch(migration, /drop table[^;]*(?:profiles|online_games)/i);
+  assert.doesNotMatch(migration, /truncate\s+/i);
+
+  for (const sql of socialSqlFiles()) {
+    for (const table of ['friend_requests', 'friendships', 'player_presence', 'game_invites']) {
+      assert.match(sql, new RegExp(`create table(?: if not exists)? public\\.${table}`, 'i'));
+    }
+    for (const rpc of [
+      'search_player_by_username', 'search_player_by_uid', 'list_friends',
+      'list_friend_requests', 'send_friend_request', 'accept_friend_request',
+      'reject_friend_request', 'remove_friend', 'heartbeat_player_presence',
+      'list_game_invites', 'send_game_invite', 'cancel_game_invite',
+      'decline_game_invite',
+    ]) {
+      assert.match(sql, new RegExp(`create or replace function public\\.${rpc}`, 'i'));
+    }
+  }
+});
+
+test('玩家 UID 从 000000 原子分配、管理员优先回填且永远不可修改', () => {
+  for (const sql of socialSqlFiles()) {
+    assert.match(sql, /create sequence public\.player_uid_seq[\s\S]*minvalue\s+0[\s\S]*maxvalue\s+999999[\s\S]*start\s+with\s+0/i);
+    assert.match(sql, /add column if not exists player_uid integer/i);
+    assert.match(sql, /profiles_player_uid_(?:key|unique)|unique\s*\(player_uid\)/i);
+    assert.match(sql, /player_uid between 0 and 999999/i);
+    assert.match(sql, /row_number\(\)\s+over\s*\([\s\S]*admin[\s\S]*created_at[\s\S]*id/i);
+    assert.match(sql, /setval\s*\(\s*'public\.player_uid_seq'/i);
+    assert.match(sql, /nextval\s*\(\s*'public\.player_uid_seq'/i);
+    assert.match(sql, /PLAYER_UID_EXHAUSTED/);
+    assert.match(sql, /new\.player_uid\s+is distinct from\s+old\.player_uid/i);
+    assert.match(sql, /PLAYER_UID_IMMUTABLE/);
+    assert.match(sql, /revoke all on sequence public\.player_uid_seq from public, anon, authenticated/i);
+    assert.match(sql, /grant insert\s*\([^)]*id[^)]*username[^)]*game_name[^)]*\)\s+on public\.profiles to authenticated/i);
+    assert.doesNotMatch(sql, /grant insert\s*\([^)]*player_uid[^)]*\)\s+on public\.profiles to authenticated/i);
+  }
+});
+
+test('好友关系、申请与邀请使用 canonical 唯一约束和事务行锁', () => {
+  for (const sql of socialSqlFiles()) {
+    assert.match(sql, /least\s*\(requester_id::text,\s*recipient_id::text\)[\s\S]*greatest\s*\(requester_id::text,\s*recipient_id::text\)/i);
+    assert.match(sql, /primary key\s*\(user_low,\s*user_high\)/i);
+    assert.match(sql, /user_low::text\s*<\s*user_high::text/i);
+    assert.match(sql, /references public\.online_games\s*\(id\)/i);
+    assert.match(sql, /where\s+status\s*=\s*'pending'/i);
+    assert.match(functionBody(sql, 'accept_friend_request', 'reject_friend_request'), /for update/i);
+    assert.match(functionBody(sql, 'send_game_invite', 'cancel_game_invite'), /for update/i);
+    assert.match(sql, /interval\s+'90 seconds'/i);
+    assert.match(sql, /interval\s+'15 minutes'/i);
+  }
+});
+
+test('好友搜索仅支持精确 UID 或完整用户名且返回补零 UID', () => {
+  for (const sql of socialSqlFiles()) {
+    const usernameSearch = functionBody(sql, 'search_player_by_username', 'search_player_by_uid');
+    const uidSearch = functionBody(sql, 'search_player_by_uid', 'list_friends');
+    assert.match(usernameSearch, /lower\s*\(btrim\s*\(coalesce\s*\(p_username/i);
+    assert.match(usernameSearch, /profile\.username\s*=\s*v_username/i);
+    assert.doesNotMatch(usernameSearch, /\bilike\b|\blike\b/i);
+    assert.match(uidSearch, /p_player_uid\s+between\s+0\s+and\s+999999/i);
+    assert.match(uidSearch, /profile\.player_uid\s*=\s*p_player_uid/i);
+    assert.match(sql, /lpad\s*\([^;]*player_uid[^;]*6[^;]*'0'/i);
+    assert.match(sql, /INVALID_PLAYER_UID/);
+  }
+});
+
+test('社交表只读、参与者 RLS、Realtime 与 RPC 权限均显式收口', () => {
+  for (const sql of socialSqlFiles()) {
+    for (const table of ['friend_requests', 'friendships', 'player_presence', 'game_invites']) {
+      assert.match(sql, new RegExp(`alter table public\\.${table} enable row level security`, 'i'));
+      assert.match(sql, new RegExp(`revoke all on table public\\.${table} from public, anon, authenticated`, 'i'));
+      assert.doesNotMatch(sql, new RegExp(`grant\\s+(?:insert|update|delete)[^;]*public\\.${table}[^;]*authenticated`, 'i'));
+    }
+    assert.match(sql, /auth\.uid\(\)\s+in\s*\(requester_id,\s*recipient_id\)/i);
+    assert.match(sql, /auth\.uid\(\)\s+in\s*\(user_low,\s*user_high\)/i);
+    assert.match(sql, /auth\.uid\(\)\s+in\s*\(sender_id,\s*recipient_id\)/i);
+    assert.match(sql, /alter publication supabase_realtime add table public\.friend_requests/i);
+    assert.match(sql, /alter publication supabase_realtime add table public\.game_invites/i);
+    assert.match(sql, /revoke execute on function public\.search_player_by_uid\(integer\) from public, anon/i);
+    assert.match(sql, /grant execute on function public\.search_player_by_uid\(integer\) to authenticated/i);
+  }
+});
+
+test('房间变化触发器只同步邀请状态，不修改棋局内容', () => {
+  for (const sql of socialSqlFiles()) {
+    const triggerFunction = functionBody(sql, 'sync_game_invite_status');
+    assert.match(triggerFunction, /update public\.game_invites/i);
+    assert.match(triggerFunction, /status\s*=\s*'accepted'/i);
+    assert.match(triggerFunction, /status\s*=\s*'cancelled'/i);
+    assert.doesNotMatch(triggerFunction, /update public\.online_games/i);
+    assert.match(sql, /after update of o_player, status on public\.online_games/i);
+  }
+});

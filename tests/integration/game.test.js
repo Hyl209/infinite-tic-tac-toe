@@ -920,3 +920,32 @@ test('困难五子棋 AI 通过 Worker 执行并带有过期请求保护', () =>
   assert.match(worker, /importScripts\(['"]\.\.\/domain\/games\/gomoku\.js['"]\)/);
   assert.match(worker, /timeLimitMs:\s*1200/);
 });
+
+test('waiting room exposes the friend invitation dialog and independent controller', () => {
+  const html = fs.readFileSync('./game/index.html', 'utf8');
+  for (const id of [
+    'invite-friend-button', 'friend-invite-dialog',
+    'friend-invite-list', 'friend-invite-message',
+  ]) {
+    assert.match(html, new RegExp(`id=["']${id}["']`), `missing #${id}`);
+  }
+  assert.match(html, /src=["']\/src\/services\/friends\.js["']/);
+  assert.match(html, /src=["']\/src\/routes\/game-friends\.js["']/);
+
+  const controller = fs.readFileSync('./src/routes/game-friends.js', 'utf8');
+  assert.match(controller, /createFriendsClient\s*\(\s*\{\s*accountClient\s*\}\s*\)/);
+  assert.match(controller, /setWaitingRoom\s*\(/);
+  assert.match(controller, /listFriends\s*\(/);
+  assert.match(controller, /sendGameInvite\s*\(/);
+  assert.match(controller, /cancelGameInvite\s*\(/);
+  assert.doesNotMatch(controller, /createAccountClient\s*\(/);
+});
+
+test('game route only wires waiting room state into the friend controller', () => {
+  const source = fs.readFileSync('./src/routes/game.js', 'utf8');
+  assert.match(source, /HYLGameFriends\?*\.mount\s*\(/);
+  assert.match(source, /gameFriends\.setWaitingRoom\s*\(/);
+  assert.match(source, /onlineGame\?\.status\s*===\s*['"]waiting['"]/);
+  assert.match(source, /onlineGame\?\.playerMark\s*===\s*['"]X['"]/);
+  assert.doesNotMatch(source, /createFriendsClient\s*\(/);
+});

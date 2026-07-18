@@ -1538,3 +1538,40 @@ test('player styles preserve the Black Obsidian system on narrow and reduced-mot
   assert.doesNotMatch(css, /background-clip:\s*text/);
   assert.doesNotMatch(css, /backdrop-filter/);
 });
+
+test('player center exposes UID-aware friend management and invite inbox structure', () => {
+  const html = read('./player/index.html');
+  for (const id of [
+    'player-summary-uid', 'player-tab-friends', 'player-panel-friends',
+    'friend-search-form', 'friend-search-input', 'friend-search-result',
+    'incoming-friend-requests', 'outgoing-friend-requests', 'friend-list',
+    'game-invite-list', 'friend-message', 'profile-player-uid',
+  ]) {
+    assert.match(html, new RegExp(`id=["']${id}["']`), `missing #${id}`);
+  }
+  assert.match(html, /输入 6 位 UID 或完整用户名/);
+  assert.match(html, /src=["']\/src\/services\/friends\.js["']/);
+  assert.match(html, /src=["']\/src\/routes\/social-inbox\.js["']/);
+});
+
+test('player route reuses the shared account client and renders padded friend UIDs', () => {
+  const source = read('./src/routes/player.js');
+  assert.match(source, /createFriendsClient\s*\(\s*\{\s*accountClient\s*\}\s*\)/);
+  assert.match(source, /searchExact\s*\(/);
+  assert.match(source, /listFriends\s*\(/);
+  assert.match(source, /listRequests\s*\(/);
+  assert.match(source, /listInvites\s*\(/);
+  assert.match(source, /UID\s*\$\{/);
+  assert.match(source, /confirm\s*\(/);
+  assert.doesNotMatch(source, /createAccountClient\s*\(/);
+});
+
+test('friend UI keeps product states, focus visibility, and responsive layout', () => {
+  const css = read('./assets/styles/player.css');
+  assert.match(css, /\.friend-search-form/);
+  assert.match(css, /\.friend-list/);
+  assert.match(css, /\.friend-player-uid/);
+  assert.match(css, /\.friend-status\[data-online=["']true["']\]/);
+  assert.match(css, /\.friend-action:focus-visible/);
+  assert.match(css, /@media\s*\(max-width:\s*759px\)[\s\S]*\.friend-search-form/s);
+});

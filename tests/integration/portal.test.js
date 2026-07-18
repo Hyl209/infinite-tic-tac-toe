@@ -375,3 +375,23 @@ test('移动菜单只在打开且点击菜单外部时关闭', () => {
     open: false, target: outside, menu, menuButton,
   }), false);
 });
+
+test('all public shells load the social inbox and expose an accessible toast region', () => {
+  for (const path of ['./index.html', './game/index.html', './player/index.html']) {
+    const html = fs.readFileSync(path, 'utf8');
+    assert.match(html, /src=["']\/src\/services\/friends\.js["']/);
+    assert.match(html, /src=["']\/src\/routes\/social-inbox\.js["']/);
+    assert.match(html, /id=["']social-toast-region["']/);
+    assert.match(html, /aria-live=["']polite["']/);
+    assert.match(html, /id=["']profile-player-uid["']/);
+  }
+});
+
+test('notification bell merges site and social pending counts', () => {
+  const source = fs.readFileSync('./src/routes/notification-bell.js', 'utf8');
+  assert.match(source, /friendsApi/);
+  assert.match(source, /createFriendsClient\s*\(/);
+  assert.match(source, /listRequests\s*\(/);
+  assert.match(source, /listInvites\s*\(/);
+  assert.match(source, /site[^\n]*\+[^\n]*social|social[^\n]*\+[^\n]*site/i);
+});

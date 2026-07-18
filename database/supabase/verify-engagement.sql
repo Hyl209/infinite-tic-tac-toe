@@ -73,12 +73,14 @@ begin
   if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'site_notifications'
         and policyname = 'visitors can read active site notifications' and cmd = 'SELECT'
         and 'anon' = any(roles) and 'authenticated' = any(roles)
-        and qual like '%is_active%' and qual like '%visible_at%' and qual like '%expires_at%') then
+        and lower(regexp_replace(coalesce(qual, ''), '[[:space:]]+', '', 'g')) =
+            '((is_active=true)and(visible_at<=now())and((expires_atisnull)or(expires_at>now())))') then
     raise exception 'site notification SELECT policy baseline missing';
   end if;
   if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'notification_reads'
         and policyname = 'players can read own notification reads' and cmd = 'SELECT'
-        and 'authenticated' = any(roles) and qual like '%auth.uid()%' and qual like '%user_id%') then
+        and 'authenticated' = any(roles)
+        and lower(regexp_replace(coalesce(qual, ''), '[[:space:]]+', '', 'g')) = '(auth.uid()=user_id)') then
     raise exception 'notification read SELECT policy baseline missing';
   end if;
 
@@ -86,7 +88,8 @@ begin
     if not exists (select 1 from pg_trigger where not tgisinternal and tgenabled <> 'D'
           and tgname = 'engagement_record_immutable' and tgrelid = to_regclass('public.' || v_name)
           and tgfoid = to_regprocedure('public.prevent_engagement_record_mutation()')
-          and pg_get_triggerdef(oid) like '%BEFORE UPDATE OR DELETE%'
+          and tgtype = 27
+          and pg_get_triggerdef(oid) like '%BEFORE DELETE OR UPDATE%'
           and pg_get_triggerdef(oid) like '%FOR EACH ROW%') then
       raise exception 'immutable trigger baseline missing: public.%', v_name;
     end if;

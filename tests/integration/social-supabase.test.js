@@ -6,6 +6,7 @@ const fs = require('node:fs');
 
 const migrationPath = './database/supabase/migrations/20260723_social.sql';
 const setupPath = './database/supabase/setup.sql';
+const verifyPath = './database/supabase/verify-social.sql';
 
 function read(path) {
   return fs.existsSync(path) ? fs.readFileSync(path, 'utf8') : '';
@@ -22,6 +23,56 @@ function functionBody(sql, name, nextName) {
     : sql.indexOf('$$;', start) + 3;
   return start < 0 ? '' : sql.slice(start, end < 0 ? undefined : end);
 }
+
+test('social acceptance verifier is read-only and covers UID, ACL, RLS, RPC, timing, and operator checks', () => {
+  const sql = read(verifyPath);
+  assert.notEqual(sql, '', 'missing database/supabase/verify-social.sql');
+  assert.match(sql, /SAFETY:[^\n]*(?:read-only|read only)/i);
+  assert.doesNotMatch(sql, /^\s*(?:insert|update|delete|truncate|alter|create|drop|grant|revoke)\b/im);
+
+  for (const table of ['friend_requests', 'friendships', 'player_presence', 'game_invites']) {
+    assert.match(sql, new RegExp(`'${table}'`, 'i'));
+  }
+  for (const rpc of [
+    'search_player_by_username(text)', 'search_player_by_uid(integer)', 'list_friends()',
+    'list_friend_requests()', 'send_friend_request(uuid)', 'accept_friend_request(uuid)',
+    'reject_friend_request(uuid)', 'remove_friend(uuid)', 'heartbeat_player_presence()',
+    'list_game_invites()', 'send_game_invite(uuid,uuid)', 'cancel_game_invite(uuid)',
+    'decline_game_invite(uuid)',
+  ]) {
+    assert.match(sql, new RegExp(rpc.replace(/[()]/g, '\\$&').replace(',', '\\s*,\\s*'), 'i'));
+  }
+
+  assert.match(sql, /information_schema\.columns[\s\S]*player_uid[\s\S]*is_nullable[\s\S]*NO/i);
+  assert.match(sql, /profiles_player_uid_unique/i);
+  assert.match(sql, /profiles_player_uid_range/i);
+  assert.match(sql, /pg_sequences[\s\S]*player_uid_seq[\s\S]*min_value[\s\S]*max_value[\s\S]*cycle/i);
+  assert.match(sql, /profiles_assign_player_uid[\s\S]*assign_player_uid/i);
+  assert.match(sql, /profiles_prevent_player_uid_change[\s\S]*prevent_player_uid_change/i);
+  assert.match(sql, /has_column_privilege[\s\S]*player_uid[\s\S]*(?:INSERT|UPDATE)/i);
+
+  assert.match(sql, /row_number\(\)\s+over/i);
+  assert.match(sql, /left join public\.admins as admin on admin\.user_id = profile\.id/i);
+  assert.match(sql, /order by\s*\(admin\.user_id is not null\) desc,\s*profile\.created_at,\s*profile\.id/i);
+  assert.match(sql, /lpad\s*\(\s*profile\.player_uid::text\s*,\s*6\s*,\s*'0'\s*\)/i);
+  assert.match(sql, /expected_player_uid[\s\S]*actual_player_uid/i);
+  assert.match(sql, /player_uid\s*=\s*0[\s\S]*000000/i);
+  assert.match(sql, /player_uid\s*=\s*1[\s\S]*000001/i);
+  assert.match(sql, /group by player_uid[\s\S]*having count\(\*\)\s*>\s*1/i);
+  assert.match(sql, /player_uid\s+not between\s+0\s+and\s+999999/i);
+
+  assert.match(sql, /pg_policies/i);
+  assert.match(sql, /pg_publication_tables[\s\S]*supabase_realtime/i);
+  assert.match(sql, /game_invites_one_pending_per_game/i);
+  assert.match(sql, /90 seconds/i);
+  assert.match(sql, /15 minutes/i);
+  assert.match(sql, /search_player_by_uid\s*\(\s*0\s*\)/i);
+  assert.match(sql, /search_player_by_uid\s*\(\s*1\s*\)/i);
+  assert.match(sql, /search_player_by_username\s*\(/i);
+  assert.match(sql, /concurrent/i);
+  assert.match(sql, /PLAYER_UID_IMMUTABLE/i);
+  assert.match(sql, /BEGIN[\s\S]*ROLLBACK/i);
+});
 
 test('社交迁移是增量迁移且 setup 同步包含完整功能', () => {
   const migration = read(migrationPath);

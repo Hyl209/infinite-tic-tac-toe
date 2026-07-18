@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const migrationPath = './database/supabase/migrations/20260718_stats.sql';
 const guestHistoryMigrationPath = './database/supabase/migrations/20260719_stats_guest_history.sql';
 const seasonAdminMigrationPath = './database/supabase/migrations/20260720_stats_season_admin.sql';
-const historyAmbiguityMigrationPath = './database/supabase/migrations/20260723_stats_history_ambiguity.sql';
+const historyAmbiguityMigrationPath = './database/supabase/migrations/20260724_stats_history_ambiguity.sql';
 
 function read(path) {
   return fs.existsSync(path) ? fs.readFileSync(path, 'utf8') : '';

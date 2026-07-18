@@ -2214,6 +2214,16 @@ begin
   if not exists (
     select 1 from pg_constraint
     where conrelid = 'public.profiles'::regclass
+      and conname = 'profiles_username_not_player_uid'
+  ) then
+    alter table public.profiles
+      add constraint profiles_username_not_player_uid
+      check (not (username ~ '^[0-9]+$' and char_length(username) = 6));
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.profiles'::regclass
       and conname = 'profiles_player_uid_range'
   ) then
     alter table public.profiles

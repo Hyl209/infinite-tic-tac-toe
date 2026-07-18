@@ -5,6 +5,7 @@
   const GUEST_NAME_STORAGE_KEY = 'board-game-guest-name';
   const GUEST_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   const USERNAME_PATTERN = /^[a-z0-9_]{3,20}$/;
+  const PLAYER_UID_USERNAME_PATTERN = /^[0-9]{6}$/;
   const GUEST_NAME_PATTERN = /^匿名玩家·[A-HJ-NP-Z2-9]{4}$/;
   const CONTROL_CHARACTER_PATTERN = /[\u0000-\u001f\u007f]/;
 
@@ -12,6 +13,7 @@
     ONLINE_NOT_CONFIGURED: '账号服务尚未配置',
     SUPABASE_SDK_LOAD_FAILED: '账号服务加载失败，请稍后重试',
     INVALID_USERNAME: '用户名需为 3 至 20 位英文、数字或下划线',
+    PLAYER_UID_USERNAME_RESERVED: '6 位纯数字用户名保留为玩家 UID，请使用其他用户名',
     INVALID_PASSWORD: '密码需为 8 至 64 位',
     INVALID_GAME_NAME: '游戏名需为 1 至 16 个字符',
     PROFILE_REQUIRED: '请先完成个人资料',
@@ -25,7 +27,14 @@
   }
 
   function isValidUsername(value) {
-    return USERNAME_PATTERN.test(String(value || ''));
+    const username = String(value || '');
+    return USERNAME_PATTERN.test(username) && !PLAYER_UID_USERNAME_PATTERN.test(username);
+  }
+
+  function usernameErrorCode(value) {
+    return PLAYER_UID_USERNAME_PATTERN.test(String(value || ''))
+      ? 'PLAYER_UID_USERNAME_RESERVED'
+      : 'INVALID_USERNAME';
   }
 
   function isValidPassword(value) {
@@ -46,7 +55,7 @@
 
   function usernameToEmail(value) {
     const username = normalizeUsername(value);
-    if (!isValidUsername(username)) throw new Error('INVALID_USERNAME');
+    if (!isValidUsername(username)) throw new Error(usernameErrorCode(username));
     return `${username}@${USERNAME_EMAIL_DOMAIN}`;
   }
 
@@ -86,6 +95,9 @@
       error?.cause?.message,
       error?.cause?.details,
     ].filter(Boolean).join(' ') || String(error || '');
+    if (/profiles_username_not_player_uid/i.test(message)) {
+      return ERROR_MESSAGES.PLAYER_UID_USERNAME_RESERVED;
+    }
     const stableCode = Object.keys(ERROR_MESSAGES).find((code) => message.includes(code));
     if (stableCode) return ERROR_MESSAGES[stableCode];
     if (/already registered|duplicate key|23505/i.test(message)) return '这个用户名已被使用';
@@ -215,7 +227,7 @@
 
     function validateCredentials({ username, password, gameName, requireGameName = false }) {
       const normalizedUsername = normalizeUsername(username);
-      if (!isValidUsername(normalizedUsername)) throw new Error('INVALID_USERNAME');
+      if (!isValidUsername(normalizedUsername)) throw new Error(usernameErrorCode(normalizedUsername));
       if (!isValidPassword(password)) throw new Error('INVALID_PASSWORD');
       const normalizedGameName = normalizeGameName(gameName);
       if (requireGameName && !isValidGameName(normalizedGameName)) throw new Error('INVALID_GAME_NAME');

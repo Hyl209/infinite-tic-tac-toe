@@ -121,6 +121,45 @@ test('账号字段规范化并执行长度和字符校验', () => {
   assert.equal(account.isValidGameName('一二三四五六七八九十一二三四五六七'), false);
 });
 
+test('六位纯数字用户名保留为玩家 UID 且不改变其他用户名规则', async () => {
+  assert.equal(account.normalizeUsername(' 123456 '), '123456');
+  assert.equal(account.isValidUsername('123456'), false);
+  for (const username of ['12345', '1234567', '123_56']) {
+    assert.equal(account.isValidUsername(username), true, username);
+  }
+  assert.throws(
+    () => account.usernameToEmail('123456'),
+    /PLAYER_UID_USERNAME_RESERVED/,
+  );
+  assert.equal(
+    account.mapAccountError(new Error('PLAYER_UID_USERNAME_RESERVED')),
+    '6 位纯数字用户名保留为玩家 UID，请使用其他用户名',
+  );
+
+  const fake = createFakeSupabase();
+  const client = account.createAccountClient({
+    config: { supabaseUrl: 'https://example.supabase.co', supabaseAnonKey: 'anon-key' },
+    loadSupabase: async () => ({ createClient: () => fake.client }),
+    storage: createStorage(),
+  });
+
+  await assert.rejects(
+    client.register({ username: '123456', password: 'password8', gameName: '棋手甲' }),
+    /PLAYER_UID_USERNAME_RESERVED/,
+  );
+  assert.deepEqual(fake.calls, []);
+});
+
+test('数据库六位数字用户名约束错误映射为同一明确提示', () => {
+  const error = new Error('PROFILE_SAVE_FAILED', {
+    cause: { code: '23514', message: 'profiles_username_not_player_uid' },
+  });
+  assert.equal(
+    account.mapAccountError(error),
+    '6 位纯数字用户名保留为玩家 UID，请使用其他用户名',
+  );
+});
+
 test('游客名称生成一次后保存在当前浏览器', () => {
   const storage = createStorage();
   const randomValues = [0, 0.1, 0.2, 0.3];

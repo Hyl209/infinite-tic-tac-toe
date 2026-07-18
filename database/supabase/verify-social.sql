@@ -34,6 +34,18 @@ begin
 
   if not exists (
     select 1 from pg_constraint
+    where pg_get_constraintdef(oid) is not null
+      and conrelid = to_regclass('public.profiles')
+      and conname = 'profiles_username_not_player_uid'
+      and contype = 'c'
+      and lower(regexp_replace(pg_get_constraintdef(oid), '[[:space:]]+', '', 'g'))
+            like '%not%username~''^[0-9]+$''::text%and%char_length(username)=6%'
+  ) then
+    raise exception 'profiles.username must reserve six ASCII digits for player_uid';
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint
     where conrelid = to_regclass('public.profiles')
       and conname = 'profiles_player_uid_unique'
       and contype = 'u'
@@ -273,6 +285,14 @@ end;
 $verify_social$;
 
 -- Read-only operator reports. These return no email or full user UUID.
+select exists (
+  select 1
+  from pg_constraint
+  where conrelid = to_regclass('public.profiles')
+    and conname = 'profiles_username_not_player_uid'
+    and contype = 'c'
+) as profiles_username_not_player_uid_present;
+
 select player_uid, lpad(profile.player_uid::text, 6, '0') as formatted_player_uid, count(*)
 from public.profiles as profile
 where player_uid = 0 -- expect 000000 when at least one migrated profile exists

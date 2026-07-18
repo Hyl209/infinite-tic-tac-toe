@@ -170,6 +170,24 @@ test('社交迁移是增量迁移且 setup 同步包含完整功能', () => {
   }
 });
 
+test('六位纯数字用户名由命名 CHECK 约束保留给玩家 UID 并由验收脚本报告', () => {
+  for (const sql of socialSqlFiles()) {
+    assert.match(sql, /add constraint profiles_username_not_player_uid/i);
+    assert.match(
+      sql,
+      /profiles_username_not_player_uid[\s\S]*?check\s*\(\s*not\s*\(\s*username\s*~\s*'\^\[0-9\]\+\$'\s*and\s*char_length\s*\(\s*username\s*\)\s*=\s*6\s*\)\s*\)/i,
+    );
+    assert.doesNotMatch(sql, /\[0-9\]\{6\}/);
+  }
+
+  const verify = read(verifyPath);
+  assert.match(
+    verify,
+    /profiles_username_not_player_uid[\s\S]*regexp_replace\s*\(\s*pg_get_constraintdef\s*\(\s*oid\s*\)\s*,\s*'\[\[:space:\]\]\+'[\s\S]*like\s*'%not%username~''\^\[0-9\]\+\$''::text%and%char_length\(username\)=6%'/i,
+  );
+  assert.match(verify, /profiles_username_not_player_uid_present/i);
+});
+
 test('玩家 UID 从 000000 原子分配、管理员优先回填且永远不可修改', () => {
   for (const sql of socialSqlFiles()) {
     assert.match(sql, /create sequence(?: if not exists)? public\.player_uid_seq[\s\S]*minvalue\s+0[\s\S]*maxvalue\s+999999[\s\S]*start\s+with\s+0/i);

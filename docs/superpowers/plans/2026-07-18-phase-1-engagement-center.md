@@ -115,7 +115,7 @@ const requiredRpcs = [
 ];
 ```
 
-同时断言：唯一领取约束、`Asia/Hong_Kong`、`for update`、`apply_coin_delta`、`security definer`、固定 `search_path`、管理员校验、显式 revoke/grant、迁移不含 `drop table`/`truncate`。
+同时断言：唯一领取约束、`Asia/Hong_Kong`、`for update`、`apply_coin_delta`、`security definer`、固定 `search_path`、管理员校验、显式 revoke/grant、三类领取/签到记录不可变触发器、迁移不含 `drop table`/`truncate`。
 
 - [ ] **Step 2: 把新增文件加入结构守卫**
 
@@ -295,7 +295,9 @@ apply_coin_delta(
 
 - [ ] **Step 6: 锁定权限与不可变记录**
 
-业务表启用 RLS，撤销直接写权限；公开列表 RPC 可授予 `anon, authenticated`，私人和管理 RPC 仅授予 `authenticated`。领取和签到记录禁止更新、删除。
+业务表启用 RLS，撤销直接写权限；公开列表 RPC 可授予 `anon, authenticated`，私人和管理 RPC 仅授予 `authenticated`。
+
+`activity_claims`、`notification_claims`、`player_checkins` 共享 `prevent_engagement_record_mutation()` 的 `BEFORE UPDATE OR DELETE` 触发器：UPDATE 和父 profile 仍存在时的直接 DELETE 固定抛 `ENGAGEMENT_RECORD_IMMUTABLE`；只有删除 profile 后由既有外键触发的账号级联清理可返回 `OLD` 放行。内部函数固定 `search_path` 且不向客户端授权。
 
 - [ ] **Step 7: 同步完整初始化脚本**
 
@@ -633,7 +635,7 @@ git commit -m "feat: add unified site administration"
 
 ```text
 pg_policies：业务表 RLS 与 notification_reads 本人 SELECT
-pg_publication_tables：仅 site_notifications、notification_reads
+pg_publication_tables：保留既有 online_games，本阶段仅新增 site_notifications、notification_reads，无其他误加表
 information_schema.role_*_grants / has_function_privilege：表 ACL、公开列表和 authenticated-only RPC
 管理通知统计：已读/领取人数与源表真实记录一致
 count_unread_site_notifications：跨分页、过期和停用通知计算正确

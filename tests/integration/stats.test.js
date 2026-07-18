@@ -45,10 +45,20 @@ test('战绩迁移独立存在并同步到完整初始化脚本', () => {
   }
 });
 
-test('完整初始化脚本最后应用战绩迁移避免被旧在线函数覆盖', () => {
+test('完整初始化脚本包含赛季管理迁移且后续不再覆盖管理 RPC', () => {
   const migration = readSeasonAdminMigration().replace(/\r\n/g, '\n').trim();
   const setup = readSetupSql().replace(/\r\n/g, '\n').trim();
-  assert.equal(setup.endsWith(migration), true);
+  const migrationStart = setup.indexOf(migration);
+  assert.notEqual(migrationStart, -1, 'complete setup must include the normalized season admin migration');
+
+  const laterSql = setup.slice(migrationStart + migration.length);
+  for (const rpc of ['start_competitive_season', 'end_competitive_season']) {
+    assert.doesNotMatch(
+      laterSql,
+      new RegExp(`create\\s+or\\s+replace\\s+function\\s+public\\.${rpc}\\b`, 'i'),
+      `${rpc} must not be redefined after the season admin migration`,
+    );
+  }
 });
 
 test('赛季管理 RPC 限定表字段避免与输出参数歧义', () => {

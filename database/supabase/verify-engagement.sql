@@ -204,6 +204,6 @@ $post_smoke$;
 -- supabase.rpc('perform_daily_checkin',{p_request_id:crypto.randomUUID()}) simultaneously.
 -- Expect exactly one success, one CHECKIN_ALREADY_DONE, one check-in row, and one reward ledger effect.
 -- Insufficient-coins makeup: externally provision a real player below makeup_cost, call perform_makeup_checkin
--- for an eligible missed date, and expect INSUFFICIENT_BALANCE with no check-in or ledger mutation.
+-- for an eligible missed date, and expect INSUFFICIENT_COINS with no check-in or ledger mutation.
 -- Hong Kong rollover: in the isolated project, compare SELECT now(), now() AT TIME ZONE 'Asia/Hong_Kong';
 -- call daily check-in from a real browser session on both sides of HK midnight and expect distinct checkin_date values.

@@ -4,6 +4,7 @@ const fs = require('node:fs');
 
 const migrationPath = './database/supabase/migrations/20260722_engagement.sql';
 const setupPath = './database/supabase/setup.sql';
+const verifyPath = './database/supabase/verify-engagement.sql';
 
 const tables = [
   'activities',
@@ -608,6 +609,12 @@ test('engagement migration is incremental and non-destructive', () => {
   const sql = readSql(migrationPath);
   assert.doesNotMatch(sql, /drop\s+table\b/i);
   assert.doesNotMatch(sql, /truncate\b/i);
+});
+
+test('engagement smoke instructions use the stable insufficient-coins error code', () => {
+  const sql = read(verifyPath);
+  assert.match(sql, /INSUFFICIENT_COINS/);
+  assert.doesNotMatch(sql, /INSUFFICIENT_BALANCE/);
 });
 
 test('fixture: critical searches ignore SQL comments', () => {

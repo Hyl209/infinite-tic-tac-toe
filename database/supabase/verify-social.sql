@@ -187,6 +187,12 @@ begin
     where schemaname = 'public' and tablename = 'player_presence'
       and policyname = 'friends can read presence'
       and cmd = 'SELECT' and roles @> array['authenticated']::name[]
+      and qual is not null
+      and lower(regexp_replace(qual, '[[:space:]]+', '', 'g')) like '%auth.uid()%'
+      and lower(regexp_replace(qual, '[[:space:]]+', '', 'g')) like '%user_id%'
+      and lower(regexp_replace(qual, '[[:space:]]+', '', 'g')) like '%friendships%'
+      and lower(regexp_replace(qual, '[[:space:]]+', '', 'g')) like '%user_low%'
+      and lower(regexp_replace(qual, '[[:space:]]+', '', 'g')) like '%user_high%'
   ) or not exists (
     select 1 from pg_policies
     where schemaname = 'public' and tablename = 'game_invites'

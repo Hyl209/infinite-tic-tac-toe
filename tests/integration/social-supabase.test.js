@@ -92,6 +92,14 @@ test('social acceptance verifier is read-only and covers UID, ACL, RLS, RPC, tim
     );
     assert.match(sql, policyCheck);
   }
+  const presencePolicy = acceptanceTemplate(
+    sql,
+    "tablename = 'player_presence'",
+    "tablename = 'game_invites'",
+  );
+  for (const pattern of [/qual is not null/i, /auth\.uid/i, /user_id/i, /friendships/i, /user_low/i, /user_high/i]) {
+    assert.match(presencePolicy, pattern);
+  }
 });
 
 test('social write acceptance templates are copyable, isolated, and assert trigger and RPC behavior', () => {

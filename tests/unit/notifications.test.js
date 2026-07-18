@@ -96,6 +96,30 @@ async function waitFor(predicate, timeout = 500) {
   }
 }
 
+function adminNotificationRow(overrides = {}) {
+  return {
+    id: 'n1',
+    activity_id: null,
+    title: 'T',
+    body: 'B',
+    reward_amount: '8',
+    visible_at: 'v',
+    expires_at: null,
+    action_url: null,
+    is_read: null,
+    reward_claimed: null,
+    read_at: null,
+    reward_claimed_at: null,
+    is_active: true,
+    created_by: 'u1',
+    created_at: 'c',
+    updated_at: 'u',
+    read_count: '2',
+    claim_count: '1',
+    ...overrides,
+  };
+}
+
 test('list uses defaults, paired cursor, clamped limit, and explicit public model', async () => {
   const supabase = fakeClient({
     user: null,
@@ -161,7 +185,7 @@ test('markRead and claimReward call RPC and return explicit result models', asyn
 });
 
 test('admin list, publish, and disable use documented RPCs and admin model', async () => {
-  const row = { id: 'n1', activity_id: null, title: 'T', body: 'B', reward_amount: '8', visible_at: 'v', expires_at: null, action_url: null, is_read: null, reward_claimed: null, read_at: null, reward_claimed_at: null, is_active: true, created_by: 'u1', created_at: 'c', updated_at: 'u', read_count: '2', claim_count: '1', unknown: true };
+  const row = adminNotificationRow({ unknown: true });
   const supabase = fakeClient({ rpcResults: [
     { data: [row], error: null },
     { data: [row], error: null },
@@ -333,6 +357,34 @@ test('notification writes reject empty rows and missing required fields', async 
   await assert.rejects(() => notifications.claimReward('n1', 'req-1'), { message: 'INVALID_NOTIFICATION_RESPONSE' });
   await assert.rejects(() => notifications.adminPublish({}), { message: 'INVALID_NOTIFICATION_RESPONSE' });
   await assert.rejects(() => notifications.adminDisable('n1'), { message: 'INVALID_NOTIFICATION_RESPONSE' });
+});
+
+test('notification response schema rejects invalid numbers and partial admin rows while preserving zero', async () => {
+  const supabase = fakeClient({ rpcResults: [
+    { data: [{ reward_amount: 'bad', balance: 0, claimed_at: 'c1' }], error: null },
+    { data: [{ reward_amount: 0, balance: Infinity, claimed_at: 'c1' }], error: null },
+    { data: [{ reward_amount: '', balance: 0, claimed_at: 'c1' }], error: null },
+    { data: [{ id: 'n1', is_active: true }], error: null },
+    { data: [adminNotificationRow({ reward_amount: 'bad' })], error: null },
+    { data: [adminNotificationRow({ is_active: 1 })], error: null },
+    { data: [{ reward_amount: 0n, balance: '0', claimed_at: 'c1' }], error: null },
+  ] });
+  const notifications = createNotificationsClient({ accountClient: supabase });
+
+  for (const requestId of ['bad-reward', 'bad-balance', 'empty-reward']) {
+    await assert.rejects(
+      () => notifications.claimReward('n1', requestId),
+      { message: 'INVALID_NOTIFICATION_RESPONSE' },
+    );
+  }
+  await assert.rejects(() => notifications.adminPublish({}), { message: 'INVALID_NOTIFICATION_RESPONSE' });
+  await assert.rejects(() => notifications.adminDisable('n1'), { message: 'INVALID_NOTIFICATION_RESPONSE' });
+  await assert.rejects(() => notifications.adminDisable('n1'), { message: 'INVALID_NOTIFICATION_RESPONSE' });
+  assert.deepEqual(await notifications.claimReward('n1', 'zero-values'), {
+    rewardAmount: 0,
+    balance: 0,
+    claimedAt: 'c1',
+  });
 });
 
 test('maps stable notification errors and requires an account client', async () => {

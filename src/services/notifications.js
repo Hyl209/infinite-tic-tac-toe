@@ -23,6 +23,22 @@
     INVALID_NOTIFICATION_RESPONSE: '通知服务返回了无效数据，请稍后重试',
   };
 
+  var NOTIFICATION_MARK_SCHEMA = {
+    fields: ['notification_id', 'read_at'],
+  };
+  var NOTIFICATION_CLAIM_SCHEMA = {
+    fields: ['reward_amount', 'balance', 'claimed_at'],
+    numbers: ['reward_amount', 'balance'],
+  };
+  var NOTIFICATION_ADMIN_SCHEMA = {
+    fields: [
+      'id', 'title', 'body', 'reward_amount', 'visible_at', 'is_active',
+      'created_by', 'created_at', 'updated_at',
+    ],
+    numbers: ['reward_amount'],
+    booleans: ['is_active'],
+  };
+
   function errorCode(error) {
     var text = [error && error.code, error && error.message, error && error.details, error && error.hint]
       .filter(Boolean).join(' ');
@@ -77,12 +93,16 @@
     return Array.isArray(data) ? data[0] : data;
   }
 
-  function requiredRpcRow(data, fields) {
+  function requiredRpcRow(data, schema) {
     var row = firstRpcRow(data);
     if (!row || typeof row !== 'object' || Array.isArray(row) ||
-        fields.some(function (field) { return row[field] == null; })) {
+        schema.fields.some(function (field) { return row[field] == null; }) ||
+        (schema.booleans || []).some(function (field) {
+          return typeof row[field] !== 'boolean';
+        })) {
       fail('INVALID_NOTIFICATION_RESPONSE');
     }
+    (schema.numbers || []).forEach(function (field) { requiredNumber(row[field]); });
     return row;
   }
 
@@ -168,7 +188,7 @@
       requireRegistered();
       var row = requiredRpcRow(await callRpc('mark_site_notification_read', {
         p_notification_id: notificationId,
-      }), ['notification_id', 'read_at']);
+      }), NOTIFICATION_MARK_SCHEMA);
       return {
         notificationId: row && row.notification_id != null ? row.notification_id : null,
         readAt: row && row.read_at != null ? row.read_at : null,
@@ -181,7 +201,7 @@
       var row = requiredRpcRow(await callRpc('claim_site_notification_reward', {
         p_notification_id: notificationId,
         p_request_id: requestId,
-      }), ['reward_amount', 'balance', 'claimed_at']);
+      }), NOTIFICATION_CLAIM_SCHEMA);
       return {
         rewardAmount: nullableNumber(row && row.reward_amount),
         balance: nullableNumber(row && row.balance),
@@ -204,14 +224,14 @@
         p_reward_amount: nullableNumber(notification.rewardAmount),
         p_visible_at: notification.visibleAt,
         p_expires_at: notification.expiresAt ?? null,
-      }), ['id', 'is_active']));
+      }), NOTIFICATION_ADMIN_SCHEMA));
     }
 
     async function adminDisable(notificationId) {
       requireRegistered();
       return adminNotification(requiredRpcRow(await callRpc('admin_disable_site_notification', {
         p_notification_id: notificationId,
-      }), ['id', 'is_active']));
+      }), NOTIFICATION_ADMIN_SCHEMA));
     }
 
     function notifyListeners() {

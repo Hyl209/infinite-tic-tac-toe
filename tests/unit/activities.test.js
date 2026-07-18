@@ -31,6 +31,26 @@ function createFakeAccount({ kind = 'registered' } = {}) {
   };
 }
 
+function activityAdminRow(overrides = {}) {
+  return {
+    id: 'activity-3',
+    title: 'New activity',
+    body: 'Body',
+    cover_url: null,
+    action_label: null,
+    action_url: null,
+    publish_at: '2026-07-20T00:00:00Z',
+    starts_at: '2026-07-21T00:00:00Z',
+    ends_at: '2026-07-22T00:00:00Z',
+    reward_amount: 0,
+    is_active: true,
+    created_by: 'admin-1',
+    created_at: '2026-07-18T00:00:00Z',
+    updated_at: '2026-07-18T00:00:00Z',
+    ...overrides,
+  };
+}
+
 test('创建活动客户端必须注入账号客户端', () => {
   assert.throws(() => activities.createActivitiesClient(), /ACCOUNT_CLIENT_REQUIRED/);
 });
@@ -159,11 +179,11 @@ test('管理员列表补充管理字段并过滤未知字段', async () => {
 test('管理员保存传递十个参数和空值并可下架活动', async () => {
   const fake = createFakeAccount();
   fake.responses.set('admin_save_activity', {
-    data: [{ id: 'activity-3', title: '新活动', reward_amount: 0, is_active: true }],
+    data: [activityAdminRow()],
     error: null,
   });
   fake.responses.set('admin_unpublish_activity', {
-    data: [{ id: 'activity-3', title: '新活动', reward_amount: 0, is_active: false }],
+    data: [activityAdminRow({ is_active: false })],
     error: null,
   });
   const client = activities.createActivitiesClient({ accountClient: fake.accountClient });
@@ -248,6 +268,44 @@ test('activity writes reject empty rows, missing required fields, and missing RP
   await assert.rejects(
     client.adminUnpublish('activity-1'),
     { message: 'INVALID_ACTIVITY_RESPONSE' },
+  );
+});
+
+test('activity response schema rejects invalid numbers and partial admin rows while preserving zero', async () => {
+  for (const row of [
+    { reward_amount: 'bad', balance: 0, claimed_at: 'claimed' },
+    { reward_amount: 0, balance: Infinity, claimed_at: 'claimed' },
+    { reward_amount: '', balance: 0, claimed_at: 'claimed' },
+  ]) {
+    const fake = createFakeAccount();
+    fake.responses.set('claim_activity_reward', { data: [row], error: null });
+    const client = activities.createActivitiesClient({ accountClient: fake.accountClient });
+    await assert.rejects(
+      client.claimReward('activity-1', 'request-1'),
+      { message: 'INVALID_ACTIVITY_RESPONSE' },
+    );
+  }
+
+  for (const row of [
+    { id: 'activity-1', is_active: true },
+    activityAdminRow({ reward_amount: 'bad' }),
+    activityAdminRow({ is_active: 1 }),
+  ]) {
+    const fake = createFakeAccount();
+    fake.responses.set('admin_save_activity', { data: [row], error: null });
+    const client = activities.createActivitiesClient({ accountClient: fake.accountClient });
+    await assert.rejects(client.adminSave({}), { message: 'INVALID_ACTIVITY_RESPONSE' });
+  }
+
+  const zeroFake = createFakeAccount();
+  zeroFake.responses.set('claim_activity_reward', {
+    data: [{ reward_amount: 0, balance: 0n, claimed_at: 'claimed' }],
+    error: null,
+  });
+  assert.deepEqual(
+    await activities.createActivitiesClient({ accountClient: zeroFake.accountClient })
+      .claimReward('activity-1', 'request-1'),
+    { rewardAmount: 0, balance: 0, claimedAt: 'claimed' },
   );
 });
 

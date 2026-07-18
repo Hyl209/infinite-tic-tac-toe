@@ -27,6 +27,36 @@ function fakeAccount({ kind = 'registered', rpcResults = [] } = {}) {
   };
 }
 
+function checkinResultRow(overrides = {}) {
+  return {
+    checkin_date: '2026-07-18',
+    reward_amount: '0',
+    balance: 0n,
+    checkin_type: 'daily',
+    payment_method: 'none',
+    payment_amount: 0,
+    ...overrides,
+  };
+}
+
+function checkinRuleRow(overrides = {}) {
+  return {
+    id: 4n,
+    effective_from: '2026-08-01',
+    monday_reward: '1',
+    tuesday_reward: '2',
+    wednesday_reward: '3',
+    thursday_reward: '4',
+    friday_reward: '5',
+    saturday_reward: '6',
+    sunday_reward: '7',
+    makeup_cost: '20',
+    created_by: 'admin-1',
+    created_at: 'created',
+    ...overrides,
+  };
+}
+
 test('requires wrapped account client and maps stable errors to Chinese strings', () => {
   assert.throws(() => createCheckinClient(), { message: 'ACCOUNT_CLIENT_REQUIRED' });
   const accountClient = fakeAccount();
@@ -104,15 +134,15 @@ test('guest identity rejects all five methods before Supabase or RPC', async () 
 });
 
 test('checkIn sends request id and maps a table result', async () => {
-  const accountClient = fakeAccount({ rpcResults: [{ data: [{
-    checkin_date: '2026-07-18', reward_amount: '5', balance: '105',
-    checkin_type: 'daily', payment_method: null, payment_amount: null, extra: true,
-  }], error: null }] });
+  const accountClient = fakeAccount({ rpcResults: [{
+    data: [checkinResultRow({ reward_amount: '5', balance: '105', extra: true })],
+    error: null,
+  }] });
   const client = createCheckinClient({ accountClient });
 
   assert.deepEqual(await client.checkIn('req-1'), {
     checkinDate: '2026-07-18', rewardAmount: 5, balance: 105,
-    checkinType: 'daily', paymentMethod: null, paymentAmount: null,
+    checkinType: 'daily', paymentMethod: 'none', paymentAmount: 0,
   });
   assert.deepEqual(accountClient.calls, [
     { name: 'perform_daily_checkin', params: { p_request_id: 'req-1' } },
@@ -140,12 +170,7 @@ test('makeUp supports coins exactly and rejects item, invalid method, or invalid
 });
 
 test('admin lists explicit rules and creates one with nine parameters', async () => {
-  const row = {
-    id: 4n, effective_from: '2026-08-01', monday_reward: '1', tuesday_reward: '2',
-    wednesday_reward: '3', thursday_reward: '4', friday_reward: '5',
-    saturday_reward: '6', sunday_reward: '7', makeup_cost: '20',
-    created_by: null, created_at: 'created', ignored: true,
-  };
+  const row = checkinRuleRow({ ignored: true });
   const accountClient = fakeAccount({ rpcResults: [
     { data: [row], error: null },
     { data: [row], error: null },
@@ -163,7 +188,7 @@ test('admin lists explicit rules and creates one with nine parameters', async ()
     id: 4, effectiveFrom: '2026-08-01', mondayReward: 1, tuesdayReward: 2,
     wednesdayReward: 3, thursdayReward: 4, fridayReward: 5,
     saturdayReward: 6, sundayReward: 7, makeupCost: 20,
-    createdBy: null, createdAt: 'created',
+    createdBy: 'admin-1', createdAt: 'created',
   };
   assert.deepEqual(listed[0], expected);
   assert.deepEqual(created, expected);
@@ -217,4 +242,26 @@ test('check-in writes reject empty rows and missing required fields', async () =
     () => client.adminCreateRule({}),
     { message: 'INVALID_CHECKIN_RESPONSE' },
   );
+});
+
+test('check-in response schema rejects invalid numbers and partial rules while preserving zero', async () => {
+  const accountClient = fakeAccount({ rpcResults: [
+    { data: [checkinResultRow({ reward_amount: 'bad' })], error: null },
+    { data: [checkinResultRow({ balance: Infinity })], error: null },
+    { data: [checkinResultRow({ payment_amount: '' })], error: null },
+    { data: [{ id: 4n, effective_from: '2026-08-01' }], error: null },
+    { data: [checkinRuleRow({ friday_reward: 'bad' })], error: null },
+    { data: [checkinResultRow()], error: null },
+  ] });
+  const client = createCheckinClient({ accountClient });
+
+  for (const requestId of ['bad-reward', 'bad-balance', 'empty-payment']) {
+    await assert.rejects(() => client.checkIn(requestId), { message: 'INVALID_CHECKIN_RESPONSE' });
+  }
+  await assert.rejects(() => client.adminCreateRule({}), { message: 'INVALID_CHECKIN_RESPONSE' });
+  await assert.rejects(() => client.adminCreateRule({}), { message: 'INVALID_CHECKIN_RESPONSE' });
+  assert.deepEqual(await client.checkIn('zero-values'), {
+    checkinDate: '2026-07-18', rewardAmount: 0, balance: 0,
+    checkinType: 'daily', paymentMethod: 'none', paymentAmount: 0,
+  });
 });

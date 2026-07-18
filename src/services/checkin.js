@@ -25,6 +25,25 @@
     INVALID_CHECKIN_RESPONSE: '签到服务返回了无效数据，请稍后重试',
   };
 
+  var CHECKIN_RESULT_SCHEMA = {
+    fields: [
+      'checkin_date', 'reward_amount', 'balance', 'checkin_type',
+      'payment_method', 'payment_amount',
+    ],
+    numbers: ['reward_amount', 'balance', 'payment_amount'],
+  };
+  var CHECKIN_RULE_SCHEMA = {
+    fields: [
+      'id', 'effective_from', 'monday_reward', 'tuesday_reward',
+      'wednesday_reward', 'thursday_reward', 'friday_reward',
+      'saturday_reward', 'sunday_reward', 'makeup_cost', 'created_by', 'created_at',
+    ],
+    numbers: [
+      'id', 'monday_reward', 'tuesday_reward', 'wednesday_reward',
+      'thursday_reward', 'friday_reward', 'saturday_reward', 'sunday_reward', 'makeup_cost',
+    ],
+  };
+
   function errorCode(error) {
     var text = [error && error.code, error && error.message, error && error.details, error && error.hint]
       .filter(Boolean).join(' ');
@@ -77,10 +96,20 @@
     return Array.isArray(data) ? data[0] : data;
   }
 
-  function requiredRpcRow(data, fields) {
+  function isFiniteNumberValue(value) {
+    var type = typeof value;
+    if ((type !== 'number' && type !== 'bigint' && type !== 'string') ||
+        (type === 'string' && value.trim() === '')) return false;
+    return Number.isFinite(Number(value));
+  }
+
+  function requiredRpcRow(data, schema) {
     var row = firstRpcRow(data);
     if (!row || typeof row !== 'object' || Array.isArray(row) ||
-        fields.some(function (field) { return row[field] == null; })) {
+        schema.fields.some(function (field) { return row[field] == null; }) ||
+        (schema.numbers || []).some(function (field) {
+          return !isFiniteNumberValue(row[field]);
+        })) {
       fail('INVALID_CHECKIN_RESPONSE');
     }
     return row;
@@ -164,7 +193,7 @@
       requireRequestId(requestId);
       return mapResult(requiredRpcRow(await callRpc('perform_daily_checkin', {
         p_request_id: requestId,
-      }), ['checkin_date', 'reward_amount', 'balance']));
+      }), CHECKIN_RESULT_SCHEMA));
     }
 
     async function makeUp(date, paymentMethod, requestId) {
@@ -177,7 +206,7 @@
         p_date: date,
         p_payment_method: paymentMethod,
         p_request_id: requestId,
-      }), ['checkin_date', 'reward_amount', 'balance']));
+      }), CHECKIN_RESULT_SCHEMA));
     }
 
     async function adminListRules() {
@@ -199,7 +228,7 @@
         p_saturday_reward: nullableNumber(rule.saturdayReward),
         p_sunday_reward: nullableNumber(rule.sundayReward),
         p_makeup_cost: nullableNumber(rule.makeupCost),
-      }), ['id', 'effective_from']));
+      }), CHECKIN_RULE_SCHEMA));
     }
 
     return {

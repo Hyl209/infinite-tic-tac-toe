@@ -13,14 +13,36 @@
     INVALID_ACTIVITY_RESPONSE: '活动服务返回了无效数据，请稍后重试',
   };
 
+  const ACTIVITY_CLAIM_SCHEMA = {
+    fields: ['reward_amount', 'balance', 'claimed_at'],
+    numbers: ['reward_amount', 'balance'],
+  };
+  const ACTIVITY_ADMIN_SCHEMA = {
+    fields: [
+      'id', 'title', 'body', 'publish_at', 'starts_at', 'ends_at',
+      'reward_amount', 'is_active', 'created_by', 'created_at', 'updated_at',
+    ],
+    numbers: ['reward_amount'],
+    booleans: ['is_active'],
+  };
+
   function firstRpcRow(data) {
     return Array.isArray(data) ? data[0] : data;
   }
 
-  function requiredRpcRow(data, fields) {
+  function isFiniteNumberValue(value) {
+    const type = typeof value;
+    if ((type !== 'number' && type !== 'bigint' && type !== 'string')
+        || (type === 'string' && value.trim() === '')) return false;
+    return Number.isFinite(Number(value));
+  }
+
+  function requiredRpcRow(data, schema) {
     const row = firstRpcRow(data);
     if (!row || typeof row !== 'object' || Array.isArray(row)
-        || fields.some((field) => row[field] == null)) {
+        || schema.fields.some((field) => row[field] == null)
+        || (schema.numbers || []).some((field) => !isFiniteNumberValue(row[field]))
+        || (schema.booleans || []).some((field) => typeof row[field] !== 'boolean')) {
       throw new Error('INVALID_ACTIVITY_RESPONSE');
     }
     return row;
@@ -89,7 +111,7 @@
       const row = requiredRpcRow(await callRpc('claim_activity_reward', {
         p_activity_id: activityId,
         p_request_id: requestId,
-      }), ['reward_amount', 'balance', 'claimed_at']);
+      }), ACTIVITY_CLAIM_SCHEMA);
       return {
         rewardAmount: Number(row.reward_amount ?? 0),
         balance: Number(row.balance ?? 0),
@@ -116,7 +138,7 @@
         p_starts_at: input.startsAt ?? null,
         p_ends_at: input.endsAt ?? null,
         p_reward_amount: Number(input.rewardAmount ?? 0),
-      }), ['id', 'is_active']);
+      }), ACTIVITY_ADMIN_SCHEMA);
       return mapAdminActivity(row);
     }
 
@@ -124,7 +146,7 @@
       requireRegistered();
       const row = requiredRpcRow(await callRpc('admin_unpublish_activity', {
         p_activity_id: activityId,
-      }), ['id', 'is_active']);
+      }), ACTIVITY_ADMIN_SCHEMA);
       return mapAdminActivity(row);
     }
 

@@ -129,6 +129,7 @@ function createPlayerRuntimeHarness({
   friends = [],
   friendRequests = [],
   gameInvites = [],
+  searchFriend = async () => null,
 } = {}) {
   const tabList = new FakeElement();
   tabList.setAttribute('aria-orientation', 'vertical');
@@ -233,7 +234,7 @@ function createPlayerRuntimeHarness({
     },
     async searchExact(value) {
       friendCalls.push({ type: 'search', value });
-      return null;
+      return searchFriend(value);
     },
     async sendRequest(userId) {
       friendCalls.push({ type: 'send', userId });
@@ -1643,6 +1644,98 @@ test('friends realtime subscription is cleaned across logout, relogin, and destr
     await flushPromises();
     assert.equal(harness.friendRealtimeCleanups, 2);
     assert.equal(harness.friendDisconnects, 1);
+  } finally {
+    instance?.destroy();
+    await flushPromises();
+    harness.restore();
+  }
+});
+
+test('a friend search resolved after logout cannot replace the guest state', async () => {
+  let resolveSearch;
+  const harness = createPlayerRuntimeHarness({
+    identity: { kind: 'registered', username: 'account_a', displayName: '账号 A', uid: '000001' },
+    searchFriend: () => new Promise((resolve) => { resolveSearch = resolve; }),
+  });
+  let instance;
+  try {
+    instance = player.mount();
+    await flushPromises();
+    const searchInput = harness.nodes.get('#friend-search-input');
+    searchInput.value = '000042';
+    harness.nodes.get('#friend-search-form').dispatchEvent(new Event('submit', { cancelable: true }));
+    await flushPromises();
+
+    harness.setIdentity({ kind: 'guest', displayName: '匿名玩家' });
+    const guestMessage = harness.nodes.get('#friend-message').textContent;
+    resolveSearch({
+      id: 'old-player', uid: '000042', username: 'old_player',
+      displayName: '旧账号结果', relationshipState: 'none',
+    });
+    await flushPromises();
+
+    assert.equal(harness.nodes.get('#friend-search-result').textContent, '');
+    assert.equal(harness.nodes.get('#friend-message').textContent, guestMessage);
+    assert.equal(searchInput.disabled, true);
+  } finally {
+    instance?.destroy();
+    await flushPromises();
+    harness.restore();
+  }
+});
+
+test('a friend search resolved after an account switch cannot render the old account result', async () => {
+  let resolveSearch;
+  const harness = createPlayerRuntimeHarness({
+    identity: { kind: 'registered', username: 'account_a', displayName: '账号 A', uid: '000001' },
+    searchFriend: () => new Promise((resolve) => { resolveSearch = resolve; }),
+  });
+  let instance;
+  try {
+    instance = player.mount();
+    await flushPromises();
+    const searchInput = harness.nodes.get('#friend-search-input');
+    searchInput.value = 'old_player';
+    harness.nodes.get('#friend-search-form').dispatchEvent(new Event('submit', { cancelable: true }));
+    await flushPromises();
+
+    harness.setIdentity({
+      kind: 'registered', username: 'account_b', displayName: '账号 B', uid: '000002',
+    });
+    await flushPromises();
+    resolveSearch({
+      id: 'old-player', uid: '000042', username: 'old_player',
+      displayName: '旧账号结果', relationshipState: 'none',
+    });
+    await flushPromises();
+
+    assert.equal(harness.nodes.get('#friend-search-result').textContent, '');
+    assert.doesNotMatch(harness.nodes.get('#friend-message').textContent, /旧账号结果/);
+  } finally {
+    instance?.destroy();
+    await flushPromises();
+    harness.restore();
+  }
+});
+
+test('game invite cards label the host name and padded UID explicitly', async () => {
+  const harness = createPlayerRuntimeHarness({
+    identity: { kind: 'registered', username: 'account_a', displayName: '账号 A', uid: '000001' },
+    gameInvites: [{
+      id: 'invite-1', direction: 'incoming', status: 'pending', gameType: 'gomoku',
+      roomCode: 'ABC123', wagerAmount: 12, expiresAt: '2026-07-19T12:00:00.000Z',
+      sender: { id: 'host-1', username: 'host_user', displayName: '房主甲', uid: '000007' },
+    }],
+  });
+  let instance;
+  try {
+    instance = player.mount();
+    await flushPromises();
+
+    const inviteText = harness.nodes.get('#game-invite-list').textContent;
+    assert.match(inviteText, /五子棋/);
+    assert.match(inviteText, /房主：房主甲 · UID 000007/);
+    assert.match(inviteText, /彩头 12 金币/);
   } finally {
     instance?.destroy();
     await flushPromises();

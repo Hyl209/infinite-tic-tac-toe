@@ -158,6 +158,9 @@
     let invites = [];
     let foundPlayer = null;
     let refreshVersion = 0;
+    let searchRequestVersion = 0;
+    let identityVersion = 0;
+    let identityKey = getAccountKey(accountPanel?.getIdentity());
     let destroyed = false;
     let unsubscribeRealtime = null;
     let realtimeSubscriptionPending = false;
@@ -257,6 +260,13 @@
         const item = createNode('article', 'friend-row game-invite-row');
         const gameName = invite.gameType === 'gomoku' ? '五子棋' : '无限井字棋';
         const wager = invite.wagerAmount > 0 ? `彩头 ${invite.wagerAmount} 金币` : '无彩头';
+        const hostName = invite.sender.displayName || invite.sender.username || '玩家';
+        const details = createNode('div', 'friend-player-copy');
+        details.append(
+          createNode('strong', '', gameName),
+          createNode('span', 'friend-player-uid', `房主：${hostName} · UID ${invite.sender.uid}`),
+          createNode('small', '', `${wager} · ${formatTime(invite.expiresAt)}失效`),
+        );
         const actions = createNode('div', 'friend-row-actions');
         const enter = createNode('a', 'friend-action player-primary-action', '进入房间');
         enter.href = inviteUrl(invite);
@@ -264,10 +274,7 @@
           enter,
           actionButton('拒绝邀请', () => friendsClient.declineGameInvite(invite.id), `decline:${invite.id}`),
         );
-        item.append(
-          playerCopy(invite.sender, `${gameName} · ${wager} · ${formatTime(invite.expiresAt)}失效`),
-          actions,
-        );
+        item.append(details, actions);
         return item;
       }) : [empty('暂无待处理的游戏邀请。')]));
     }
@@ -386,17 +393,25 @@
         return;
       }
       const value = searchInput.value;
+      const requestVersion = ++searchRequestVersion;
+      const requestIdentityVersion = identityVersion;
       setMessage('正在查找玩家。');
       searchInput.disabled = true;
       try {
-        foundPlayer = await friendsClient.searchExact(value);
-        if (destroyed) return;
+        const result = await friendsClient.searchExact(value);
+        if (destroyed || requestVersion !== searchRequestVersion
+          || requestIdentityVersion !== identityVersion) return;
+        foundPlayer = result;
         renderSearchResult();
         setMessage(foundPlayer ? '' : '没有找到该玩家。', foundPlayer ? '' : 'error');
       } catch (error) {
-        if (!destroyed) setMessage(friendsApi.mapFriendsError(error), 'error');
+        if (!destroyed && requestVersion === searchRequestVersion
+          && requestIdentityVersion === identityVersion) {
+          setMessage(friendsApi.mapFriendsError(error), 'error');
+        }
       } finally {
-        if (!destroyed) searchInput.disabled = false;
+        if (!destroyed && requestVersion === searchRequestVersion
+          && requestIdentityVersion === identityVersion) searchInput.disabled = false;
       }
     }, { signal });
 
@@ -433,6 +448,12 @@
     }
 
     const unsubscribeAccount = accountPanel?.subscribe((state) => {
+      const nextIdentityKey = getAccountKey(state?.identity || accountPanel?.getIdentity());
+      if (nextIdentityKey !== identityKey) {
+        identityKey = nextIdentityKey;
+        identityVersion += 1;
+        searchRequestVersion += 1;
+      }
       refreshVersion += 1;
       foundPlayer = null;
       if (state?.identity?.kind === 'registered') {

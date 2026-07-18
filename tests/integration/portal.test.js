@@ -752,3 +752,43 @@ test('notification bell keeps a newer social event count when an older database 
   assert.equal(harness.badge.textContent, '11');
   controller.destroy();
 });
+
+test('notification bell preserves a newer social event when an older social load rejects', async () => {
+  let rejectOldRequests;
+  const oldRequests = new Promise((_resolve, reject) => { rejectOldRequests = reject; });
+  let requestCalls = 0;
+  const harness = createNotificationBellHarness({
+    identity: { kind: 'registered', username: 'player-a' },
+  });
+  const controller = notificationBell.mount({
+    document: harness.document,
+    accountPanel: harness.accountPanel,
+    notificationsApi: {
+      createNotificationsClient: () => ({
+        list: async () => [],
+        countUnread: async () => 4,
+      }),
+    },
+    friendsApi: {
+      createFriendsClient: () => ({
+        listRequests: async () => {
+          requestCalls += 1;
+          return requestCalls === 1 ? [] : oldRequests;
+        },
+        listInvites: async () => [],
+        disconnect: async () => {},
+      }),
+    },
+  });
+
+  await controller.refresh();
+  assert.equal(harness.badge.textContent, '4');
+  await flushAsyncWork();
+  const oldRefresh = controller.refresh();
+  harness.document.dispatchEvent(new CustomEvent('hyl:social-count', { detail: { count: 7 } }));
+  assert.equal(harness.badge.textContent, '11');
+  rejectOldRequests(new Error('SOCIAL_LOAD_FAILED'));
+  await oldRefresh;
+  assert.equal(harness.badge.textContent, '11');
+  controller.destroy();
+});

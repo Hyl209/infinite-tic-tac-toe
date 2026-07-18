@@ -91,7 +91,8 @@
             if (!destroyed && version === requestVersion) clearBadge();
           }
         } catch (_) {
-          if (!destroyed && version === requestVersion) clearBadge();
+          if (!destroyed && version === requestVersion
+            && socialVersion === socialCountVersion) clearBadge();
         }
       })();
 

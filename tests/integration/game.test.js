@@ -605,6 +605,15 @@ test('落子动画第一帧必须可见，不能用透明度隐藏棋子', () =>
 test('独立游戏页面保留游戏专区和双游戏入口', () => {
   const html = fs.readFileSync('./game/index.html', 'utf8');
   assert.doesNotMatch(html, /id="portal-home"/);
+  assert.match(html, /rel="icon"\s+href="\/assets\/images\/image_02\.png"/);
+  assert.match(
+    html,
+    /class="site-brand-mark"[\s\S]*?<img[^>]+src="\/assets\/images\/image_01\.png"/,
+  );
+  assert.match(
+    html,
+    /class="home-mark"[\s\S]*?<img[^>]+src="\/assets\/images\/image_02\.png"/,
+  );
   assert.match(html, /id="game-home"/);
   assert.match(html, /href="\/game\/\?game=tic_tac_toe"/);
   assert.match(html, /href="\/game\/\?game=gomoku"/);

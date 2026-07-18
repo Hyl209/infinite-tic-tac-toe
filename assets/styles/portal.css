@@ -93,11 +93,19 @@ body[data-view]:not([data-view="portal"]) .site-nav {
   height: 32px;
   display: grid;
   place-items: center;
+  overflow: hidden;
   border: 1px solid var(--portal-line);
   color: var(--portal-bg);
   background: var(--portal-ink);
   font-size: 0.82rem;
   letter-spacing: 0;
+}
+
+.site-brand-mark img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
 }
 
 .site-menu {

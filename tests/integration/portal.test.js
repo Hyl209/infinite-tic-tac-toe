@@ -54,6 +54,11 @@ test('门户加载独立内容、样式、动效和本地 GSAP 资源', () => {
   const html = fs.readFileSync('./index.html', 'utf8');
 
   assert.match(html, /href="\/assets\/styles\/portal\.css"/);
+  assert.match(html, /rel="icon"\s+href="\/assets\/images\/image_01\.png"/);
+  assert.match(
+    html,
+    /class="site-brand-mark"[\s\S]*?<img[^>]+src="\/assets\/images\/image_01\.png"/,
+  );
   assert.match(html, /src="\/assets\/vendor\/gsap\/gsap\.min\.js"[^>]*defer/);
   assert.match(html, /src="\/assets\/vendor\/gsap\/ScrollTrigger\.min\.js"[^>]*defer/);
   assert.match(html, /src="\/src\/config\/portal\.js"[^>]*defer/);

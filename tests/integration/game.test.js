@@ -736,6 +736,15 @@ test('游戏页面路由解析棋局、房间和游戏专区', () => {
   assert.deepEqual(app.resolveAppRoute('https://example.com/game/?view=admin'), {
     view: 'admin', gameType: null, roomCode: null,
   });
+  assert.deepEqual(app.resolveAppRoute('https://example.com/game/?view=admin&room=ABC23D'), {
+    view: 'game', gameType: 'tic_tac_toe', roomCode: 'ABC23D',
+  });
+  assert.deepEqual(app.resolveAppRoute('https://example.com/game/?view=admin&game=gomoku'), {
+    view: 'game', gameType: 'gomoku', roomCode: null,
+  });
+  assert.deepEqual(app.resolveAppRoute('https://example.com/game/?view=admin&foo=1'), {
+    view: 'admin', gameType: null, roomCode: null,
+  });
 });
 
 test('旧管理后台书签重定向到统一管理中心且不影响棋局查询', () => {

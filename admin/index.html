@@ -78,10 +78,10 @@
             <input name="id" type="hidden">
             <label class="admin-field admin-span-2"><span>标题</span><input name="title" type="text" maxlength="80" required></label>
             <label class="admin-field admin-span-2"><span>正文</span><textarea name="body" rows="5" maxlength="4000" required></textarea></label>
-            <label class="admin-field"><span>封面地址（可选）</span><input name="coverUrl" type="url"></label>
+            <label class="admin-field"><span>封面地址（可选）</span><input name="coverUrl" type="url" placeholder="https://..."><small>仅支持 HTTPS 外链</small></label>
             <label class="admin-field"><span>奖励金币</span><input name="rewardAmount" type="number" min="0" max="1000000" step="1" value="0" required></label>
-            <label class="admin-field"><span>操作文字（可选）</span><input name="actionLabel" type="text" maxlength="40"></label>
-            <label class="admin-field"><span>操作地址（可选）</span><input name="actionUrl" type="url"></label>
+            <label class="admin-field"><span>操作文字（可选）</span><input name="actionLabel" type="text" maxlength="30"></label>
+            <label class="admin-field"><span>操作地址（可选）</span><input name="actionUrl" type="text" placeholder="/player/ 或 https://..."><small>与操作文字同时填写；支持站内 / 路径或 HTTPS 外链</small></label>
             <label class="admin-field"><span>自动发布时间</span><input name="publishAt" type="datetime-local" required></label>
             <label class="admin-field"><span>活动开始时间</span><input name="startsAt" type="datetime-local" required></label>
             <label class="admin-field"><span>活动结束时间</span><input name="endsAt" type="datetime-local" required></label>
@@ -115,7 +115,7 @@
         <section id="admin-notification-section" class="admin-section" aria-labelledby="admin-notification-title">
           <header class="admin-section-heading"><div><h2 id="admin-notification-title">独立通知</h2></div></header>
           <form id="admin-notification-form" class="admin-form">
-            <label class="admin-field admin-span-2"><span>标题</span><input name="title" type="text" maxlength="120" required></label>
+            <label class="admin-field admin-span-2"><span>标题</span><input name="title" type="text" maxlength="80" required></label>
             <label class="admin-field admin-span-2"><span>正文</span><textarea name="body" rows="5" maxlength="5000" required></textarea></label>
             <label class="admin-field"><span>奖励金币</span><input name="rewardAmount" type="number" min="0" max="1000000" step="1" value="0" required></label>
             <label class="admin-field"><span>立即可见时间</span><input name="visibleAt" type="datetime-local" required></label>

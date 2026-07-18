@@ -148,9 +148,6 @@
 
   function resolveAppRoute(urlLike) {
     const url = new URL(urlLike, 'https://hyl.space/');
-    if (url.searchParams.get('view') === 'admin') {
-      return { view: 'admin', gameType: null, roomCode: null };
-    }
     const roomCandidate = normalizeRouteRoomCode(url.searchParams.get('room'));
     const roomCode = roomCandidate.length === 6 ? roomCandidate : null;
     const requestedGame = url.searchParams.get('game');
@@ -159,6 +156,9 @@
       : (roomCode ? 'tic_tac_toe' : null);
 
     if (gameType) return { view: 'game', gameType, roomCode };
+    if (url.searchParams.get('view') === 'admin') {
+      return { view: 'admin', gameType: null, roomCode: null };
+    }
     return { view: 'games', gameType: null, roomCode: null };
   }
 

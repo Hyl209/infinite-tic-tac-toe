@@ -6,6 +6,12 @@
     'fridayReward', 'saturdayReward', 'sundayReward', 'makeupCost',
   ];
 
+  function adminAccountKey(identity = {}) {
+    return identity.kind === 'registered'
+      ? `registered:${String(identity.username || '')}`
+      : String(identity.kind || 'guest');
+  }
+
   function resolveAdminAccess({ identity, economySnapshot } = {}) {
     if (identity?.kind !== 'registered') return 'login';
     if (!economySnapshot?.loaded) return 'loading';
@@ -58,9 +64,50 @@
     return `已排期，将于 ${formatLocalDateTime(publishAt)} 自动发布`;
   }
 
+  function canEditAdminActivity(activity) {
+    return Boolean(activity?.active);
+  }
+
   function notificationActivitySource(notification = {}) {
     const activityId = String(notification.activityId || '').trim();
     return activityId ? `关联活动：${activityId}` : '独立通知';
+  }
+
+  function validateAdminPublicUrl(value, { allowRelative = false } = {}) {
+    const normalized = String(value || '').trim();
+    if (!normalized) return null;
+    if (/\s|\\|[\u0000-\u001f\u007f]/.test(normalized)) {
+      throw new Error('公开地址不能包含空白或控制字符');
+    }
+    if (allowRelative && normalized.startsWith('/') && !normalized.startsWith('//')) {
+      return normalized;
+    }
+    try {
+      const url = new URL(normalized);
+      if (url.protocol === 'https:' && url.host) return normalized;
+    } catch {
+      // Use the stable field-specific message below.
+    }
+    throw new Error(allowRelative
+      ? '操作地址仅支持 HTTPS 外链或 / 开头的站内路径'
+      : '封面地址仅支持 HTTPS 外链');
+  }
+
+  function validateAdminActivityLinks(input = {}) {
+    const coverUrl = validateAdminPublicUrl(input.coverUrl);
+    const actionLabel = String(input.actionLabel || '').trim() || null;
+    const actionUrl = validateAdminPublicUrl(input.actionUrl, { allowRelative: true });
+    if (Boolean(actionLabel) !== Boolean(actionUrl)) {
+      throw new Error('操作文字和操作地址必须同时填写');
+    }
+    if (actionLabel && actionLabel.length > 30) throw new Error('操作文字最多 30 个字符');
+    return { coverUrl, actionLabel, actionUrl };
+  }
+
+  function validateAdminNotificationTitle(value) {
+    const title = String(value || '').trim();
+    if (!title || title.length > 80) throw new Error('通知标题须为 1 至 80 个字符');
+    return title;
   }
 
   function hongKongToday(now = Date.now()) {
@@ -88,12 +135,16 @@
 
   const exported = {
     activityScheduledMessage,
+    canEditAdminActivity,
     formatAdminCodeExpiry,
     hongKongToday,
     initializeAdminAccess,
     localDateTimeToIso,
     notificationActivitySource,
     resolveAdminAccess,
+    validateAdminActivityLinks,
+    validateAdminNotificationTitle,
+    validateAdminPublicUrl,
     validateCheckinRule,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = exported;
@@ -136,7 +187,9 @@
     let checkinClient = null;
     let notificationsClient = null;
     let access = 'loading';
-    let activating = false;
+    let accountKey = adminAccountKey(accountPanel?.getIdentity?.());
+    let generation = 0;
+    let activatingGeneration = null;
     let activities = [];
     let checkinRules = [];
     let notifications = [];
@@ -232,7 +285,7 @@
           `${activityStatus(activity)} · 发布 ${formatLocalDateTime(activity.publishAt)}`,
           `${formatLocalDateTime(activity.startsAt)} 至 ${formatLocalDateTime(activity.endsAt)} · 奖励 ${activity.rewardAmount} 金币 · ${activity.claimCount || 0} 人领取`,
         ], [
-          { label: '编辑', dataName: 'editActivity', dataValue: activity.id },
+          { label: '编辑', dataName: 'editActivity', dataValue: activity.id, disabled: !activity.active },
           { label: '提前下架', dataName: 'unpublishActivity', dataValue: activity.id, danger: true, disabled: !activity.active },
         ]));
       });
@@ -246,7 +299,7 @@
 
     function editActivity(id) {
       const activity = activities.find((item) => String(item.id) === String(id));
-      if (!activity) return;
+      if (!activity || !activity.active) return;
       const fields = {
         id: activity.id,
         title: activity.title,
@@ -390,46 +443,69 @@
       renderSystemStatus();
     }
 
-    async function loadAllConfigData() {
+    function clearAdminData() {
+      activities = [];
+      checkinRules = [];
+      notifications = [];
+      seasons = [];
+      redeemCodes = [];
+      generatedCode.hidden = true;
+      generatedCodeValue.textContent = '';
+      resetActivityForm();
+      [activityMessage, checkinMessage, notificationMessage, seasonMessage, redeemMessage]
+        .forEach((element) => setMessage(element));
+      [activityForm, checkinForm, notificationForm, seasonForm, redeemForm]
+        .forEach((form) => setFormBusy(form, false));
+      workspace.setAttribute('aria-busy', 'false');
+      renderAll();
+    }
+
+    async function loadAllConfigData(token = generation) {
+      if (token !== generation) return;
       workspace.setAttribute('aria-busy', 'true');
       setMessage(accessState, '管理权限已通过，正在并行加载站点配置…');
       try {
-        [activities, checkinRules, notifications, seasons, redeemCodes] = await Promise.all([
+        const loaded = await Promise.all([
           activitiesClient.adminList(),
           checkinClient.adminListRules(),
           notificationsClient.adminList(),
           statsClient.listSeasons(),
           economyClient.listRedeemCodes(),
         ]);
+        if (token !== generation) return;
+        [activities, checkinRules, notifications, seasons, redeemCodes] = loaded;
         renderAll();
         retryButton.hidden = true;
         setMessage(accessState, '管理权限已通过；服务端 RPC 继续执行最终权限校验。', 'success');
       } catch (error) {
+        if (token !== generation) return;
         retryButton.hidden = false;
         setMessage(accessState, `配置加载失败：${String(error?.message || error)}。可重试，服务端权限边界未改变。`, 'error');
       } finally {
-        workspace.setAttribute('aria-busy', 'false');
+        if (token === generation) workspace.setAttribute('aria-busy', 'false');
       }
     }
 
-    async function activateAdmin() {
-      if (activating || access !== 'admin') return;
-      activating = true;
+    async function activateAdmin(token = generation) {
+      if (token !== generation || access !== 'admin' || activatingGeneration === token) return;
+      activatingGeneration = token;
       try {
         activitiesClient ||= globalScope.PlayerActivities.createActivitiesClient({ accountClient });
         checkinClient ||= globalScope.PlayerCheckin.createCheckinClient({ accountClient });
         notificationsClient ||= globalScope.PlayerNotifications.createNotificationsClient({ accountClient });
-        await loadAllConfigData();
+        await loadAllConfigData(token);
       } finally {
-        activating = false;
+        if (activatingGeneration === token) activatingGeneration = null;
       }
     }
 
-    async function verifyAccess() {
+    async function verifyAccess(token = generation) {
+      if (token !== generation) return;
       setAccess('loading', '正在等待账号初始化与经济权限快照…');
       retryButton.hidden = true;
       try {
         const result = await initializeAdminAccess({ accountClient, economyClient });
+        if (token !== generation || adminAccountKey(result.identity) !== accountKey) return;
         economySnapshot = result.economySnapshot;
         if (result.access === 'login') {
           setAccess('login', '请先登录正式账号，再验证管理权限。');
@@ -441,8 +517,9 @@
         }
         if (result.access !== 'admin') throw new Error('权限快照尚未就绪');
         setAccess('admin', '管理权限已通过，正在加载配置…', 'success');
-        await activateAdmin();
+        await activateAdmin(token);
       } catch (error) {
+        if (token !== generation) return;
         setAccess('error', `无法验证管理权限：${String(error?.message || error)}`, 'error');
       }
     }
@@ -457,13 +534,16 @@
       const data = new FormData(activityForm);
       let payload;
       try {
+        const links = validateAdminActivityLinks({
+          coverUrl: data.get('coverUrl'),
+          actionLabel: data.get('actionLabel'),
+          actionUrl: data.get('actionUrl'),
+        });
         payload = {
           id: data.get('id') || null,
           title: data.get('title'),
           body: data.get('body'),
-          coverUrl: data.get('coverUrl') || null,
-          actionLabel: data.get('actionLabel') || null,
-          actionUrl: data.get('actionUrl') || null,
+          ...links,
           publishAt: localDateTimeToIso(data.get('publishAt')),
           startsAt: localDateTimeToIso(data.get('startsAt')),
           endsAt: localDateTimeToIso(data.get('endsAt')),
@@ -472,6 +552,13 @@
       } catch (error) {
         setMessage(activityMessage, error.message, 'error');
         return;
+      }
+      if (payload.id) {
+        const existing = activities.find((activity) => String(activity.id) === String(payload.id));
+        if (!canEditAdminActivity(existing)) {
+          setMessage(activityMessage, '已下架活动不可编辑，请新建活动排期。', 'error');
+          return;
+        }
       }
       setFormBusy(activityForm, true);
       setMessage(activityMessage, '正在保存活动排期…');
@@ -541,11 +628,18 @@
       event.preventDefault();
       if (access !== 'admin' || !notificationsClient) return;
       const data = new FormData(notificationForm);
+      let title;
+      try {
+        title = validateAdminNotificationTitle(data.get('title'));
+      } catch (error) {
+        setMessage(notificationMessage, error.message, 'error');
+        return;
+      }
       setFormBusy(notificationForm, true);
       setMessage(notificationMessage, '正在发布通知…');
       try {
         await notificationsClient.adminPublish({
-          title: data.get('title'),
+          title,
           body: data.get('body'),
           rewardAmount: Number(data.get('rewardAmount')),
           visibleAt: localDateTimeToIso(data.get('visibleAt')),
@@ -675,11 +769,21 @@
 
     accountPanel?.subscribe(({ identity, economySnapshot: nextSnapshot }) => {
       economySnapshot = nextSnapshot;
+      const nextAccountKey = adminAccountKey(identity);
+      if (nextAccountKey !== accountKey) {
+        accountKey = nextAccountKey;
+        generation += 1;
+        activatingGeneration = null;
+        setAccess('loading', '账号已切换，正在重新验证管理权限…');
+        clearAdminData();
+        void verifyAccess(generation);
+        return;
+      }
       const nextAccess = resolveAdminAccess({ identity, economySnapshot: nextSnapshot });
       if (nextAccess === access) return;
       if (nextAccess === 'admin') {
         setAccess('admin', '管理权限已通过，正在加载配置…', 'success');
-        void activateAdmin();
+        void activateAdmin(generation);
       } else if (nextAccess === 'forbidden') {
         setAccess('forbidden', '当前账号无管理权限。', 'error');
       } else if (nextAccess === 'login') {
@@ -688,7 +792,7 @@
     });
 
     prepareFormDefaults();
-    void verifyAccess();
+    void verifyAccess(generation);
     return { verifyAccess };
   }
 

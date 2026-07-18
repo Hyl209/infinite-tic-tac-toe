@@ -171,6 +171,16 @@ test('通知表单包含独立发布时间、失效时间与奖励字段', () =>
   assert.match(form, /name="expiresAt"[^>]*type="datetime-local"|type="datetime-local"[^>]*name="expiresAt"/);
 });
 
+test('通知管理记录显示关联活动来源并明确标记独立通知', () => {
+  assert.equal(typeof admin.notificationActivitySource, 'function');
+  assert.equal(
+    admin.notificationActivitySource({ activityId: 'summer-event-2026' }),
+    '关联活动：summer-event-2026',
+  );
+  assert.equal(admin.notificationActivitySource({ activityId: null }), '独立通知');
+  assert.match(read('./src/routes/admin.js'), /notificationActivitySource\(notification\)/);
+});
+
 test('后台样式包含可达焦点、加载禁用和窄屏布局', () => {
   const css = read('./assets/styles/admin.css');
   assert.match(css, /:focus-visible/);

@@ -58,6 +58,11 @@
     return `已排期，将于 ${formatLocalDateTime(publishAt)} 自动发布`;
   }
 
+  function notificationActivitySource(notification = {}) {
+    const activityId = String(notification.activityId || '').trim();
+    return activityId ? `关联活动：${activityId}` : '独立通知';
+  }
+
   function hongKongToday(now = Date.now()) {
     return new Date(new Date(now).getTime() + (8 * 60 * 60 * 1000)).toISOString().slice(0, 10);
   }
@@ -87,6 +92,7 @@
     hongKongToday,
     initializeAdminAccess,
     localDateTimeToIso,
+    notificationActivitySource,
     resolveAdminAccess,
     validateCheckinRule,
   };
@@ -294,6 +300,7 @@
         notificationList.append(recordRow(notification.title, [
           `${notificationStatus(notification)} · ${formatLocalDateTime(notification.visibleAt)} 可见${notification.expiresAt ? ` · ${formatLocalDateTime(notification.expiresAt)} 失效` : ''}`,
           `奖励 ${notification.rewardAmount || 0} 金币 · ${notification.claimCount || 0} 人领取 · ${notification.readCount || 0} 人已读`,
+          notificationActivitySource(notification),
         ], [{
           label: '停用',
           dataName: 'disableNotification',

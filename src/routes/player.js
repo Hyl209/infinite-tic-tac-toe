@@ -27,6 +27,7 @@
 
     const tabButtons = Array.from(document.querySelectorAll('[data-player-tab]'));
     const panels = Array.from(document.querySelectorAll('[data-player-panel]'));
+    const tabList = document.querySelector('.player-tabs');
     const summaryName = document.querySelector('#player-summary-name');
     const summaryKind = document.querySelector('#player-summary-kind');
     const summaryBalance = document.querySelector('#player-summary-balance');
@@ -47,7 +48,12 @@
     const notificationsClient = accountClient
       ? globalScope.PlayerNotifications?.createNotificationsClient({ accountClient })
       : null;
+    const eventController = new AbortController();
+    const { signal } = eventController;
+    const narrowTabs = globalScope.matchMedia?.('(max-width: 759px)') || null;
     let currentTab = readPlayerRoute(globalScope.location?.href).tab;
+    let destroyed = false;
+    let instance = null;
 
     function setMessage(text = '', state = '') {
       if (!message) return;
@@ -84,6 +90,10 @@
       });
     }
 
+    function syncTabOrientation() {
+      tabList?.setAttribute('aria-orientation', narrowTabs?.matches ? 'horizontal' : 'vertical');
+    }
+
     function replaceTab(tab) {
       currentTab = normalizePlayerTab(tab);
       const url = new URL(globalScope.location.href);
@@ -100,12 +110,15 @@
     }
 
     tabButtons.forEach((button, index) => {
-      button.addEventListener('click', () => replaceTab(button.dataset.playerTab));
+      button.addEventListener('click', () => replaceTab(button.dataset.playerTab), { signal });
       button.addEventListener('keydown', (event) => {
-        if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
+        const orientation = tabList?.getAttribute('aria-orientation') || 'vertical';
+        const nextKey = orientation === 'horizontal' ? 'ArrowRight' : 'ArrowDown';
+        const previousKey = orientation === 'horizontal' ? 'ArrowLeft' : 'ArrowUp';
+        if (event.key === nextKey) {
           event.preventDefault();
           focusTab(index + 1);
-        } else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
+        } else if (event.key === previousKey) {
           event.preventDefault();
           focusTab(index - 1);
         } else if (event.key === 'Home') {
@@ -115,19 +128,21 @@
           event.preventDefault();
           focusTab(tabButtons.length - 1);
         }
-      });
+      }, { signal });
     });
 
-    checkinLoginButton?.addEventListener('click', () => accountPanel?.open());
+    checkinLoginButton?.addEventListener('click', () => accountPanel?.open(), { signal });
+    narrowTabs?.addEventListener?.('change', syncTabOrientation);
     const unsubscribe = accountPanel?.subscribe((state) => renderSummary(state)) || (() => {});
 
+    syncTabOrientation();
     renderTabs();
     renderSummary();
     if (!accountPanel || !checkinClient || !activitiesClient || !notificationsClient || !economyClient) {
       setMessage('玩家服务暂时不可用，请稍后刷新页面', 'error');
     }
 
-    mounted = {
+    instance = {
       accountClient,
       economyClient,
       checkinClient,
@@ -135,11 +150,16 @@
       notificationsClient,
       getTab: () => currentTab,
       destroy() {
+        if (destroyed) return;
+        destroyed = true;
+        eventController.abort();
+        narrowTabs?.removeEventListener?.('change', syncTabOrientation);
         unsubscribe();
-        mounted = null;
+        if (mounted === instance) mounted = null;
       },
     };
-    return mounted;
+    mounted = instance;
+    return instance;
   }
 
   const playerCenter = { mount, normalizePlayerTab, readPlayerRoute };

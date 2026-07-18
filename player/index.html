@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#08090d">
+    <meta name="description" content="HYL Space 玩家中心，查看签到、活动与通知">
+    <title>玩家中心 - HYL Space</title>
+    <link rel="icon" href="/assets/images/image_01.png">
+    <link rel="stylesheet" href="/assets/styles/game.css">
+    <link rel="stylesheet" href="/assets/styles/portal.css">
+    <link rel="stylesheet" href="/assets/styles/player.css">
+    <script src="/src/config/online.js" defer></script>
+    <script src="/src/utils/room-code.js" defer></script>
+    <script src="/src/services/online.js" defer></script>
+    <script src="/src/services/account.js" defer></script>
+    <script src="/src/services/economy.js" defer></script>
+    <script src="/src/services/stats.js" defer></script>
+    <script src="/src/services/checkin.js" defer></script>
+    <script src="/src/services/activities.js" defer></script>
+    <script src="/src/services/notifications.js" defer></script>
+    <script src="/src/routes/account-panel.js" defer></script>
+    <script src="/src/routes/player.js" defer></script>
+  </head>
+  <body data-view="player">
+    <a class="skip-link" href="#player-main">跳到玩家中心内容</a>
+    <header class="site-nav">
+      <div class="site-nav-inner">
+        <a class="site-brand" href="/" aria-label="返回 HYL Space 首页">
+          <span class="site-brand-mark" aria-hidden="true">
+            <img src="/assets/images/image_01.png" alt="">
+          </span>
+          <span>HYL SPACE</span>
+        </a>
+
+        <nav class="player-header-links" aria-label="玩家中心快捷导航">
+          <a href="/">首页</a>
+          <a href="/game/">游戏专区</a>
+        </nav>
+
+        <button id="account-button" class="account-button" type="button" aria-label="打开账号面板" aria-haspopup="dialog" aria-controls="account-dialog">
+          <span class="account-avatar" aria-hidden="true">游</span>
+          <span class="account-button-copy">
+            <small id="account-kind-label">游客身份</small>
+            <strong id="account-display-name">匿名玩家</strong>
+          </span>
+          <span id="account-coin-balance" class="coin-balance" hidden>金币 0</span>
+        </button>
+      </div>
+    </header>
+
+    <main id="player-main" class="player-shell" tabindex="-1">
+      <section id="player-summary" class="player-summary" aria-labelledby="player-summary-name">
+        <div class="player-summary-copy">
+          <p id="player-summary-kind">游客身份</p>
+          <h1 id="player-summary-name">匿名玩家</h1>
+        </div>
+        <div class="player-summary-meta" aria-label="玩家摘要">
+          <span>玩家中心</span>
+          <span id="player-summary-balance" hidden>金币 0</span>
+        </div>
+      </section>
+
+      <div class="player-workspace">
+        <nav class="player-tabs" role="tablist" aria-label="玩家中心栏目" aria-orientation="vertical">
+          <button id="player-tab-checkin" class="player-tab" type="button" role="tab" aria-selected="true" aria-controls="player-panel-checkin" data-player-tab="checkin">
+            签到月历
+          </button>
+          <button id="player-tab-activities" class="player-tab" type="button" role="tab" aria-selected="false" aria-controls="player-panel-activities" data-player-tab="activities" tabindex="-1">
+            活动
+          </button>
+          <button id="player-tab-notifications" class="player-tab" type="button" role="tab" aria-selected="false" aria-controls="player-panel-notifications" data-player-tab="notifications" tabindex="-1">
+            通知
+          </button>
+        </nav>
+
+        <div class="player-content">
+          <section id="player-panel-checkin" class="player-panel" role="tabpanel" aria-labelledby="player-tab-checkin" data-player-panel="checkin" tabindex="-1">
+            <header class="player-panel-heading">
+              <h2>签到月历</h2>
+              <p>正式玩家可查看当月签到记录和奖励。</p>
+            </header>
+            <div id="checkin-guest-state" class="player-guest-state">
+              <p>请先登录正式账号，再进行每日签到。游客仍可查看公开活动和通知。</p>
+              <button id="checkin-login-button" class="player-primary-action" type="button">登录账号</button>
+            </div>
+            <div id="checkin-calendar" class="player-placeholder" aria-live="polite">
+              <p>签到月历将在账号准备完成后显示。</p>
+            </div>
+          </section>
+
+          <section id="player-panel-activities" class="player-panel" role="tabpanel" aria-labelledby="player-tab-activities" data-player-panel="activities" tabindex="-1" hidden>
+            <header class="player-panel-heading">
+              <h2>活动</h2>
+              <p>游客也可以查看当前公开活动，登录后可领取符合条件的奖励。</p>
+            </header>
+            <div id="activity-list" class="player-placeholder" aria-live="polite">
+              <p>正在准备活动列表。</p>
+            </div>
+          </section>
+
+          <section id="player-panel-notifications" class="player-panel" role="tabpanel" aria-labelledby="player-tab-notifications" data-player-panel="notifications" tabindex="-1" hidden>
+            <header class="player-panel-heading">
+              <h2>通知</h2>
+              <p>游客可以阅读公开通知，登录后还会显示已读和奖励状态。</p>
+            </header>
+            <div id="notification-list" class="player-placeholder" aria-live="polite">
+              <p>正在准备通知列表。</p>
+            </div>
+          </section>
+
+          <p id="player-message" class="player-message" aria-live="polite" aria-atomic="true"></p>
+        </div>
+      </div>
+
+      <dialog id="account-dialog" class="account-dialog" aria-labelledby="account-dialog-title">
+        <div class="account-dialog-shell">
+          <button id="account-close-button" class="account-close-button" type="button">关闭</button>
+          <header class="account-dialog-header">
+            <p>玩家身份</p>
+            <h2 id="account-dialog-title">登录账号</h2>
+            <p id="account-dialog-description">登录后，游戏名会同步到其他设备。</p>
+          </header>
+
+          <div id="account-auth-view">
+            <div class="account-tabs" role="tablist" aria-label="登录或注册">
+              <button id="account-login-tab" type="button" role="tab" aria-selected="true">登录</button>
+              <button id="account-register-tab" type="button" role="tab" aria-selected="false">注册</button>
+            </div>
+
+            <form id="account-login-form" class="account-form">
+              <label class="account-field" for="login-username">
+                <span>用户名</span>
+                <input id="login-username" name="username" type="text" minlength="3" maxlength="20" pattern="[A-Za-z0-9_]{3,20}" autocomplete="username" spellcheck="false" required>
+              </label>
+              <label class="account-field" for="login-password">
+                <span>密码</span>
+                <input id="login-password" name="password" type="password" minlength="8" maxlength="64" autocomplete="current-password" required>
+              </label>
+              <button class="button primary" type="submit">登录账号</button>
+            </form>
+
+            <form id="account-register-form" class="account-form" hidden>
+              <label class="account-field" for="register-username">
+                <span>登录用户名</span>
+                <input id="register-username" name="username" type="text" minlength="3" maxlength="20" pattern="[A-Za-z0-9_]{3,20}" autocomplete="username" spellcheck="false" aria-describedby="username-hint" required>
+                <small id="username-hint">3 至 20 位英文、数字或下划线</small>
+              </label>
+              <label class="account-field" for="register-password">
+                <span>密码</span>
+                <input id="register-password" name="password" type="password" minlength="8" maxlength="64" autocomplete="new-password" required>
+              </label>
+              <label class="account-field" for="register-game-name">
+                <span>游戏名</span>
+                <input id="register-game-name" name="gameName" type="text" maxlength="16" autocomplete="nickname" required>
+              </label>
+              <button class="button primary" type="submit">注册账号</button>
+            </form>
+          </div>
+
+          <form id="account-profile-form" class="account-form" hidden>
+            <p class="account-username">登录用户名 <strong id="profile-username"></strong></p>
+            <label class="account-field" for="profile-game-name">
+              <span>游戏名</span>
+              <input id="profile-game-name" name="gameName" type="text" maxlength="16" autocomplete="nickname" required>
+            </label>
+            <div class="account-profile-actions">
+              <button class="button primary" type="submit">保存游戏名</button>
+              <button id="account-logout-button" class="button danger" type="button">退出账号</button>
+            </div>
+          </form>
+
+          <section id="wallet-panel" class="wallet-panel" hidden aria-labelledby="wallet-title">
+            <div class="wallet-heading">
+              <div>
+                <small>可用金币</small>
+                <strong id="wallet-balance">0</strong>
+              </div>
+              <button id="open-admin-button" class="button secondary" type="button" hidden>管理后台</button>
+            </div>
+            <form id="redeem-code-form" class="redeem-form">
+              <label class="account-field" for="redeem-code-input">
+                <span id="wallet-title">兑换码</span>
+                <div class="redeem-row">
+                  <input id="redeem-code-input" name="code" type="text" maxlength="16" autocomplete="off" spellcheck="false" placeholder="XXXX-XXXX-XXXX" required>
+                  <button class="button primary" type="submit">领取金币</button>
+                </div>
+              </label>
+            </form>
+            <p id="redeem-message" class="account-message" aria-live="polite"></p>
+          </section>
+
+          <section id="match-history-panel" class="match-history-panel" hidden aria-labelledby="match-history-title">
+            <div class="match-history-heading">
+              <div>
+                <small>个人战绩</small>
+                <h3 id="match-history-title">最近对局</h3>
+              </div>
+              <label for="match-history-filter">
+                <span class="visually-hidden">筛选游戏</span>
+                <select id="match-history-filter">
+                  <option value="">全部游戏</option>
+                  <option value="tic_tac_toe">无限井字棋</option>
+                  <option value="gomoku">五子棋</option>
+                </select>
+              </label>
+            </div>
+            <div id="season-summary" class="season-summary" aria-live="polite"></div>
+            <p id="match-history-message" class="account-message" aria-live="polite"></p>
+            <div id="match-history-list" class="match-history-list"></div>
+            <button id="load-more-history-button" class="button secondary" type="button" hidden>加载更多战绩</button>
+          </section>
+
+          <p id="account-message" class="account-message" aria-live="polite"></p>
+          <p class="account-footnote">游客也能在线对战，名称会显示为匿名玩家加随机码。</p>
+        </div>
+      </dialog>
+    </main>
+  </body>
+</html>

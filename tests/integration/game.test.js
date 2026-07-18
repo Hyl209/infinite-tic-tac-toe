@@ -657,6 +657,7 @@ test('游戏页导航提供玩家中心和通知未读入口', () => {
   assert.match(navMarkup, /id="notification-bell"[^>]*href="\/player\/\?tab=notifications"/);
   assert.match(navMarkup, /id="notification-bell"[^>]*aria-label="[^"]*通知[^"]*"/);
   assert.match(navMarkup, /id="notification-unread-count"[^>]*hidden/);
+  assert.match(navMarkup, /id="account-button"[^>]*aria-label="打开账号面板"/);
   assert.match(
     html,
     /src="\/src\/services\/account\.js"[^>]*defer[\s\S]*src="\/src\/services\/notifications\.js"[^>]*defer[\s\S]*src="\/src\/routes\/account-panel\.js"[^>]*defer[\s\S]*src="\/src\/routes\/game\.js"[^>]*defer[\s\S]*src="\/src\/routes\/notification-bell\.js"[^>]*defer/,

@@ -58,6 +58,10 @@
     return Array.isArray(data) ? data[0] : data;
   }
 
+  function registeredIdentityKey(identity = {}) {
+    return `registered:${identity.uid ?? identity.userId ?? identity.id ?? identity.username ?? ''}`;
+  }
+
   function mapPlayer(row, prefix = '') {
     return {
       id: prefix ? (row?.[`${prefix}id`] ?? null) : (row?.user_id ?? row?.id ?? null),
@@ -147,8 +151,9 @@
     }
 
     async function callRpc(name, params) {
-      requireRegistered();
+      const identityKey = registeredIdentityKey(requireRegistered());
       const client = await getSupabaseClient();
+      if (registeredIdentityKey(requireRegistered()) !== identityKey) fail('ACCOUNT_IDENTITY_CHANGED');
       const result = await client.rpc(name, params);
       if (result?.error) throw result.error;
       return result?.data;

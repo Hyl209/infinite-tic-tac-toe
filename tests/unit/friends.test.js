@@ -10,6 +10,12 @@ try {
   friendsApi = {};
 }
 
+function deferred() {
+  let resolve;
+  const promise = new Promise((next) => { resolve = next; });
+  return { promise, resolve };
+}
+
 function createHarness({ identityKind = 'registered', rpcResults = [] } = {}) {
   const calls = [];
   const channels = [];
@@ -171,6 +177,61 @@ test('all friend and invite writes call fixed RPC contracts', async () => {
     { name: 'send_game_invite', params: { p_game_id: 'game-1', p_recipient_id: 'user-4' } },
     { name: 'cancel_game_invite', params: { p_invite_id: 'invite-1' } },
     { name: 'decline_game_invite', params: { p_invite_id: 'invite-2' } },
+  ]);
+});
+
+test('write started by account A is rejected if account B replaces it before client resolution', async () => {
+  const clientReady = deferred();
+  const harness = createHarness();
+  const getSupabaseClient = harness.getSupabaseClient.bind(harness);
+  harness.getSupabaseClient = async () => {
+    await clientReady.promise;
+    return getSupabaseClient();
+  };
+  const client = createClient(harness);
+
+  const pending = client.sendRequest('user-2');
+  harness.setIdentity('registered', { id: 'user-2' });
+  clientReady.resolve();
+
+  await assert.rejects(pending, { message: 'ACCOUNT_IDENTITY_CHANGED' });
+  assert.equal(harness.calls.length, 0);
+});
+
+test('write started by account A is rejected if it becomes a guest before client resolution', async () => {
+  const clientReady = deferred();
+  const harness = createHarness();
+  const getSupabaseClient = harness.getSupabaseClient.bind(harness);
+  harness.getSupabaseClient = async () => {
+    await clientReady.promise;
+    return getSupabaseClient();
+  };
+  const client = createClient(harness);
+
+  const pending = client.sendRequest('user-2');
+  harness.setIdentity('guest');
+  clientReady.resolve();
+
+  await assert.rejects(pending, { message: 'REGISTERED_ACCOUNT_REQUIRED' });
+  assert.equal(harness.calls.length, 0);
+});
+
+test('write continues when the registered identity is unchanged during client resolution', async () => {
+  const clientReady = deferred();
+  const harness = createHarness({ rpcResults: [{ data: ['request-1'], error: null }] });
+  const getSupabaseClient = harness.getSupabaseClient.bind(harness);
+  harness.getSupabaseClient = async () => {
+    await clientReady.promise;
+    return getSupabaseClient();
+  };
+  const client = createClient(harness);
+
+  const pending = client.sendRequest('user-2');
+  clientReady.resolve();
+
+  assert.equal(await pending, 'request-1');
+  assert.deepEqual(harness.calls, [
+    { name: 'send_friend_request', params: { p_recipient_id: 'user-2' } },
   ]);
 });
 

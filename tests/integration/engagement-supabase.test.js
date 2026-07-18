@@ -549,6 +549,26 @@ for (const [label, path] of sqlSources) {
     }
   });
 
+  test(`${label} preserves stored reward snapshots in the check-in calendar`, () => {
+    const body = extractFunction(readSql(path), 'get_checkin_month');
+    assert.match(
+      body,
+      /coalesce\s*\(\s*checkin\.reward_amount\s*,\s*case\s+extract\s*\(\s*isodow\s+from\s+calendar\.checkin_date\s*\)::integer[\s\S]*?end\s*\)\s+as\s+reward_amount/i,
+      'get_checkin_month must prefer the stored check-in reward before the rule fallback',
+    );
+    for (const [day, field] of [
+      [1, 'monday_reward'],
+      [2, 'tuesday_reward'],
+      [3, 'wednesday_reward'],
+      [4, 'thursday_reward'],
+      [5, 'friday_reward'],
+      [6, 'saturday_reward'],
+      [7, 'sunday_reward'],
+    ]) {
+      assert.match(body, new RegExp(`when\\s+${day}\\s+then\\s+rule\\.${field}`, 'i'));
+    }
+  });
+
   test(`${label} publishes notification and read changes to Realtime`, () => {
     const sql = readSql(path);
     for (const table of ['site_notifications', 'notification_reads']) {

@@ -3714,15 +3714,18 @@ begin
   return query
   select
     calendar.checkin_date,
-    case extract(isodow from calendar.checkin_date)::integer
-      when 1 then rule.monday_reward
-      when 2 then rule.tuesday_reward
-      when 3 then rule.wednesday_reward
-      when 4 then rule.thursday_reward
-      when 5 then rule.friday_reward
-      when 6 then rule.saturday_reward
-      when 7 then rule.sunday_reward
-    end as reward_amount,
+    coalesce(
+      checkin.reward_amount,
+      case extract(isodow from calendar.checkin_date)::integer
+        when 1 then rule.monday_reward
+        when 2 then rule.tuesday_reward
+        when 3 then rule.wednesday_reward
+        when 4 then rule.thursday_reward
+        when 5 then rule.friday_reward
+        when 6 then rule.saturday_reward
+        when 7 then rule.sunday_reward
+      end
+    ) as reward_amount,
     checkin.user_id is not null as checked_in,
     checkin.checkin_type,
     checkin.payment_method,

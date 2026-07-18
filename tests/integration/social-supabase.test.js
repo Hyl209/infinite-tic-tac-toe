@@ -17,7 +17,9 @@ function socialSqlFiles() {
 
 function functionBody(sql, name, nextName) {
   const start = sql.indexOf(`create or replace function public.${name}`);
-  const end = nextName ? sql.indexOf(`create or replace function public.${nextName}`, start + 1) : -1;
+  const end = nextName
+    ? sql.indexOf(`create or replace function public.${nextName}`, start + 1)
+    : sql.indexOf('$$;', start) + 3;
   return start < 0 ? '' : sql.slice(start, end < 0 ? undefined : end);
 }
 
@@ -45,7 +47,7 @@ test('社交迁移是增量迁移且 setup 同步包含完整功能', () => {
 
 test('玩家 UID 从 000000 原子分配、管理员优先回填且永远不可修改', () => {
   for (const sql of socialSqlFiles()) {
-    assert.match(sql, /create sequence public\.player_uid_seq[\s\S]*minvalue\s+0[\s\S]*maxvalue\s+999999[\s\S]*start\s+with\s+0/i);
+    assert.match(sql, /create sequence(?: if not exists)? public\.player_uid_seq[\s\S]*minvalue\s+0[\s\S]*maxvalue\s+999999[\s\S]*start\s+with\s+0/i);
     assert.match(sql, /add column if not exists player_uid integer/i);
     assert.match(sql, /profiles_player_uid_(?:key|unique)|unique\s*\(player_uid\)/i);
     assert.match(sql, /player_uid between 0 and 999999/i);

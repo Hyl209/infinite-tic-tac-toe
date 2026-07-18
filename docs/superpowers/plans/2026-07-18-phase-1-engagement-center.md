@@ -34,9 +34,11 @@ PlayerActivities.createActivitiesClient({ accountClient })
 
 PlayerNotifications.createNotificationsClient({ accountClient })
   .list({ cursor, limit })
+  .countUnread()
   .markRead(notificationId)
   .claimReward(notificationId, requestId)
   .subscribe(listener)
+  .adminList()
   .adminPublish(input)
   .adminDisable(notificationId)
 
@@ -57,8 +59,10 @@ admin_list_activities
 admin_save_activity
 admin_unpublish_activity
 list_site_notifications
+count_unread_site_notifications
 mark_site_notification_read
 claim_site_notification_reward
+admin_list_site_notifications
 admin_publish_site_notification
 admin_disable_site_notification
 get_checkin_month
@@ -97,8 +101,10 @@ const requiredRpcs = [
   'admin_save_activity',
   'admin_unpublish_activity',
   'list_site_notifications',
+  'count_unread_site_notifications',
   'mark_site_notification_read',
   'claim_site_notification_reward',
+  'admin_list_site_notifications',
   'admin_publish_site_notification',
   'admin_disable_site_notification',
   'get_checkin_month',
@@ -273,7 +279,9 @@ apply_coin_delta(
 
 - [ ] **Step 4: 实现通知 RPC**
 
-列表按 `visible_at desc, id desc` 游标分页，默认 20 条，最大 50 条；游客返回公开内容，正式用户额外返回 `is_read` 和 `reward_claimed`。
+列表按 `visible_at desc, id desc` 双字段游标分页，默认 20 条，最大 50 条；游客返回公开内容，正式用户额外返回 `is_read` 和 `reward_claimed`。`count_unread_site_notifications()` 必须从全部当前可见且有效的通知关联当前用户读记录计算权威未读总数，不得根据当前分页结果猜测。
+
+`admin_list_site_notifications()` 必须返回独立通知和活动关联通知的启用/可见/失效状态、已读人数和领奖人数，供管理中心列表与停用操作使用。
 
 独立通知领奖使用 `notification_reward:<notification_id>:<user_id>` 幂等键。已过期、停用、零奖励、重复领取分别抛出稳定错误码。
 
@@ -326,7 +334,7 @@ git commit -m "feat: add engagement database contracts"
 
 ```text
 活动：公开列表映射、一次领取、管理员保存和下架
-通知：游标分页、已读、领奖、管理员发布和停用
+通知：双字段游标分页、权威未读总数、已读、领奖、管理员列表/发布/停用
 签到：月份格式、当天签到、金币补签、拒绝 item 支付
 ```
 
@@ -524,7 +532,7 @@ git commit -m "feat: add activity and notification views"
 
 - [ ] **Step 2: 实现通知铃铛控制器**
 
-铃铛只请求最近通知和未读数；注册用户显示数字，游客只显示入口。点击进入 `/player/?tab=notifications`。页面可见时刷新，避免后台定时高频请求。
+铃铛通过 `countUnread()` 请求权威未读总数，并只拉最近通知用于入口状态；不得用当前分页列表计数。注册用户显示数字，游客只显示入口。点击进入 `/player/?tab=notifications`。页面可见时刷新，避免后台定时高频请求。
 
 - [ ] **Step 3: 更新导航和窄屏样式**
 
@@ -569,7 +577,7 @@ git commit -m "feat: add player center and notification navigation"
 
 - [ ] **Step 5: 实现独立通知表单**
 
-字段：标题、正文、奖励金币、立即可见时间、可选失效时间。发布后列表显示可见状态、领取人数和停用按钮。
+字段：标题、正文、奖励金币、立即可见时间、可选失效时间。发布后通过 `adminList()` 刷新列表，显示活动关联来源、可见/失效/停用状态、已读人数、领取人数和停用按钮。
 
 - [ ] **Step 6: 迁移赛季和兑换码管理**
 
@@ -619,6 +627,19 @@ git commit -m "feat: add unified site administration"
 并发提交当天签到只生成一条签到记录和一笔奖励
 金币不足补签不产生签到记录，也不产生部分流水
 香港日期跨日后当天签到日期正确
+```
+
+同时运行 `database/supabase/verify-engagement.sql` 的可失败断言，直接查询真实项目：
+
+```text
+pg_policies：业务表 RLS 与 notification_reads 本人 SELECT
+pg_publication_tables：仅 site_notifications、notification_reads
+information_schema.role_*_grants / has_function_privilege：表 ACL、公开列表和 authenticated-only RPC
+管理通知统计：已读/领取人数与源表真实记录一致
+count_unread_site_notifications：跨分页、过期和停用通知计算正确
+并发活动领取/通知领取/当天签到：唯一记录和单笔流水
+金币不足补签：签到、扣费、奖励全部回滚
+同一 request/稳定幂等键重试：余额和流水守恒
 ```
 
 - [ ] **Step 3: 运行全部自动测试**

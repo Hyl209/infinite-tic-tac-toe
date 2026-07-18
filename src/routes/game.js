@@ -336,6 +336,12 @@
     const accountClient = accountPanel?.accountClient;
     const economyClient = accountPanel?.economyClient;
     const statsClient = accountPanel?.statsClient;
+    const gameFriends = globalScope.HYLGameFriends?.mount({
+      accountPanel,
+      onMessage: (message) => {
+        onlineRoomMessage.textContent = message;
+      },
+    }) || { setWaitingRoom() {}, destroy() {} };
     const sessionScores = new Map();
     let gameType = null;
     let engine = null;
@@ -1217,6 +1223,11 @@
           rematchRejected = null;
         }
         onlineGame = game;
+        gameFriends.setWaitingRoom(
+          onlineGame?.status === 'waiting' && onlineGame?.playerMark === 'X'
+            ? onlineGame
+            : null,
+        );
         state = {
           ...state,
           ...game,
@@ -1363,6 +1374,7 @@
         await onlineClient.leaveRoom();
         stopOnlineRuntime();
         onlineGame = null;
+        gameFriends.setWaitingRoom(null);
         rematchRejected = null;
         onlineConnected = false;
         onlinePhase = 'idle';
@@ -1452,6 +1464,7 @@
         }
       }
       onlineGame = null;
+      gameFriends.setWaitingRoom(null);
       rematchRejected = null;
       pendingRoomPreview = null;
       gameType = null;

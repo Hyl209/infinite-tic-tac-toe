@@ -16,9 +16,11 @@
     <script src="/src/services/online.js" defer></script>
     <script src="/src/services/account.js" defer></script>
     <script src="/src/services/notifications.js" defer></script>
+    <script src="/src/services/friends.js" defer></script>
     <script src="/src/services/economy.js" defer></script>
     <script src="/src/services/stats.js" defer></script>
     <script src="/src/routes/account-panel.js" defer></script>
+    <script src="/src/routes/game-friends.js" defer></script>
     <script src="/src/routes/game.js" defer></script>
     <script src="/src/routes/notification-bell.js" defer></script>
   </head>
@@ -347,6 +349,7 @@
                 <p id="room-settlement-message" class="room-settlement-message" hidden></p>
                 <div class="room-session-actions">
                   <button id="copy-room-button" class="button secondary" type="button">复制邀请</button>
+                  <button id="invite-friend-button" class="button secondary" type="button" hidden>邀请好友</button>
                   <button id="leave-room-button" class="button danger" type="button">退出房间</button>
                 </div>
               </div>
@@ -457,6 +460,20 @@
             <button id="game-event-primary" class="button primary" type="button"></button>
             <button id="game-event-secondary" class="button secondary" type="button"></button>
           </div>
+        </div>
+      </dialog>
+
+      <dialog id="friend-invite-dialog" class="friend-invite-dialog" aria-labelledby="friend-invite-title">
+        <div class="friend-invite-dialog-shell">
+          <div class="friend-invite-heading">
+            <div>
+              <p>等待房间</p>
+              <h2 id="friend-invite-title">邀请好友</h2>
+            </div>
+            <button id="friend-invite-close" class="button secondary" type="button">关闭</button>
+          </div>
+          <div id="friend-invite-list" class="friend-invite-list" aria-live="polite"></div>
+          <p id="friend-invite-message" class="online-room-message" aria-live="polite" aria-atomic="true"></p>
         </div>
       </dialog>
 

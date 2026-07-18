@@ -949,3 +949,305 @@ test('game route only wires waiting room state into the friend controller', () =
   assert.match(source, /onlineGame\?\.playerMark\s*===\s*['"]X['"]/);
   assert.doesNotMatch(source, /createFriendsClient\s*\(/);
 });
+
+class FakeInviteElement extends EventTarget {
+  constructor(tagName = 'div') {
+    super();
+    this.tagName = tagName.toUpperCase();
+    this.children = [];
+    this.dataset = {};
+    this.hidden = false;
+    this.disabled = false;
+    this.open = false;
+    this.className = '';
+    this._textContent = '';
+  }
+
+  get textContent() {
+    return `${this._textContent}${this.children.map((child) => child.textContent).join('')}`;
+  }
+
+  set textContent(value) {
+    this._textContent = String(value ?? '');
+    this.children = [];
+  }
+
+  append(...children) {
+    this.children.push(...children);
+  }
+
+  replaceChildren(...children) {
+    this._textContent = '';
+    this.children = [...children];
+  }
+
+  querySelectorAll(selector) {
+    const matches = (element) => selector === 'button' && element.tagName === 'BUTTON';
+    return this.children.flatMap((child) => [
+      ...(matches(child) ? [child] : []),
+      ...child.querySelectorAll(selector),
+    ]);
+  }
+
+  showModal() {
+    this.open = true;
+  }
+
+  close() {
+    this.open = false;
+  }
+
+  click() {
+    this.dispatchEvent(new Event('click'));
+  }
+}
+
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+function flushGameFriends() {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
+function createGameFriendsHarness({
+  identity = { kind: 'registered', userId: 'owner-1' },
+  friends = [],
+  invites = [],
+  sendGameInvite = async () => ({ id: 'invite-1' }),
+} = {}) {
+  const nodes = new Map([
+    ['#invite-friend-button', new FakeInviteElement('button')],
+    ['#friend-invite-dialog', new FakeInviteElement('dialog')],
+    ['#friend-invite-close', new FakeInviteElement('button')],
+    ['#friend-invite-list', new FakeInviteElement()],
+    ['#friend-invite-message', new FakeInviteElement('p')],
+  ]);
+  const accountClient = { id: 'shared-account-client' };
+  const accountListeners = new Set();
+  const calls = [];
+  let currentIdentity = { ...identity };
+  let realtimeListener = null;
+  let realtimeCleanups = 0;
+  let disconnects = 0;
+  let capturedAccountClient = null;
+
+  const friendsClient = {
+    async listFriends() {
+      calls.push({ type: 'list-friends' });
+      return friends;
+    },
+    async listInvites() {
+      calls.push({ type: 'list-invites' });
+      return invites;
+    },
+    async sendGameInvite(gameId, friendId) {
+      calls.push({ type: 'send', gameId, friendId });
+      return sendGameInvite(gameId, friendId);
+    },
+    async cancelGameInvite(inviteId) {
+      calls.push({ type: 'cancel', inviteId });
+    },
+    async subscribe(listener) {
+      calls.push({ type: 'subscribe' });
+      realtimeListener = listener;
+      let active = true;
+      return async () => {
+        if (!active) return;
+        active = false;
+        realtimeCleanups += 1;
+        if (realtimeListener === listener) realtimeListener = null;
+      };
+    },
+    async disconnect() {
+      disconnects += 1;
+    },
+  };
+  const accountPanel = {
+    accountClient,
+    getIdentity: () => ({ ...currentIdentity }),
+    subscribe(listener) {
+      accountListeners.add(listener);
+      return () => accountListeners.delete(listener);
+    },
+  };
+  const previous = new Map([
+    ['document', globalThis.document],
+    ['PlayerFriends', globalThis.PlayerFriends],
+  ]);
+  globalThis.document = {
+    querySelector(selector) {
+      return nodes.get(selector) || null;
+    },
+    createElement(tagName) {
+      return new FakeInviteElement(tagName);
+    },
+  };
+  globalThis.PlayerFriends = {
+    createFriendsClient(options) {
+      capturedAccountClient = options.accountClient;
+      return friendsClient;
+    },
+    mapFriendsError(error) {
+      return error?.message || '好友服务暂时不可用';
+    },
+  };
+
+  return {
+    accountClient,
+    accountPanel,
+    calls,
+    friendsClient,
+    nodes,
+    get capturedAccountClient() { return capturedAccountClient; },
+    get disconnects() { return disconnects; },
+    get realtimeCleanups() { return realtimeCleanups; },
+    emitIdentity(nextIdentity) {
+      currentIdentity = { ...nextIdentity };
+      accountListeners.forEach((listener) => listener({ identity: { ...currentIdentity } }));
+    },
+    emitRealtime() {
+      realtimeListener?.({ type: 'changed' });
+    },
+    restore() {
+      for (const [key, value] of previous) globalThis[key] = value;
+      delete require.cache[require.resolve('../../src/routes/game-friends.js')];
+    },
+  };
+}
+
+function loadGameFriendsController() {
+  delete require.cache[require.resolve('../../src/routes/game-friends.js')];
+  return require('../../src/routes/game-friends.js');
+}
+
+test('game friends reuses the account client and gates invitations to a registered waiting host', async () => {
+  const harness = createGameFriendsHarness();
+  let controller;
+  try {
+    controller = loadGameFriendsController().mount({ accountPanel: harness.accountPanel });
+    assert.equal(harness.capturedAccountClient, harness.accountClient);
+
+    for (const room of [
+      { roomId: 'room-1', status: 'playing', playerMark: 'X', playerNames: { O: null } },
+      { roomId: 'room-1', status: 'waiting', playerMark: 'O', playerNames: { O: null } },
+      { roomId: 'room-1', status: 'waiting', playerMark: 'X', playerNames: { O: '对手' } },
+    ]) {
+      controller.setWaitingRoom(room);
+      assert.equal(harness.nodes.get('#invite-friend-button').hidden, true);
+    }
+
+    controller.setWaitingRoom({
+      roomId: 'room-1', status: 'waiting', playerMark: 'X', playerNames: { O: null },
+    });
+    await flushGameFriends();
+    assert.equal(harness.nodes.get('#invite-friend-button').hidden, false);
+
+    harness.emitIdentity({ kind: 'guest' });
+    await flushGameFriends();
+    assert.equal(harness.nodes.get('#invite-friend-button').hidden, true);
+  } finally {
+    await controller?.destroy();
+    harness.restore();
+  }
+});
+
+test('game friends invites an offline friend with a send lock, padded UID, pending state, and cancel', async () => {
+  const pendingSend = deferred();
+  const friend = {
+    id: 'friend-1', uid: '000123', username: 'offline_friend', displayName: '离线好友', online: false,
+  };
+  const invites = [];
+  const harness = createGameFriendsHarness({
+    friends: [friend],
+    invites,
+    async sendGameInvite() {
+      const result = await pendingSend.promise;
+      invites.push({
+        id: result.id,
+        gameId: 'room-1',
+        direction: 'outgoing',
+        recipient: friend,
+        status: 'pending',
+      });
+      return result;
+    },
+  });
+  let controller;
+  try {
+    controller = loadGameFriendsController().mount({ accountPanel: harness.accountPanel });
+    controller.setWaitingRoom({
+      roomId: 'room-1', status: 'waiting', playerMark: 'X', playerNames: { O: null },
+    });
+    harness.nodes.get('#invite-friend-button').click();
+    await flushGameFriends();
+
+    const list = harness.nodes.get('#friend-invite-list');
+    assert.match(list.textContent, /离线好友/);
+    assert.match(list.textContent, /UID 000123/);
+    assert.match(list.textContent, /离线/);
+    const inviteButton = list.querySelectorAll('button').find((button) => button.dataset.action === 'invite');
+    assert.ok(inviteButton);
+    inviteButton.click();
+    await flushGameFriends();
+    assert.equal(
+      list.querySelectorAll('button').find((button) => button.dataset.action === 'invite').disabled,
+      true,
+    );
+
+    pendingSend.resolve({ id: 'invite-1' });
+    await flushGameFriends();
+    await flushGameFriends();
+    assert.match(harness.nodes.get('#friend-invite-message').textContent, /邀请已发送，等待回应/);
+    assert.match(list.textContent, /离线好友/);
+    assert.match(list.textContent, /UID 000123/);
+    const cancelButton = list.querySelectorAll('button').find((button) => button.dataset.action === 'cancel');
+    assert.ok(cancelButton);
+    cancelButton.click();
+    await flushGameFriends();
+    assert.deepEqual(harness.calls.find((call) => call.type === 'cancel'), {
+      type: 'cancel', inviteId: 'invite-1',
+    });
+  } finally {
+    await controller?.destroy();
+    harness.restore();
+  }
+});
+
+test('setWaitingRoom(null) and destroy close the dialog and clean realtime/client state', async () => {
+  const harness = createGameFriendsHarness({
+    friends: [{ id: 'friend-1', uid: '000123', displayName: '好友', online: true }],
+  });
+  let controller;
+  try {
+    controller = loadGameFriendsController().mount({ accountPanel: harness.accountPanel });
+    controller.setWaitingRoom({
+      roomId: 'room-1', status: 'waiting', playerMark: 'X', playerNames: { O: null },
+    });
+    harness.nodes.get('#invite-friend-button').click();
+    await flushGameFriends();
+    assert.equal(harness.nodes.get('#friend-invite-dialog').open, true);
+    assert.match(harness.nodes.get('#friend-invite-list').textContent, /好友/);
+
+    controller.setWaitingRoom(null);
+    await flushGameFriends();
+    assert.equal(harness.nodes.get('#invite-friend-button').hidden, true);
+    assert.equal(harness.nodes.get('#friend-invite-dialog').open, false);
+    assert.equal(harness.nodes.get('#friend-invite-list').textContent, '');
+    assert.equal(harness.nodes.get('#friend-invite-message').textContent, '');
+    assert.equal(harness.realtimeCleanups, 1);
+
+    await controller.destroy();
+    controller = null;
+    assert.equal(harness.disconnects, 1);
+  } finally {
+    await controller?.destroy();
+    harness.restore();
+  }
+});

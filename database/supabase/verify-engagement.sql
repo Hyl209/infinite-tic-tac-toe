@@ -136,6 +136,65 @@ begin
 end;
 $$;
 
+-- Run this read-only block after smoke actions performed through real external Auth sessions.
+do $post_smoke$
+begin
+  if exists (
+    with expected_events (user_id, delta, event_type, reference_id, idempotency_key) as (
+      select user_id, reward_amount, 'activity_reward', activity_id::text,
+             'activity_reward:' || activity_id::text || ':' || user_id::text
+      from public.activity_claims where reward_amount <> 0
+      union all
+      select user_id, reward_amount, 'notification_reward', notification_id::text,
+             'notification_reward:' || notification_id::text || ':' || user_id::text
+      from public.notification_claims where reward_amount <> 0
+      union all
+      select user_id, reward_amount, 'checkin_daily', checkin_date::text,
+             'checkin:daily:' || user_id::text || ':' || checkin_date::text
+      from public.player_checkins where checkin_type = 'daily' and reward_amount <> 0
+      union all
+      select user_id, -payment_amount, 'checkin_makeup_cost', checkin_date::text,
+             'checkin:makeup:cost:' || user_id::text || ':' || checkin_date::text
+      from public.player_checkins where checkin_type = 'makeup' and payment_amount <> 0
+      union all
+      select user_id, reward_amount, 'checkin_makeup_reward', checkin_date::text,
+             'checkin:makeup:reward:' || user_id::text || ':' || checkin_date::text
+      from public.player_checkins where checkin_type = 'makeup' and reward_amount <> 0
+    ), actual_events as (
+      select user_id, delta, event_type, reference_id, idempotency_key
+      from public.coin_ledger
+      where event_type in ('activity_reward','notification_reward','checkin_daily',
+                           'checkin_makeup_cost','checkin_makeup_reward')
+    )
+    select 1
+    from expected_events expected
+    full join actual_events actual using (idempotency_key)
+    where expected.idempotency_key is null or actual.idempotency_key is null
+       or row(expected.user_id, expected.delta, expected.event_type, expected.reference_id)
+          is distinct from row(actual.user_id, actual.delta, actual.event_type, actual.reference_id)
+  ) then raise exception 'missing, mismatched, or orphan engagement ledger event'; end if;
+
+  if exists (
+    select idempotency_key from public.coin_ledger
+    where event_type in ('activity_reward','notification_reward','checkin_daily',
+                         'checkin_makeup_cost','checkin_makeup_reward')
+    group by idempotency_key having count(*) <> 1
+  ) then raise exception 'duplicate engagement ledger event'; end if;
+
+  if exists (
+    select 1 from public.player_wallets wallet
+    left join (select user_id, sum(delta) total from public.coin_ledger group by user_id) ledger
+      on ledger.user_id = wallet.user_id
+    where wallet.balance <> coalesce(ledger.total, 0)
+  ) then raise exception 'wallet balance differs from ledger sum'; end if;
+  if exists (
+    select 1 from public.coin_ledger ledger
+    left join public.player_wallets wallet on wallet.user_id = ledger.user_id
+    where wallet.user_id is null
+  ) then raise exception 'coin ledger user has no wallet'; end if;
+end;
+$post_smoke$;
+
 -- ROLLBACK SMOKE TEMPLATE: only in an isolated SQL session already bound to a real test user;
 -- never fake auth.uid()/JWT claims: BEGIN; SELECT auth.uid(); SELECT * FROM
 -- public.perform_daily_checkin(gen_random_uuid()); inspect wallet/check-in/ledger rows; ROLLBACK.

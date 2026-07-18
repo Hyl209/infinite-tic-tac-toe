@@ -1949,6 +1949,10 @@ test('player center exposes UID-aware friend management and invite inbox structu
   assert.match(html, /输入 6 位 UID 或完整用户名/);
   assert.match(html, /src=["']\/src\/services\/friends\.js["']/);
   assert.match(html, /src=["']\/src\/routes\/social-inbox\.js["']/);
+  assert.match(html, /id=["']notification-bell["'][^>]*href=["']\/player\/\?tab=notifications["']/);
+  assert.match(html, /id=["']social-toast-region["'][^>]*aria-live=["']polite["']/);
+  assert.ok(html.indexOf('/src/services/friends.js') < html.indexOf('/src/routes/account-panel.js'));
+  assert.ok(html.indexOf('/src/routes/account-panel.js') < html.indexOf('/src/routes/social-inbox.js'));
 });
 
 test('player route reuses the shared account client and renders padded friend UIDs', () => {

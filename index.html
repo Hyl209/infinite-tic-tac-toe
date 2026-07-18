@@ -17,11 +17,13 @@
     <script src="/src/services/online.js" defer></script>
     <script src="/src/services/account.js" defer></script>
     <script src="/src/services/notifications.js" defer></script>
+    <script src="/src/services/friends.js" defer></script>
     <script src="/src/services/economy.js" defer></script>
     <script src="/src/services/stats.js" defer></script>
     <script src="/src/routes/account-panel.js" defer></script>
     <script src="/src/routes/portal.js" defer></script>
     <script src="/src/routes/notification-bell.js" defer></script>
+    <script src="/src/routes/social-inbox.js" defer></script>
   </head>
   <body>
     <a class="skip-link" href="#site-main">跳到主要内容</a>
@@ -279,6 +281,7 @@
 
             <form id="account-profile-form" class="account-form" hidden>
               <p class="account-username">登录用户名 <strong id="profile-username"></strong></p>
+              <p class="account-username">玩家 UID <strong id="profile-player-uid"></strong></p>
               <label class="account-field" for="profile-game-name">
                 <span>游戏名</span>
                 <input
@@ -352,6 +355,7 @@
             <p class="account-footnote">游客也能在线对战，名称会显示为匿名玩家加随机码。</p>
           </div>
         </dialog>
+      <div id="social-toast-region" class="social-toast-region" aria-live="polite" aria-atomic="false"></div>
     </main>
   </body>
 </html>

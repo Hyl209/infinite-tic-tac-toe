@@ -22,6 +22,8 @@
     <script src="/src/services/friends.js" defer></script>
     <script src="/src/routes/account-panel.js" defer></script>
     <script src="/src/routes/player.js" defer></script>
+    <script src="/src/routes/notification-bell.js" defer></script>
+    <script src="/src/routes/social-inbox.js" defer></script>
   </head>
   <body data-view="player">
     <a class="skip-link" href="#player-main">跳到玩家中心内容</a>
@@ -37,6 +39,10 @@
         <nav class="player-header-links" aria-label="玩家中心快捷导航">
           <a href="/">首页</a>
           <a href="/game/">游戏专区</a>
+          <a id="notification-bell" class="notification-bell" href="/player/?tab=notifications" aria-label="查看通知">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6.5 9.5a5.5 5.5 0 0 1 11 0c0 5 2 5.5 2 7H4.5c0-1.5 2-2 2-7Z"></path><path d="M9.7 19a2.5 2.5 0 0 0 4.6 0"></path></svg>
+            <span id="notification-unread-count" class="notification-unread-count" hidden>0</span>
+          </a>
         </nav>
 
         <button id="account-button" class="account-button" type="button" aria-label="打开账号面板" aria-haspopup="dialog" aria-controls="account-dialog">
@@ -255,6 +261,7 @@
           <p class="account-footnote">游客也能在线对战，名称会显示为匿名玩家加随机码。</p>
         </div>
       </dialog>
+      <div id="social-toast-region" class="social-toast-region" aria-live="polite" aria-atomic="false"></div>
     </main>
   </body>
 </html>

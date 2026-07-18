@@ -5,6 +5,7 @@ const fs = require('node:fs');
 let portalContent = {};
 let portal = {};
 let notificationBell = {};
+let socialInbox = {};
 
 try {
   portalContent = require('../../src/config/portal.js');
@@ -22,6 +23,140 @@ try {
   notificationBell = require('../../src/routes/notification-bell.js');
 } catch {
   notificationBell = {};
+}
+
+try {
+  socialInbox = require('../../src/routes/social-inbox.js');
+} catch {
+  socialInbox = {};
+}
+
+class FakeSocialElement extends EventTarget {
+  constructor(tagName = 'div') {
+    super();
+    this.tagName = tagName.toUpperCase();
+    this.attributes = new Map();
+    this.children = [];
+    this.parentElement = null;
+    this.className = '';
+    this._textContent = '';
+  }
+
+  get textContent() {
+    return `${this._textContent}${this.children.map((child) => child.textContent).join('')}`;
+  }
+
+  set textContent(value) {
+    this._textContent = String(value ?? '');
+    this.children = [];
+  }
+
+  setAttribute(name, value) {
+    this.attributes.set(name, String(value));
+  }
+
+  getAttribute(name) {
+    return this.attributes.get(name) ?? null;
+  }
+
+  append(...children) {
+    children.forEach((child) => {
+      child.parentElement = this;
+      this.children.push(child);
+    });
+  }
+
+  replaceChildren(...children) {
+    this.children.forEach((child) => { child.parentElement = null; });
+    this.children = [];
+    this._textContent = '';
+    this.append(...children);
+  }
+
+  remove() {
+    if (!this.parentElement) return;
+    this.parentElement.children = this.parentElement.children.filter((child) => child !== this);
+    this.parentElement = null;
+  }
+}
+
+function createSocialInboxHarness({
+  identity = { kind: 'guest', username: null },
+  listRequests = async () => [],
+  listInvites = async () => [],
+} = {}) {
+  const region = new FakeSocialElement();
+  const document = new EventTarget();
+  document.querySelector = (selector) => (selector === '#social-toast-region' ? region : null);
+  document.createElement = (tagName) => new FakeSocialElement(tagName);
+  const socialCounts = [];
+  document.addEventListener('hyl:social-count', (event) => socialCounts.push(event.detail.count));
+
+  let currentIdentity = { ...identity };
+  let accountListener = null;
+  const accountClient = {};
+  const accountPanel = {
+    accountClient,
+    getIdentity: () => ({ ...currentIdentity }),
+    subscribe(listener) {
+      accountListener = listener;
+      return () => { accountListener = null; };
+    },
+  };
+  const clients = [];
+  const friendsApi = {
+    createFriendsClient(options) {
+      const identityKey = currentIdentity.username;
+      let realtimeListener = null;
+      const client = {
+        identityKey,
+        options,
+        disconnects: 0,
+        subscriptions: 0,
+        cleanups: 0,
+        async listRequests() {
+          return listRequests(identityKey);
+        },
+        async listInvites() {
+          return listInvites(identityKey);
+        },
+        async subscribe(listener) {
+          this.subscriptions += 1;
+          realtimeListener = listener;
+          let active = true;
+          return async () => {
+            if (!active) return;
+            active = false;
+            this.cleanups += 1;
+            realtimeListener = null;
+          };
+        },
+        async disconnect() {
+          this.disconnects += 1;
+          realtimeListener = null;
+        },
+        emitRealtime() {
+          realtimeListener?.({ type: 'changed' });
+        },
+      };
+      clients.push(client);
+      return client;
+    },
+  };
+
+  return {
+    accountClient,
+    accountPanel,
+    clients,
+    document,
+    friendsApi,
+    region,
+    socialCounts,
+    emitIdentity(nextIdentity) {
+      currentIdentity = { ...nextIdentity };
+      accountListener?.({ identity: { ...currentIdentity } });
+    },
+  };
 }
 
 function createNotificationBellHarness({ identity, unreadCounts = [] }) {
@@ -384,14 +519,132 @@ test('all public shells load the social inbox and expose an accessible toast reg
     assert.match(html, /id=["']social-toast-region["']/);
     assert.match(html, /aria-live=["']polite["']/);
     assert.match(html, /id=["']profile-player-uid["']/);
+    assert.ok(html.indexOf('/src/services/friends.js') < html.indexOf('/src/routes/account-panel.js'));
+    assert.ok(html.indexOf('/src/routes/account-panel.js') < html.indexOf('/src/routes/social-inbox.js'));
   }
 });
 
-test('notification bell merges site and social pending counts', () => {
-  const source = fs.readFileSync('./src/routes/notification-bell.js', 'utf8');
-  assert.match(source, /friendsApi/);
-  assert.match(source, /createFriendsClient\s*\(/);
-  assert.match(source, /listRequests\s*\(/);
-  assert.match(source, /listInvites\s*\(/);
-  assert.match(source, /site[^\n]*\+[^\n]*social|social[^\n]*\+[^\n]*site/i);
+test('notification bell merges site unread and database social counts, then clears on logout', async () => {
+  const harness = createNotificationBellHarness({
+    identity: { kind: 'registered', username: 'player-a' },
+  });
+  let disconnected = 0;
+  const controller = notificationBell.mount({
+    document: harness.document,
+    accountPanel: harness.accountPanel,
+    notificationsApi: {
+      createNotificationsClient: () => ({
+        list: async () => [],
+        countUnread: async () => 4,
+      }),
+    },
+    friendsApi: {
+      createFriendsClient(options) {
+        assert.equal(options.accountClient, harness.accountClient);
+        return {
+          listRequests: async () => [
+            { id: 'request-in', direction: 'incoming' },
+            { id: 'request-out', direction: 'outgoing' },
+          ],
+          listInvites: async () => [
+            { id: 'invite-in', direction: 'incoming', status: 'pending' },
+            { id: 'invite-out', direction: 'outgoing', status: 'pending' },
+            { id: 'invite-done', direction: 'incoming', status: 'accepted' },
+          ],
+          async disconnect() { disconnected += 1; },
+        };
+      },
+    },
+  });
+
+  await controller.refresh();
+  assert.equal(harness.badge.textContent, '6');
+  harness.emitIdentity({ kind: 'guest', username: null });
+  await flushAsyncWork();
+  assert.equal(harness.badge.hidden, true);
+  assert.equal(harness.badge.textContent, '');
+  controller.destroy();
+  assert.equal(disconnected, 1);
+});
+
+test('social inbox logs in from guest, deduplicates database event ids, and exposes closeable accessible toasts', async () => {
+  let requests = [];
+  const harness = createSocialInboxHarness({
+    listRequests: async () => requests,
+  });
+  const controller = socialInbox.mount({
+    document: harness.document,
+    accountPanel: harness.accountPanel,
+    friendsApi: harness.friendsApi,
+  });
+
+  assert.equal(harness.clients.length, 0);
+  assert.equal(harness.socialCounts.at(-1), 0);
+  harness.emitIdentity({ kind: 'registered', username: 'player-a' });
+  await flushAsyncWork();
+  assert.equal(harness.clients.length, 1);
+  assert.equal(harness.clients[0].options.accountClient, harness.accountClient);
+  assert.equal(harness.clients[0].subscriptions, 1);
+
+  requests = [{
+    id: 'request-1', direction: 'incoming', player: { displayName: '玩家乙' },
+  }];
+  harness.clients[0].emitRealtime();
+  await flushAsyncWork();
+  assert.equal(harness.socialCounts.at(-1), 1);
+  assert.equal(harness.region.children.length, 1);
+  const toast = harness.region.children[0];
+  const link = toast.children.find((child) => child.tagName === 'A');
+  const closeButton = toast.children.find((child) => child.tagName === 'BUTTON');
+  assert.equal(toast.getAttribute('role'), 'status');
+  assert.equal(link.getAttribute('href'), '/player/?tab=friends');
+  assert.match(closeButton.getAttribute('aria-label'), /关闭/);
+
+  harness.clients[0].emitRealtime();
+  await flushAsyncWork();
+  assert.equal(harness.region.children.length, 1);
+  closeButton.dispatchEvent(new Event('click'));
+  assert.equal(harness.region.children.length, 0);
+  controller.destroy();
+});
+
+test('social inbox isolates late account refreshes and clears subscriptions, toasts, and counts', async () => {
+  let resolveAccountA;
+  const accountARequests = new Promise((resolve) => { resolveAccountA = resolve; });
+  const harness = createSocialInboxHarness({
+    identity: { kind: 'registered', username: 'player-a' },
+    listRequests: (identityKey) => (identityKey === 'player-a'
+      ? accountARequests
+      : Promise.resolve([{ id: 'request-b', direction: 'incoming', player: {} }])),
+  });
+  const controller = socialInbox.mount({
+    document: harness.document,
+    accountPanel: harness.accountPanel,
+    friendsApi: harness.friendsApi,
+  });
+
+  await flushAsyncWork();
+  harness.emitIdentity({ kind: 'registered', username: 'player-b' });
+  await flushAsyncWork();
+  assert.equal(harness.clients[0].cleanups, 1);
+  assert.equal(harness.clients[0].disconnects, 1);
+  assert.equal(harness.socialCounts.at(-1), 1);
+
+  resolveAccountA([
+    { id: 'request-a1', direction: 'incoming', player: {} },
+    { id: 'request-a2', direction: 'incoming', player: {} },
+  ]);
+  await flushAsyncWork();
+  assert.equal(harness.socialCounts.at(-1), 1);
+  assert.equal(harness.region.children.length, 0);
+
+  harness.emitIdentity({ kind: 'guest', username: null });
+  assert.equal(harness.socialCounts.at(-1), 0);
+  assert.equal(harness.region.children.length, 0);
+  await flushAsyncWork();
+  assert.equal(harness.clients[1].cleanups, 1);
+  assert.equal(harness.clients[1].disconnects, 1);
+
+  controller.destroy();
+  assert.equal(harness.socialCounts.at(-1), 0);
 });

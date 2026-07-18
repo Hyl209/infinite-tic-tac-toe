@@ -931,6 +931,11 @@ test('waiting room exposes the friend invitation dialog and independent controll
   }
   assert.match(html, /src=["']\/src\/services\/friends\.js["']/);
   assert.match(html, /src=["']\/src\/routes\/game-friends\.js["']/);
+  assert.match(html, /src=["']\/src\/routes\/social-inbox\.js["']/);
+  assert.match(html, /id=["']social-toast-region["'][^>]*aria-live=["']polite["']/);
+  assert.match(html, /id=["']profile-player-uid["']/);
+  assert.ok(html.indexOf('/src/services/friends.js') < html.indexOf('/src/routes/account-panel.js'));
+  assert.ok(html.indexOf('/src/routes/account-panel.js') < html.indexOf('/src/routes/social-inbox.js'));
 
   const controller = fs.readFileSync('./src/routes/game-friends.js', 'utf8');
   assert.match(controller, /createFriendsClient\s*\(\s*\{\s*accountClient\s*\}\s*\)/);

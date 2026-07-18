@@ -15,6 +15,7 @@
     const documentRef = options.document || globalScope.document;
     const accountPanel = options.accountPanel || globalScope.HYLAccountPanel?.mount();
     const notificationsApi = options.notificationsApi || globalScope.PlayerNotifications;
+    const friendsApi = options.friendsApi || globalScope.PlayerFriends;
     const accountClient = accountPanel?.accountClient;
     const bell = documentRef?.querySelector('#notification-bell');
     const badge = documentRef?.querySelector('#notification-unread-count');
@@ -25,12 +26,17 @@
       ? Promise.resolve(accountClient.initialize()).catch(() => null)
       : null;
     let notificationsClient = null;
+    let friendsClient = null;
     let identity = accountPanel.getIdentity?.() || accountClient.getIdentity?.() || { kind: 'guest' };
     let requestVersion = 0;
     let pendingRefresh = null;
+    let siteUnreadCount = 0;
+    let socialPendingCount = 0;
     let destroyed = false;
 
     function clearBadge() {
+      siteUnreadCount = 0;
+      socialPendingCount = 0;
       badge.hidden = true;
       badge.textContent = '';
       bell.setAttribute('aria-label', '查看通知');
@@ -41,6 +47,17 @@
       badge.textContent = text;
       badge.hidden = !text;
       bell.setAttribute('aria-label', text ? `${text} 条未读通知` : '查看通知');
+    }
+
+    async function countSocialPending() {
+      if (typeof friendsApi?.createFriendsClient !== 'function') return 0;
+      friendsClient ||= friendsApi.createFriendsClient({ accountClient, autoStart: false });
+      const [requests, invites] = await Promise.all([
+        friendsClient.listRequests(),
+        friendsClient.listInvites(),
+      ]);
+      return requests.filter((request) => request.direction === 'incoming').length
+        + invites.filter((invite) => invite.direction === 'incoming' && invite.status === 'pending').length;
     }
 
     function refresh() {
@@ -55,11 +72,16 @@
           if (destroyed || version !== requestVersion) return;
           notificationsClient ||= notificationsApi.createNotificationsClient({ accountClient });
           if (currentIdentity.kind === 'registered') {
-            const [, unreadCount] = await Promise.all([
+            const [, unreadCount, socialCount] = await Promise.all([
               notificationsClient.list({ limit: 5 }),
               notificationsClient.countUnread(),
+              countSocialPending(),
             ]);
-            if (!destroyed && version === requestVersion) renderUnread(unreadCount);
+            if (!destroyed && version === requestVersion) {
+              siteUnreadCount = Math.max(0, Math.floor(Number(unreadCount) || 0));
+              socialPendingCount = Math.max(0, Math.floor(Number(socialCount) || 0));
+              renderUnread(siteUnreadCount + socialPendingCount);
+            }
           } else {
             await notificationsClient.list({ limit: 5 });
             if (!destroyed && version === requestVersion) clearBadge();
@@ -89,8 +111,15 @@
       if (documentRef.visibilityState === 'visible') void refresh();
     }
 
+    function handleSocialCount(event) {
+      if (destroyed || identity.kind !== 'registered') return;
+      socialPendingCount = Math.max(0, Math.floor(Number(event?.detail?.count) || 0));
+      renderUnread(siteUnreadCount + socialPendingCount);
+    }
+
     const unsubscribeAccount = accountPanel.subscribe?.(handleAccountState) || (() => {});
     documentRef.addEventListener('visibilitychange', handleVisibilityChange);
+    documentRef.addEventListener('hyl:social-count', handleSocialCount);
     clearBadge();
     void refresh();
 
@@ -103,6 +132,9 @@
         pendingRefresh = null;
         unsubscribeAccount();
         documentRef.removeEventListener('visibilitychange', handleVisibilityChange);
+        documentRef.removeEventListener('hyl:social-count', handleSocialCount);
+        void Promise.resolve(friendsClient?.disconnect?.()).catch(() => {});
+        friendsClient = null;
         clearBadge();
       },
     };

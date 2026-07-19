@@ -34,16 +34,6 @@ begin
   if not exists (
     select 1 from pg_constraint
     where conrelid = 'public.profiles'::regclass
-      and conname = 'profiles_username_not_player_uid'
-  ) then
-    alter table public.profiles
-      add constraint profiles_username_not_player_uid
-      check (not (username ~ '^[0-9]+$' and char_length(username) = 6));
-  end if;
-
-  if not exists (
-    select 1 from pg_constraint
-    where conrelid = 'public.profiles'::regclass
       and conname = 'profiles_player_uid_range'
   ) then
     alter table public.profiles
@@ -114,6 +104,19 @@ begin
 end;
 $$;
 
+create or replace function public.reject_player_uid_username()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  if new.username ~ '^[0-9]+$' and char_length(new.username) = 6 then
+    raise exception 'PLAYER_UID_USERNAME_RESERVED';
+  end if;
+  return new;
+end;
+$$;
+
 drop trigger if exists profiles_assign_player_uid on public.profiles;
 create trigger profiles_assign_player_uid
 before insert on public.profiles
@@ -124,10 +127,16 @@ create trigger profiles_prevent_player_uid_change
 before update on public.profiles
 for each row execute function public.prevent_player_uid_change();
 
+drop trigger if exists profiles_reject_player_uid_username on public.profiles;
+create trigger profiles_reject_player_uid_username
+before insert or update of username on public.profiles
+for each row execute function public.reject_player_uid_username();
+
 revoke all on sequence public.player_uid_seq from public, anon, authenticated;
 revoke execute on function public.format_player_uid(integer) from public, anon, authenticated;
 revoke execute on function public.assign_player_uid() from public, anon, authenticated;
 revoke execute on function public.prevent_player_uid_change() from public, anon, authenticated;
+revoke execute on function public.reject_player_uid_username() from public, anon, authenticated;
 revoke insert, update on table public.profiles from authenticated;
 grant insert (id, username, game_name) on public.profiles to authenticated;
 grant update (game_name) on public.profiles to authenticated;

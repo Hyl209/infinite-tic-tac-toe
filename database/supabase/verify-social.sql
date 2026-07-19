@@ -33,15 +33,16 @@ begin
   end if;
 
   if not exists (
-    select 1 from pg_constraint
-    where pg_get_constraintdef(oid) is not null
-      and conrelid = to_regclass('public.profiles')
-      and conname = 'profiles_username_not_player_uid'
-      and contype = 'c'
-      and lower(regexp_replace(pg_get_constraintdef(oid), '[[:space:]]+', '', 'g'))
-            like '%not%username~''^[0-9]+$''::text%and%char_length(username)=6%'
+    select 1
+    from pg_trigger trigger_row
+    join pg_proc function_row on function_row.oid = trigger_row.tgfoid
+    where trigger_row.tgrelid = to_regclass('public.profiles')
+      and trigger_row.tgname = 'profiles_reject_player_uid_username'
+      and function_row.proname = 'reject_player_uid_username'
+      and not trigger_row.tgisinternal
+      and pg_get_triggerdef(trigger_row.oid) like '%BEFORE INSERT OR UPDATE OF username%'
   ) then
-    raise exception 'profiles.username must reserve six ASCII digits for player_uid';
+    raise exception 'profiles_reject_player_uid_username / reject_player_uid_username trigger missing';
   end if;
 
   if not exists (
@@ -285,7 +286,8 @@ end;
 $verify_social$;
 
 -- Read-only operator reports. These return no email or full user UUID.
-select exists (
+-- profiles_username_not_player_uid_present is intentionally absent; the write trigger preserves legacy rows.
+select not exists (
   select 1
   from pg_constraint
   where conrelid = to_regclass('public.profiles')

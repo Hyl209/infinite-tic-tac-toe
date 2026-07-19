@@ -152,7 +152,7 @@ test('六位纯数字用户名保留为玩家 UID 且不改变其他用户名规
 
 test('数据库六位数字用户名约束错误映射为同一明确提示', () => {
   const error = new Error('PROFILE_SAVE_FAILED', {
-    cause: { code: '23514', message: 'profiles_username_not_player_uid' },
+    cause: { code: 'P0001', message: 'PLAYER_UID_USERNAME_RESERVED' },
   });
   assert.equal(
     account.mapAccountError(error),

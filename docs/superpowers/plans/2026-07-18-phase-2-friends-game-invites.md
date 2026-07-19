@@ -85,7 +85,7 @@ decline_game_invite
 
 - [x] **Step 1: 写数据库契约失败测试**
 
-测试读取 `database/supabase/migrations/20260723_social.sql` 和 `setup.sql`，断言以下表与 RPC：
+测试读取 `database/supabase/migrations/20260725_social.sql` 和 `setup.sql`，断言以下表与 RPC：
 
 ```js
 const tables = [
@@ -146,7 +146,7 @@ git commit -m "test: define friend and invite contracts"
 ### Task 2: 创建好友和邀请数据库迁移
 
 **Files:**
-- Create: `database/supabase/migrations/20260723_social.sql`
+- Create: `database/supabase/migrations/20260725_social.sql`
 - Modify: `database/supabase/setup.sql`
 - Test: `tests/integration/social-supabase.test.js`
 

@@ -67,7 +67,7 @@ test('requires wrapped account client and maps stable errors to Chinese strings'
   for (const code of [
     'ACCOUNT_CLIENT_REQUIRED', 'REGISTERED_ACCOUNT_REQUIRED', 'ADMIN_REQUIRED',
     'INVALID_CHECKIN_MONTH', 'INVALID_REQUEST_ID', 'CHECKIN_ALREADY_DONE',
-    'MAKEUP_DATE_INVALID', 'MAKEUP_OUTSIDE_CURRENT_MONTH', 'ITEM_PAYMENT_UNAVAILABLE',
+    'MAKEUP_DATE_INVALID', 'MAKEUP_OUTSIDE_CURRENT_MONTH', 'INSUFFICIENT_ITEMS',
     'INVALID_PAYMENT_METHOD', 'INVALID_CHECKIN_RULE', 'CHECKIN_RULE_DATE_INVALID',
     'CHECKIN_RULE_DATE_EXISTS', 'INSUFFICIENT_COINS',
   ]) {
@@ -149,24 +149,39 @@ test('checkIn sends request id and maps a table result', async () => {
   ]);
 });
 
-test('makeUp supports coins exactly and rejects item, invalid method, or invalid date locally', async () => {
-  const accountClient = fakeAccount({ rpcResults: [{ data: {
-    checkin_date: '2026-07-01', reward_amount: 3n, balance: 97n,
-    checkin_type: 'makeup', payment_method: 'coins', payment_amount: 10n,
-  }, error: null }] });
+test('makeUp supports coin and item payments and rejects unknown methods locally', async () => {
+  const accountClient = fakeAccount({ rpcResults: [
+    { data: {
+      checkin_date: '2026-07-01', reward_amount: 3n, balance: 97n,
+      checkin_type: 'makeup', payment_method: 'coins', payment_amount: 10n,
+    }, error: null },
+    { data: {
+      checkin_date: '2026-07-02', reward_amount: 4n, balance: 101n,
+      checkin_type: 'makeup', payment_method: 'item', payment_amount: 1n,
+    }, error: null },
+  ] });
   const client = createCheckinClient({ accountClient });
 
   assert.deepEqual(await client.makeUp('2026-07-01', 'coins', 'req-2'), {
     checkinDate: '2026-07-01', rewardAmount: 3, balance: 97,
     checkinType: 'makeup', paymentMethod: 'coins', paymentAmount: 10,
   });
-  await assert.rejects(() => client.makeUp('2026-07-02', 'item', 'req-3'), { message: 'ITEM_PAYMENT_UNAVAILABLE' });
+  assert.deepEqual(await client.makeUp('2026-07-02', 'item', 'req-3'), {
+    checkinDate: '2026-07-02', rewardAmount: 4, balance: 101,
+    checkinType: 'makeup', paymentMethod: 'item', paymentAmount: 1,
+  });
   await assert.rejects(() => client.makeUp('2026-07-02', 'card', 'req-4'), { message: 'INVALID_PAYMENT_METHOD' });
   await assert.rejects(() => client.makeUp('2026-02-30', 'coins', 'req-5'), { message: 'MAKEUP_DATE_INVALID' });
-  assert.deepEqual(accountClient.calls, [{
-    name: 'perform_makeup_checkin',
-    params: { p_date: '2026-07-01', p_payment_method: 'coins', p_request_id: 'req-2' },
-  }]);
+  assert.deepEqual(accountClient.calls, [
+    {
+      name: 'perform_makeup_checkin',
+      params: { p_date: '2026-07-01', p_payment_method: 'coins', p_request_id: 'req-2' },
+    },
+    {
+      name: 'perform_makeup_checkin',
+      params: { p_date: '2026-07-02', p_payment_method: 'item', p_request_id: 'req-3' },
+    },
+  ]);
 });
 
 test('admin lists explicit rules and creates one with nine parameters', async () => {

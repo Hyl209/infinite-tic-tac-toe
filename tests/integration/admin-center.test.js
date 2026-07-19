@@ -588,3 +588,18 @@ test('后台样式包含可达焦点、加载禁用和窄屏布局', () => {
   assert.match(css, /@media\s*\(max-width:/);
   assert.match(css, /--admin-accent:\s*oklch\(0\.61\s+0\.23\s+266\)/i);
 });
+
+test('管理中心提供固定商品配置区和商城客户端', () => {
+  const html = read('./admin/index.html');
+  for (const id of [
+    'admin-shop-section', 'admin-shop-list', 'admin-shop-message',
+  ]) {
+    assert.match(html, new RegExp(`id=["']${id}["']`), `missing #${id}`);
+  }
+  assert.match(html, /href=["']#admin-shop-section["']/);
+  assert.match(html, /补签卡/);
+  assert.match(html, /改名卡/);
+  assert.match(html, /每人终身限购/);
+  assert.match(html, /src=["']\/src\/services\/shop\.js["']/);
+  assert.match(html, /id=["']admin-shop-message["'][^>]*aria-live=["']polite["']/);
+});

@@ -1955,6 +1955,22 @@ test('player center exposes UID-aware friend management and invite inbox structu
   assert.ok(html.indexOf('/src/routes/account-panel.js') < html.indexOf('/src/routes/social-inbox.js'));
 });
 
+test('player center exposes shop, inventory, item makeup, and rename-card guidance', () => {
+  const html = read('./player/index.html');
+  for (const id of [
+    'player-tab-shop', 'player-tab-inventory', 'shop-product-list',
+    'shop-purchase-dialog', 'inventory-list', 'shop-message', 'inventory-message',
+  ]) {
+    assert.match(html, new RegExp(`id=["']${id}["']`), `missing #${id}`);
+  }
+  assert.match(html, /src=["']\/src\/services\/shop\.js["']/);
+  assert.match(html, /修改游戏名[^<]{0,40}消耗\s*1\s*张改名卡/);
+  assert.match(html, /value=["']coins["']/);
+  assert.match(html, /value=["']item["']/);
+  assert.match(html, /id=["']shop-message["'][^>]*aria-live=["']polite["']/);
+  assert.match(html, /id=["']inventory-message["'][^>]*aria-live=["']polite["']/);
+});
+
 test('player route reuses the shared account client and renders padded friend UIDs', () => {
   const source = read('./src/routes/player.js');
   assert.match(source, /createFriendsClient\s*\(\s*\{\s*accountClient\s*\}\s*\)/);

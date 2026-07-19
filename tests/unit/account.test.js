@@ -250,6 +250,26 @@ test('登录使用隐藏邮箱并读取资料', async () => {
   assert.equal(identity.uid, '000007');
 });
 
+test('存量六位纯数字用户名仍可登录', async () => {
+  const fake = createFakeSupabase({
+    profile: { username: '123456', game_name: '老玩家', player_uid: 12 },
+  });
+  const client = account.createAccountClient({
+    config: { supabaseUrl: 'https://example.supabase.co', supabaseAnonKey: 'anon-key' },
+    loadSupabase: async () => ({ createClient: () => fake.client }),
+    storage: createStorage(),
+  });
+
+  const identity = await client.login({ username: '123456', password: 'password8' });
+
+  assert.deepEqual(fake.calls.find((call) => call[0] === 'signInWithPassword'), [
+    'signInWithPassword',
+    { email: '123456@players.invalid', password: 'password8' },
+  ]);
+  assert.equal(identity.username, '123456');
+  assert.equal(identity.uid, '000012');
+});
+
 test('初始化与登录并发时只加载一个客户端且登录等待初始化', async () => {
   const calls = [];
   let releaseSession;

@@ -53,9 +53,12 @@
       && !CONTROL_CHARACTER_PATTERN.test(normalized);
   }
 
-  function usernameToEmail(value) {
+  function usernameToEmail(value, { allowReservedUsername = false } = {}) {
     const username = normalizeUsername(value);
-    if (!isValidUsername(username)) throw new Error(usernameErrorCode(username));
+    if (!USERNAME_PATTERN.test(username)
+      || (!allowReservedUsername && PLAYER_UID_USERNAME_PATTERN.test(username))) {
+      throw new Error(usernameErrorCode(username));
+    }
     return `${username}@${USERNAME_EMAIL_DOMAIN}`;
   }
 
@@ -225,9 +228,18 @@
       }
     }
 
-    function validateCredentials({ username, password, gameName, requireGameName = false }) {
+    function validateCredentials({
+      username,
+      password,
+      gameName,
+      requireGameName = false,
+      allowReservedUsername = false,
+    }) {
       const normalizedUsername = normalizeUsername(username);
-      if (!isValidUsername(normalizedUsername)) throw new Error(usernameErrorCode(normalizedUsername));
+      if (!USERNAME_PATTERN.test(normalizedUsername)
+        || (!allowReservedUsername && PLAYER_UID_USERNAME_PATTERN.test(normalizedUsername))) {
+        throw new Error(usernameErrorCode(normalizedUsername));
+      }
       if (!isValidPassword(password)) throw new Error('INVALID_PASSWORD');
       const normalizedGameName = normalizeGameName(gameName);
       if (requireGameName && !isValidGameName(normalizedGameName)) throw new Error('INVALID_GAME_NAME');
@@ -287,11 +299,15 @@
     }
 
     async function login({ username, password }) {
-      const { normalizedUsername } = validateCredentials({ username, password });
+      const { normalizedUsername } = validateCredentials({
+        username,
+        password,
+        allowReservedUsername: true,
+      });
       await waitForInitialization();
       const client = await getSupabaseClient();
       const result = await client.auth.signInWithPassword({
-        email: usernameToEmail(normalizedUsername),
+        email: usernameToEmail(normalizedUsername, { allowReservedUsername: true }),
         password,
       });
       if (result.error) throw result.error;

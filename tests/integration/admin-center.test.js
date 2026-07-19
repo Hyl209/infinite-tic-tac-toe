@@ -151,11 +151,18 @@ function adminActivity(id, title, active = true) {
   };
 }
 
-function createAdminRuntimeHarness({ listActivities } = {}) {
+function createAdminRuntimeHarness({
+  listActivities,
+  listShopProducts = async () => [],
+  updateShopProduct = async () => null,
+  confirmShopPublish = () => true,
+} = {}) {
   let identity = { kind: 'registered', username: 'admin-a', displayName: '管理员 A' };
   let economySnapshot = { loaded: true, isAdmin: true, balance: 10 };
   let subscriptionListener = null;
   const activityCalls = [];
+  const shopCalls = [];
+  const confirmCalls = [];
   const nodes = new Map();
   const add = (selector, element = new FakeElement()) => {
     nodes.set(selector, element);
@@ -198,6 +205,16 @@ function createAdminRuntimeHarness({ listActivities } = {}) {
   add('#admin-generated-code-value');
   add('#copy-generated-code-button', new FakeElement('button'));
   add('#admin-system-status');
+  const shopForms = ['makeup_card', 'rename_card'].map((sku) => {
+    const form = new FakeForm(['price', 'isActive', 'perUserLimit']);
+    form.dataset.adminShopForm = sku;
+    form.elements.isActive.checked = false;
+    add(`#admin-shop-form-${sku}`, form);
+    add(`#admin-shop-updated-${sku}`);
+    return form;
+  });
+  add('#admin-shop-list');
+  add('#admin-shop-message');
 
   const accountClient = {
     async initialize() { return { ...identity }; },
@@ -232,6 +249,16 @@ function createAdminRuntimeHarness({ listActivities } = {}) {
     async adminPublish() {},
     async adminDisable() {},
   };
+  const shopClient = {
+    async adminListProducts() {
+      shopCalls.push({ type: 'list' });
+      return listShopProducts();
+    },
+    async adminUpdateProduct(input) {
+      shopCalls.push({ type: 'update', input });
+      return updateShopProduct(input);
+    },
+  };
   const accountPanel = {
     accountClient,
     economyClient,
@@ -247,11 +274,14 @@ function createAdminRuntimeHarness({ listActivities } = {}) {
 
   const keys = [
     'document', 'HYLAccountPanel', 'PlayerActivities', 'PlayerCheckin',
-    'PlayerNotifications', 'PlayerEconomy', 'PlayerStats', 'confirm',
+    'PlayerNotifications', 'PlayerEconomy', 'PlayerStats', 'PlayerShop', 'confirm',
   ];
   const previous = new Map(keys.map((key) => [key, globalThis[key]]));
   globalThis.document = {
     querySelector(selector) { return nodes.get(selector) || null; },
+    querySelectorAll(selector) {
+      return selector === '[data-admin-shop-form]' ? shopForms : [];
+    },
     createElement(tagName) { return new FakeElement(tagName); },
   };
   globalThis.HYLAccountPanel = { mount: () => accountPanel };
@@ -269,13 +299,24 @@ function createAdminRuntimeHarness({ listActivities } = {}) {
   };
   globalThis.PlayerEconomy = { mapEconomyError: () => '经济失败' };
   globalThis.PlayerStats = { mapStatsError: () => '赛季失败' };
-  globalThis.confirm = () => true;
+  globalThis.PlayerShop = {
+    createShopClient: () => shopClient,
+    mapShopError: () => '商城失败',
+  };
+  globalThis.confirm = (message) => {
+    confirmCalls.push(message);
+    return confirmShopPublish(message);
+  };
 
   return {
     workspace,
     activityForm,
     activityList,
     activityCalls,
+    shopCalls,
+    shopForms,
+    confirmCalls,
+    nodes,
     mount() { return globalThis.HYLAdminCenter.mount(); },
     setIdentity(nextIdentity, nextEconomySnapshot) {
       identity = { ...nextIdentity };
@@ -587,6 +628,67 @@ test('后台样式包含可达焦点、加载禁用和窄屏布局', () => {
   assert.match(css, /\[aria-busy="true"\]/);
   assert.match(css, /@media\s*\(max-width:/);
   assert.match(css, /--admin-accent:\s*oklch\(0\.61\s+0\.23\s+266\)/i);
+});
+
+test('商品配置校验整数范围并把空限购转换为 null', () => {
+  assert.equal(typeof admin.validateShopProductInput, 'function');
+  assert.deepEqual(admin.validateShopProductInput({
+    sku: 'makeup_card', price: '20', active: false, purchaseLimit: '',
+  }), {
+    sku: 'makeup_card', price: 20, active: false, purchaseLimit: null,
+  });
+  assert.throws(() => admin.validateShopProductInput({
+    sku: 'makeup_card', price: '0', active: true, purchaseLimit: '',
+  }), /上架商品价格至少为 1/);
+  assert.throws(() => admin.validateShopProductInput({
+    sku: 'makeup_card', price: '1.5', active: false, purchaseLimit: '',
+  }), /价格必须为整数/);
+  assert.throws(() => admin.validateShopProductInput({
+    sku: 'makeup_card', price: '20', active: false, purchaseLimit: '0',
+  }), /限购须为 1 至 100000/);
+});
+
+test('商品从下架切换到上架会确认并在保存后重拉服务端状态', async () => {
+  let active = false;
+  const product = () => ({
+    sku: 'makeup_card', name: '补签卡', description: '补签一次', price: active ? 25 : 0,
+    active, purchaseLimit: active ? 2 : null, sortOrder: 10,
+    updatedAt: active ? '2026-07-19T12:00:00Z' : null,
+  });
+  const harness = createAdminRuntimeHarness({
+    listShopProducts: async () => [product(), {
+      sku: 'rename_card', name: '改名卡', description: '改名一次', price: 0,
+      active: false, purchaseLimit: null, sortOrder: 20, updatedAt: null,
+    }],
+    updateShopProduct: async (input) => {
+      active = input.active;
+      return product();
+    },
+  });
+  try {
+    harness.mount();
+    await settleAdminRuntime();
+    const form = harness.shopForms[0];
+    form.elements.price.value = '25';
+    form.elements.isActive.checked = true;
+    form.elements.perUserLimit.value = '2';
+    form.dispatchEvent(new Event('submit', { cancelable: true }));
+    await settleAdminRuntime();
+
+    assert.equal(harness.confirmCalls.length, 1);
+    assert.match(harness.confirmCalls[0], /补签卡/);
+    assert.match(harness.confirmCalls[0], /25 金币/);
+    assert.match(harness.confirmCalls[0], /限购 2/);
+    assert.deepEqual(harness.shopCalls.find((call) => call.type === 'update').input, {
+      sku: 'makeup_card', price: 25, active: true, purchaseLimit: 2,
+    });
+    assert.ok(harness.shopCalls.filter((call) => call.type === 'list').length >= 2);
+    assert.equal(form.elements.price.value, 25);
+    assert.equal(form.elements.isActive.checked, true);
+    assert.match(harness.nodes.get('#admin-shop-message').textContent, /已保存/);
+  } finally {
+    harness.restore();
+  }
 });
 
 test('管理中心提供固定商品配置区和商城客户端', () => {

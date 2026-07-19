@@ -208,6 +208,22 @@ button:disabled, input:disabled, textarea:disabled, select:disabled {
 .admin-record-main strong { display: block; margin-bottom: 7px; color: var(--admin-text); font-size: 1.05rem; }
 .admin-record-main span, .admin-record-main p { display: block; margin: 4px 0 0; color: var(--admin-muted); line-height: 1.55; overflow-wrap: anywhere; }
 .admin-record-actions { display: flex; flex: 0 0 auto; gap: 8px; }
+
+.admin-shop-list { border-top: 1px solid var(--admin-line); }
+.admin-shop-row {
+  padding: 22px 0;
+  display: grid;
+  grid-template-columns: minmax(180px, 1.2fr) minmax(130px, 0.7fr) minmax(90px, 0.45fr) minmax(180px, 0.9fr) auto;
+  gap: 16px;
+  align-items: end;
+  border-bottom: 1px solid var(--admin-line);
+}
+.admin-shop-copy { align-self: center; min-width: 0; }
+.admin-shop-copy strong, .admin-shop-copy span { display: block; }
+.admin-shop-copy span { margin-top: 6px; color: var(--admin-muted); line-height: 1.5; }
+.admin-shop-toggle input { width: 1.2rem; min-height: 1.2rem; accent-color: var(--admin-accent); }
+.admin-shop-actions { display: grid; justify-items: end; gap: 8px; }
+.admin-shop-actions small { color: var(--admin-muted); font-size: 0.76rem; white-space: nowrap; }
 .admin-empty { margin: 0; padding: 24px 0; color: var(--admin-muted); }
 
 .admin-current-record {
@@ -241,6 +257,9 @@ button:disabled, input:disabled, textarea:disabled, select:disabled {
   .admin-section-nav { top: 64px; margin-inline: -14px; border-inline: 0; }
   .admin-section-heading > p { text-align: left; }
   .admin-form, .admin-rule-form { grid-template-columns: 1fr; }
+  .admin-shop-row { grid-template-columns: 1fr; align-items: stretch; }
+  .admin-shop-actions { justify-items: stretch; }
+  .admin-shop-actions small { white-space: normal; }
   .admin-span-2 { grid-column: auto; }
   .admin-form-actions .admin-primary-button, .admin-inline-form > button { width: 100%; }
   .admin-generated-code { align-items: stretch; flex-direction: column; }

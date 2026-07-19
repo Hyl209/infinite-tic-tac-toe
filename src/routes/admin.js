@@ -133,6 +133,25 @@
     return value ? `${formatLocalDateTime(value)} 到期` : '永久有效';
   }
 
+  function validateShopProductInput(input = {}) {
+    const sku = String(input.sku || '');
+    if (!['makeup_card', 'rename_card'].includes(sku)) throw new Error('商品不存在');
+    const price = Number(input.price);
+    if (!Number.isInteger(price)) throw new Error('价格必须为整数');
+    if (price < 0 || price > 1_000_000) throw new Error('价格须为 0 至 1000000');
+    const active = Boolean(input.active);
+    if (active && price < 1) throw new Error('上架商品价格至少为 1');
+    const rawLimit = String(input.purchaseLimit ?? '').trim();
+    let purchaseLimit = null;
+    if (rawLimit) {
+      purchaseLimit = Number(rawLimit);
+      if (!Number.isInteger(purchaseLimit) || purchaseLimit < 1 || purchaseLimit > 100_000) {
+        throw new Error('限购须为 1 至 100000');
+      }
+    }
+    return { sku, price, active, purchaseLimit };
+  }
+
   const exported = {
     activityScheduledMessage,
     canEditAdminActivity,
@@ -146,6 +165,7 @@
     validateAdminNotificationTitle,
     validateAdminPublicUrl,
     validateCheckinRule,
+    validateShopProductInput,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = exported;
 
@@ -178,6 +198,8 @@
     const generatedCodeValue = document.querySelector('#admin-generated-code-value');
     const copyCodeButton = document.querySelector('#copy-generated-code-button');
     const systemStatus = document.querySelector('#admin-system-status');
+    const shopForms = Array.from(document.querySelectorAll('[data-admin-shop-form]'));
+    const shopMessage = document.querySelector('#admin-shop-message');
 
     const accountPanel = globalScope.HYLAccountPanel?.mount();
     const accountClient = accountPanel?.accountClient;
@@ -186,6 +208,7 @@
     let activitiesClient = null;
     let checkinClient = null;
     let notificationsClient = null;
+    let shopClient = null;
     let access = 'loading';
     let accountKey = adminAccountKey(accountPanel?.getIdentity?.());
     let generation = 0;
@@ -195,6 +218,7 @@
     let notifications = [];
     let seasons = [];
     let redeemCodes = [];
+    let shopProducts = [];
     let economySnapshot = accountPanel?.getEconomySnapshot?.() || {
       loaded: false,
       isAdmin: false,
@@ -434,12 +458,28 @@
       });
     }
 
+    function renderShopProducts() {
+      shopForms.forEach((form) => {
+        const sku = form.dataset.adminShopForm;
+        const product = shopProducts.find((item) => item.sku === sku);
+        if (!product) return;
+        form.elements.price.value = product.price;
+        form.elements.isActive.checked = product.active;
+        form.elements.perUserLimit.value = product.purchaseLimit ?? '';
+        const updated = document.querySelector(`#admin-shop-updated-${sku}`);
+        if (updated) updated.textContent = product.updatedAt
+          ? `最近更新 ${formatLocalDateTime(product.updatedAt)}`
+          : '尚未更新';
+      });
+    }
+
     function renderAll() {
       renderActivities();
       renderCheckinRules();
       renderNotifications();
       renderSeasons();
       renderRedeemCodes();
+      renderShopProducts();
       renderSystemStatus();
     }
 
@@ -449,12 +489,13 @@
       notifications = [];
       seasons = [];
       redeemCodes = [];
+      shopProducts = [];
       generatedCode.hidden = true;
       generatedCodeValue.textContent = '';
       resetActivityForm();
-      [activityMessage, checkinMessage, notificationMessage, seasonMessage, redeemMessage]
+      [activityMessage, checkinMessage, notificationMessage, seasonMessage, redeemMessage, shopMessage]
         .forEach((element) => setMessage(element));
-      [activityForm, checkinForm, notificationForm, seasonForm, redeemForm]
+      [activityForm, checkinForm, notificationForm, seasonForm, redeemForm, ...shopForms]
         .forEach((form) => setFormBusy(form, false));
       workspace.setAttribute('aria-busy', 'false');
       renderAll();
@@ -471,9 +512,10 @@
           notificationsClient.adminList(),
           statsClient.listSeasons(),
           economyClient.listRedeemCodes(),
+          shopClient.adminListProducts(),
         ]);
         if (token !== generation) return;
-        [activities, checkinRules, notifications, seasons, redeemCodes] = loaded;
+        [activities, checkinRules, notifications, seasons, redeemCodes, shopProducts] = loaded;
         renderAll();
         retryButton.hidden = true;
         setMessage(accessState, '管理权限已通过；服务端 RPC 继续执行最终权限校验。', 'success');
@@ -493,6 +535,7 @@
         activitiesClient ||= globalScope.PlayerActivities.createActivitiesClient({ accountClient });
         checkinClient ||= globalScope.PlayerCheckin.createCheckinClient({ accountClient });
         notificationsClient ||= globalScope.PlayerNotifications.createNotificationsClient({ accountClient });
+        shopClient ||= globalScope.PlayerShop.createShopClient({ accountClient });
         await loadAllConfigData(token);
       } finally {
         if (activatingGeneration === token) activatingGeneration = null;
@@ -527,6 +570,52 @@
     loginButton.addEventListener('click', () => accountPanel?.open());
     retryButton.addEventListener('click', () => void verifyAccess());
     activityCancel.addEventListener('click', resetActivityForm);
+
+    shopForms.forEach((form) => {
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (access !== 'admin' || !shopClient) return;
+        const sku = form.dataset.adminShopForm;
+        let input;
+        try {
+          input = validateShopProductInput({
+            sku,
+            price: form.elements.price.value,
+            active: form.elements.isActive.checked,
+            purchaseLimit: form.elements.perUserLimit.value,
+          });
+        } catch (error) {
+          setMessage(shopMessage, error.message, 'error');
+          return;
+        }
+
+        const current = shopProducts.find((product) => product.sku === sku);
+        if (!current?.active && input.active) {
+          const limit = input.purchaseLimit == null ? '不限购' : `限购 ${input.purchaseLimit}`;
+          const confirmed = globalScope.confirm(
+            `确认上架${current?.name || sku}？价格 ${input.price} 金币，${limit}。`,
+          );
+          if (!confirmed) return;
+        }
+
+        setFormBusy(form, true);
+        setMessage(shopMessage, `正在保存${current?.name || '商品'}…`);
+        try {
+          await shopClient.adminUpdateProduct(input);
+          shopProducts = await shopClient.adminListProducts();
+          renderShopProducts();
+          setMessage(shopMessage, `${current?.name || '商品'}已保存。`, 'success');
+        } catch (error) {
+          setMessage(
+            shopMessage,
+            mapError(globalScope.PlayerShop?.mapShopError, error, '商品保存失败'),
+            'error',
+          );
+        } finally {
+          setFormBusy(form, false);
+        }
+      });
+    });
 
     activityForm.addEventListener('submit', async (event) => {
       event.preventDefault();

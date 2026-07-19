@@ -17,6 +17,7 @@
     <script src="/src/services/stats.js" defer></script>
     <script src="/src/services/activities.js" defer></script>
     <script src="/src/services/checkin.js" defer></script>
+    <script src="/src/services/shop.js" defer></script>
     <script src="/src/services/notifications.js" defer></script>
     <script src="/src/routes/account-panel.js" defer></script>
     <script src="/src/routes/admin.js" defer></script>
@@ -66,6 +67,7 @@
           <a href="#admin-notification-section">通知</a>
           <a href="#admin-season-section">赛季</a>
           <a href="#admin-redeem-section">兑换码</a>
+          <a href="#admin-shop-section">商城</a>
           <a href="#admin-system-section">系统状态</a>
         </nav>
 
@@ -154,6 +156,30 @@
           </div>
           <p id="admin-redeem-message" class="admin-message" aria-live="polite"></p>
           <div id="admin-redeem-list" class="admin-record-list" aria-live="polite"></div>
+        </section>
+
+        <section id="admin-shop-section" class="admin-section" aria-labelledby="admin-shop-title">
+          <header class="admin-section-heading">
+            <div><h2 id="admin-shop-title">商品配置</h2></div>
+            <p>仅可配置固定功能道具；上架后玩家将按当前价格购买。</p>
+          </header>
+          <div id="admin-shop-list" class="admin-shop-list">
+            <form id="admin-shop-form-makeup_card" class="admin-shop-row" data-admin-shop-form="makeup_card">
+              <div class="admin-shop-copy"><strong>补签卡</strong><span>抵扣一次补签金币费用</span></div>
+              <label class="admin-field"><span>金币价格</span><input name="price" type="number" min="0" max="1000000" step="1" value="0" required></label>
+              <label class="admin-field admin-shop-toggle"><span>上架</span><input name="isActive" type="checkbox"></label>
+              <label class="admin-field"><span>每人终身限购（可选）</span><input name="perUserLimit" type="number" min="1" max="100000" step="1"></label>
+              <div class="admin-shop-actions"><small id="admin-shop-updated-makeup_card">尚未更新</small><button class="admin-primary-button" type="submit">保存补签卡</button></div>
+            </form>
+            <form id="admin-shop-form-rename_card" class="admin-shop-row" data-admin-shop-form="rename_card">
+              <div class="admin-shop-copy"><strong>改名卡</strong><span>修改一次注册账号游戏名</span></div>
+              <label class="admin-field"><span>金币价格</span><input name="price" type="number" min="0" max="1000000" step="1" value="0" required></label>
+              <label class="admin-field admin-shop-toggle"><span>上架</span><input name="isActive" type="checkbox"></label>
+              <label class="admin-field"><span>每人终身限购（可选）</span><input name="perUserLimit" type="number" min="1" max="100000" step="1"></label>
+              <div class="admin-shop-actions"><small id="admin-shop-updated-rename_card">尚未更新</small><button class="admin-primary-button" type="submit">保存改名卡</button></div>
+            </form>
+          </div>
+          <p id="admin-shop-message" class="admin-message" aria-live="polite"></p>
         </section>
 
         <section id="admin-system-section" class="admin-section" aria-labelledby="admin-system-title">

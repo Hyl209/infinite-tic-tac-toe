@@ -28,4 +28,3 @@ Each `FriendsClient` gets a module-local monotonically increasing channel suffix
 ## Merge scope
 
 Commit the fixes on the current feature branch and merge that commit into the local `main` branch. Do not push to `origin` unless separately requested.
-

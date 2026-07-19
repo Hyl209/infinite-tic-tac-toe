@@ -1,7 +1,11 @@
 (function initPlayerCenter(globalScope) {
   'use strict';
 
-  const VALID_TABS = new Set(['checkin', 'activities', 'notifications', 'friends']);
+  const VALID_TABS = new Set(['checkin', 'activities', 'notifications', 'friends', 'shop', 'inventory']);
+  const DEFINITIVE_SHOP_ERRORS = [
+    'PRODUCT_NOT_FOUND', 'PRODUCT_INACTIVE', 'PRODUCT_PRICE_INVALID',
+    'PURCHASE_LIMIT_REACHED', 'INSUFFICIENT_COINS', 'INVALID_REQUEST_ID',
+  ];
   let mounted = null;
 
   function normalizePlayerTab(value) {
@@ -527,6 +531,15 @@
     const checkinCalendar = document.querySelector('#checkin-calendar');
     const activityList = document.querySelector('#activity-list');
     const notificationList = document.querySelector('#notification-list');
+    const shopProductList = document.querySelector('#shop-product-list');
+    const inventoryList = document.querySelector('#inventory-list');
+    const shopMessage = document.querySelector('#shop-message');
+    const inventoryMessage = document.querySelector('#inventory-message');
+    const purchaseDialog = document.querySelector('#shop-purchase-dialog');
+    const purchaseName = document.querySelector('#shop-purchase-name');
+    const purchasePrice = document.querySelector('#shop-purchase-price');
+    const purchaseConfirm = document.querySelector('#shop-purchase-confirm');
+    const purchaseCancel = document.querySelector('#shop-purchase-cancel');
     const message = document.querySelector('#player-message');
     if (tabButtons.length === 0 || panels.length === 0) return null;
 
@@ -542,6 +555,9 @@
     const notificationsClient = accountClient
       ? globalScope.PlayerNotifications?.createNotificationsClient({ accountClient })
       : null;
+    const shopClient = accountClient
+      ? globalScope.PlayerShop?.createShopClient({ accountClient })
+      : null;
     const eventController = new AbortController();
     const { signal } = eventController;
     const narrowTabs = globalScope.matchMedia?.('(max-width: 759px)') || null;
@@ -553,10 +569,16 @@
     let calendarRequest = 0;
     let activityRequest = 0;
     let notificationRequest = 0;
+    let shopRequest = 0;
+    let inventoryRequest = 0;
     let identityGeneration = 0;
     let actionPending = null;
     let activityItems = [];
     let notificationItems = [];
+    let shopItems = [];
+    let inventory = { makeupCard: 0, renameCard: 0 };
+    let purchaseState = null;
+    let purchasePending = false;
     let openNotificationId = null;
     const activityClaims = new Map();
     const notificationClaims = new Map();
@@ -607,6 +629,195 @@
       node.className = className;
       if (text) node.textContent = text;
       return node;
+    }
+
+    function setPanelMessage(node, text = '', state = '') {
+      if (!node) return;
+      node.textContent = text;
+      node.dataset.state = state;
+    }
+
+    function isRegistered() {
+      return accountPanel?.getIdentity()?.kind === 'registered';
+    }
+
+    function shopFailureIsDefinitive(error) {
+      const source = `${error?.code || ''} ${error?.message || ''}`;
+      return DEFINITIVE_SHOP_ERRORS.some((code) => source.includes(code));
+    }
+
+    function productPurchaseState(product) {
+      if (!isRegistered()) return { disabled: true, label: '登录后购买' };
+      if (purchasePending && purchaseState?.product?.sku === product.sku) {
+        return { disabled: true, label: '购买中' };
+      }
+      if (product.remainingLimit === 0) return { disabled: true, label: '已达限购' };
+      const balance = Number(accountPanel?.getEconomySnapshot()?.balance || 0);
+      if (balance < Number(product.price || 0)) return { disabled: true, label: '金币不足' };
+      return { disabled: false, label: '购买道具' };
+    }
+
+    function renderShop() {
+      if (!shopProductList) return;
+      if (shopItems.length === 0) {
+        shopProductList.replaceChildren(createNode('p', 'player-placeholder', '暂无上架商品。'));
+        return;
+      }
+      const rows = shopItems.map((product) => {
+        const row = createNode('article', 'shop-product-row');
+        const copy = createNode('div', 'shop-product-copy');
+        copy.append(
+          createNode('strong', '', product.name),
+          createNode('p', '', product.description),
+        );
+        const meta = createNode('div', 'shop-product-meta');
+        const price = createNode('span', 'shop-product-price', `${Number(product.price || 0)} 金币`);
+        const limit = product.purchaseLimit == null
+          ? '不限购'
+          : `已购 ${Number(product.purchasedCount || 0)} / ${product.purchaseLimit}`;
+        const buttonState = productPurchaseState(product);
+        const button = createNode('button', 'player-primary-action shop-buy-action', buttonState.label);
+        button.type = 'button';
+        button.dataset.shopBuy = product.sku;
+        button.disabled = buttonState.disabled;
+        button.addEventListener('click', () => openPurchase(product), { signal });
+        meta.append(price, createNode('span', 'shop-product-limit', limit), button);
+        row.append(copy, meta);
+        return row;
+      });
+      shopProductList.replaceChildren(...rows);
+    }
+
+    function inventoryRow(name, quantity, actionLabel, target) {
+      const row = createNode('article', 'inventory-row');
+      const copy = createNode('div', 'inventory-copy');
+      copy.append(createNode('strong', '', name), createNode('span', '', `${quantity} 张`));
+      const link = createNode('a', 'player-secondary-link', actionLabel);
+      if (target === 'account') {
+        link.href = '#account-dialog';
+        link.addEventListener('click', (event) => {
+          event.preventDefault();
+          accountPanel?.open();
+        }, { signal });
+      } else {
+        link.href = `/player/?tab=${target}`;
+      }
+      row.append(copy, link);
+      return row;
+    }
+
+    function renderInventory() {
+      if (!inventoryList) return;
+      inventoryList.replaceChildren(
+        inventoryRow('补签卡', Number(inventory.makeupCard || 0), '去签到月历', 'checkin'),
+        inventoryRow('改名卡', Number(inventory.renameCard || 0), '去修改游戏名', 'account'),
+      );
+      setPanelMessage(
+        inventoryMessage,
+        isRegistered() ? '' : '登录正式账号后可查看和使用背包道具。',
+        isRegistered() ? '' : 'error',
+      );
+    }
+
+    async function refreshShop() {
+      if (!shopClient) return false;
+      const request = ++shopRequest;
+      shopProductList?.setAttribute('aria-busy', 'true');
+      try {
+        const products = await shopClient.listProducts();
+        if (destroyed || request !== shopRequest) return false;
+        shopItems = products;
+        renderShop();
+        setPanelMessage(shopMessage);
+        return true;
+      } catch (error) {
+        if (destroyed || request !== shopRequest) return false;
+        const text = globalScope.PlayerShop?.mapShopError?.(error)
+          || '商城加载失败，请稍后重试';
+        shopProductList?.replaceChildren(createNode('p', 'player-placeholder', text));
+        setPanelMessage(shopMessage, text, 'error');
+        return false;
+      } finally {
+        if (!destroyed && request === shopRequest) shopProductList?.setAttribute('aria-busy', 'false');
+      }
+    }
+
+    async function refreshInventory() {
+      const request = ++inventoryRequest;
+      if (!shopClient || !isRegistered()) {
+        inventory = { makeupCard: 0, renameCard: 0 };
+        renderInventory();
+        return false;
+      }
+      inventoryList?.setAttribute('aria-busy', 'true');
+      try {
+        const nextInventory = await shopClient.getInventory();
+        if (destroyed || request !== inventoryRequest) return false;
+        inventory = nextInventory;
+        renderInventory();
+        return true;
+      } catch (error) {
+        if (destroyed || request !== inventoryRequest) return false;
+        const text = globalScope.PlayerShop?.mapShopError?.(error)
+          || '背包加载失败，请稍后重试';
+        setPanelMessage(inventoryMessage, text, 'error');
+        return false;
+      } finally {
+        if (!destroyed && request === inventoryRequest) inventoryList?.setAttribute('aria-busy', 'false');
+      }
+    }
+
+    function closePurchase({ clear = true } = {}) {
+      purchaseDialog?.close?.();
+      if (clear) purchaseState = null;
+    }
+
+    function openPurchase(product) {
+      if (!purchaseDialog || purchasePending || productPurchaseState(product).disabled) return;
+      purchaseState = { product, requestId: createRequestId() };
+      if (purchaseName) purchaseName.textContent = product.name;
+      if (purchasePrice) purchasePrice.textContent = `支付 ${Number(product.price || 0)} 金币`;
+      purchaseDialog.showModal?.();
+    }
+
+    async function runPurchase() {
+      if (!purchaseState || purchasePending || !shopClient) return;
+      if (!purchaseState.requestId) purchaseState.requestId = createRequestId();
+      const state = purchaseState;
+      purchasePending = true;
+      if (purchaseConfirm) {
+        purchaseConfirm.disabled = true;
+        purchaseConfirm.setAttribute('aria-busy', 'true');
+      }
+      renderShop();
+      try {
+        const result = await shopClient.buy(state.product.sku, state.requestId);
+        if (destroyed || purchaseState !== state) return;
+        const walletReady = await refreshWallet();
+        const [shopReady, inventoryReady] = await Promise.all([refreshShop(), refreshInventory()]);
+        if (destroyed || purchaseState !== state) return;
+        if (!walletReady || !shopReady || !inventoryReady) {
+          setPanelMessage(shopMessage, '购买成功，但状态刷新失败，请刷新页面', 'error');
+          return;
+        }
+        closePurchase();
+        setPanelMessage(shopMessage, `购买成功，支付 ${Number(result?.pricePaid || state.product.price)} 金币`, 'success');
+      } catch (error) {
+        if (destroyed || purchaseState !== state) return;
+        if (shopFailureIsDefinitive(error)) state.requestId = null;
+        const text = globalScope.PlayerShop?.mapShopError?.(error)
+          || '购买失败，请稍后重试';
+        setPanelMessage(shopMessage, text, 'error');
+      } finally {
+        purchasePending = false;
+        if (!destroyed) {
+          if (purchaseConfirm) {
+            purchaseConfirm.disabled = false;
+            purchaseConfirm.setAttribute('aria-busy', 'false');
+          }
+          renderShop();
+        }
+      }
     }
 
     function formatDate(value) {
@@ -1348,6 +1559,8 @@
       globalScope.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
       renderTabs();
       if (currentTab === 'friends') void friendsPanel?.refresh();
+      if (currentTab === 'shop') void refreshShop();
+      if (currentTab === 'inventory') void refreshInventory();
     }
 
     function focusTab(index) {
@@ -1379,20 +1592,35 @@
     });
 
     checkinLoginButton?.addEventListener('click', () => accountPanel?.open(), { signal });
+    purchaseConfirm?.addEventListener('click', () => void runPurchase(), { signal });
+    purchaseCancel?.addEventListener('click', () => {
+      if (!purchasePending) closePurchase();
+    }, { signal });
+    purchaseDialog?.addEventListener('cancel', (event) => {
+      if (purchasePending) event.preventDefault();
+      else purchaseState = null;
+    }, { signal });
     narrowTabs?.addEventListener?.('change', syncTabOrientation);
     const unsubscribe = accountPanel?.subscribe((state) => {
       const nextIdentity = state?.identity || accountPanel?.getIdentity() || { kind: 'guest' };
       const nextKey = getAccountKey(nextIdentity);
       renderSummary(state);
+      renderShop();
       if (nextKey === identityKey) return;
       identityKey = nextKey;
       identityGeneration += 1;
       calendarRequest += 1;
       activityRequest += 1;
       notificationRequest += 1;
+      shopRequest += 1;
+      inventoryRequest += 1;
       actionPending = null;
       activityItems = [];
       notificationItems = [];
+      shopItems = [];
+      inventory = { makeupCard: 0, renameCard: 0 };
+      purchasePending = false;
+      closePurchase();
       currentActivityId = null;
       openNotificationId = null;
       activityClaims.clear();
@@ -1406,24 +1634,30 @@
       }
       renderActivities();
       renderNotifications();
+      renderShop();
+      renderInventory();
       checkinCalendar?.replaceChildren(createNode('p', '', '正在加载新账号的签到数据。'));
       setMessage();
       if (nextIdentity.kind === 'registered') void refreshCheckinMonth();
       else renderGuestCalendar();
       void refreshActivities();
       void refreshNotifications();
+      void refreshShop();
+      if (nextIdentity.kind === 'registered') void refreshInventory();
     }) || (() => {});
 
     syncTabOrientation();
     renderTabs();
     renderSummary();
-    if (!accountPanel || !checkinClient || !activitiesClient || !notificationsClient || !economyClient) {
+    if (!accountPanel || !checkinClient || !activitiesClient || !notificationsClient || !shopClient || !economyClient) {
       setMessage('玩家服务暂时不可用，请稍后刷新页面', 'error');
     }
     if (accountPanel?.getIdentity()?.kind === 'registered' && checkinClient) void refreshCheckinMonth();
     else renderGuestCalendar();
     void refreshActivities();
     void refreshNotifications();
+    void refreshShop();
+    void refreshInventory();
 
     instance = {
       accountClient,
@@ -1431,10 +1665,13 @@
       checkinClient,
       activitiesClient,
       notificationsClient,
+      shopClient,
       friendsClient: friendsPanel?.friendsClient || null,
       getTab: () => currentTab,
       refreshActivities,
       refreshNotifications,
+      refreshShop,
+      refreshInventory,
       destroy() {
         if (destroyed) return;
         destroyed = true;
@@ -1442,6 +1679,10 @@
         calendarRequest += 1;
         activityRequest += 1;
         notificationRequest += 1;
+        shopRequest += 1;
+        inventoryRequest += 1;
+        purchasePending = false;
+        closePurchase();
         eventController.abort();
         narrowTabs?.removeEventListener?.('change', syncTabOrientation);
         unsubscribe();

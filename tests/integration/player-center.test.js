@@ -126,6 +126,13 @@ function createPlayerRuntimeHarness({
   claimNotification = async () => null,
   mapNotificationsError = () => '通知服务暂时不可用，请稍后重试',
   refreshEconomy = async () => ({ balance: 0, isAdmin: false, loaded: true }),
+  balance = 0,
+  products = [],
+  inventory = { makeupCard: 0, renameCard: 0 },
+  listProducts = async () => products,
+  getInventory = async () => inventory,
+  buyProduct = async () => null,
+  mapShopError = () => '商城服务暂时不可用，请稍后重试',
   friends = [],
   friendRequests = [],
   gameInvites = [],
@@ -137,11 +144,18 @@ function createPlayerRuntimeHarness({
 } = {}) {
   const tabList = new FakeElement();
   tabList.setAttribute('aria-orientation', 'vertical');
-  const tabs = ['checkin', 'activities', 'notifications', 'friends'].map((tab) => new FakeElement({ playerTab: tab }));
-  const panels = ['checkin', 'activities', 'notifications', 'friends'].map((tab) => new FakeElement({ playerPanel: tab }));
+  const tabs = ['checkin', 'activities', 'notifications', 'friends', 'shop', 'inventory']
+    .map((tab) => new FakeElement({ playerTab: tab }));
+  const panels = ['checkin', 'activities', 'notifications', 'friends', 'shop', 'inventory']
+    .map((tab) => new FakeElement({ playerPanel: tab }));
   const calendar = new FakeElement();
   const activityList = new FakeElement();
   const notificationList = new FakeElement();
+  const shopProductList = new FakeElement();
+  const inventoryList = new FakeElement();
+  const purchaseDialog = new FakeElement({}, 'dialog');
+  const purchaseConfirm = new FakeElement({}, 'button');
+  const purchaseCancel = new FakeElement({}, 'button');
   const friendSearchForm = new FakeElement({}, 'form');
   const friendSearchInput = new FakeElement({}, 'input');
   friendSearchForm.append(new FakeElement({}, 'button'));
@@ -157,6 +171,15 @@ function createPlayerRuntimeHarness({
     ['#checkin-calendar', calendar],
     ['#activity-list', activityList],
     ['#notification-list', notificationList],
+    ['#shop-product-list', shopProductList],
+    ['#inventory-list', inventoryList],
+    ['#shop-message', new FakeElement()],
+    ['#inventory-message', new FakeElement()],
+    ['#shop-purchase-dialog', purchaseDialog],
+    ['#shop-purchase-name', new FakeElement()],
+    ['#shop-purchase-price', new FakeElement()],
+    ['#shop-purchase-confirm', purchaseConfirm],
+    ['#shop-purchase-cancel', purchaseCancel],
     ['#friend-search-form', friendSearchForm],
     ['#friend-search-input', friendSearchInput],
     ['#friend-search-result', new FakeElement()],
@@ -174,6 +197,7 @@ function createPlayerRuntimeHarness({
   const subscriptionListeners = new Set();
   let opens = 0;
   let economyRefreshes = 0;
+  let currentBalance = balance;
   let friendRealtimeSubscriptions = 0;
   let friendRealtimeCleanups = 0;
   let friendDisconnects = 0;
@@ -184,6 +208,7 @@ function createPlayerRuntimeHarness({
   const activityCalls = [];
   const notificationCalls = [];
   const friendCalls = [];
+  const shopCalls = [];
   const accountClient = {};
   const economyClient = { refresh: async () => ({ balance: 0, isAdmin: false, loaded: true }) };
   const checkinClient = {
@@ -222,6 +247,20 @@ function createPlayerRuntimeHarness({
     async claimReward(notificationId, requestId) {
       notificationCalls.push({ type: 'claim', notificationId, requestId });
       return claimNotification(notificationId, requestId);
+    },
+  };
+  const shopClient = {
+    async listProducts() {
+      shopCalls.push({ type: 'list' });
+      return listProducts();
+    },
+    async getInventory() {
+      shopCalls.push({ type: 'inventory' });
+      return getInventory();
+    },
+    async buy(sku, requestId) {
+      shopCalls.push({ type: 'buy', sku, requestId });
+      return buyProduct(sku, requestId);
     },
   };
   const friendsClient = {
@@ -276,7 +315,7 @@ function createPlayerRuntimeHarness({
     accountClient,
     economyClient,
     getIdentity: () => ({ ...identity }),
-    getEconomySnapshot: () => ({ balance: 0 }),
+    getEconomySnapshot: () => ({ balance: currentBalance }),
     subscribe(listener) {
       subscriptionListeners.add(listener);
       let active = true;
@@ -291,12 +330,14 @@ function createPlayerRuntimeHarness({
     },
     async refreshEconomy() {
       economyRefreshes += 1;
-      return refreshEconomy();
+      const snapshot = await refreshEconomy();
+      currentBalance = Number(snapshot?.balance ?? currentBalance);
+      return snapshot;
     },
   };
   const keys = [
     'document', 'location', 'history', 'matchMedia', 'HYLAccountPanel',
-    'PlayerCheckin', 'PlayerActivities', 'PlayerNotifications', 'PlayerFriends', 'confirm',
+    'PlayerCheckin', 'PlayerActivities', 'PlayerNotifications', 'PlayerFriends', 'PlayerShop', 'confirm',
   ];
   const previous = new Map(keys.map((key) => [key, globalThis[key]]));
   globalThis.document = {
@@ -337,6 +378,10 @@ function createPlayerRuntimeHarness({
     createFriendsClient: () => friendsClient,
     mapFriendsError: () => '好友服务暂时不可用，请稍后重试',
   };
+  globalThis.PlayerShop = {
+    createShopClient: () => shopClient,
+    mapShopError,
+  };
   globalThis.confirm = (message) => {
     confirmCalls.push(message);
     return confirmFriendRemoval(message);
@@ -347,9 +392,12 @@ function createPlayerRuntimeHarness({
     calendar,
     activityList,
     notificationList,
+    shopProductList,
+    inventoryList,
     activityCalls,
     notificationCalls,
     friendCalls,
+    shopCalls,
     confirmCalls,
     checkinCalls,
     monthCalls,
@@ -1953,6 +2001,96 @@ test('player center exposes UID-aware friend management and invite inbox structu
   assert.match(html, /id=["']social-toast-region["'][^>]*aria-live=["']polite["']/);
   assert.ok(html.indexOf('/src/services/friends.js') < html.indexOf('/src/routes/account-panel.js'));
   assert.ok(html.indexOf('/src/routes/account-panel.js') < html.indexOf('/src/routes/social-inbox.js'));
+});
+
+test('shop and inventory render fixed items with balance and limit disabled reasons', async () => {
+  const harness = createPlayerRuntimeHarness({
+    identity: { kind: 'registered', username: 'player_01', displayName: '立哥' },
+    balance: 30,
+    products: [
+      {
+        sku: 'makeup_card', name: '补签卡', description: '补签一次', price: 20,
+        active: true, purchaseLimit: 3, purchasedCount: 2, remainingLimit: 1,
+      },
+      {
+        sku: 'rename_card', name: '改名卡', description: '修改游戏名', price: 50,
+        active: true, purchaseLimit: 1, purchasedCount: 1, remainingLimit: 0,
+      },
+    ],
+    inventory: { makeupCard: 2, renameCard: 0 },
+  });
+  let instance;
+  try {
+    instance = player.mount();
+    await flushPromises();
+    assert.match(harness.shopProductList.textContent, /补签卡/);
+    assert.match(harness.shopProductList.textContent, /已购 2 \/ 3/);
+    assert.match(harness.shopProductList.textContent, /改名卡/);
+    const makeupBuy = harness.shopProductList.querySelector('[data-shop-buy="makeup_card"]');
+    const renameBuy = harness.shopProductList.querySelector('[data-shop-buy="rename_card"]');
+    assert.equal(makeupBuy.disabled, false);
+    assert.equal(renameBuy.disabled, true);
+    assert.match(renameBuy.textContent, /已达限购/);
+    assert.match(harness.inventoryList.textContent, /补签卡/);
+    assert.match(harness.inventoryList.textContent, /2 张/);
+    assert.match(harness.inventoryList.textContent, /改名卡/);
+    assert.match(harness.inventoryList.textContent, /0 张/);
+    const inventoryLinks = harness.inventoryList.querySelectorAll('a');
+    assert.equal(inventoryLinks[0].href, '/player/?tab=checkin');
+    assert.equal(inventoryLinks[1].href, '#account-dialog');
+    inventoryLinks[1].dispatchEvent(new Event('click', { cancelable: true }));
+    assert.equal(harness.opens, 1);
+  } finally {
+    instance?.destroy();
+    harness.restore();
+  }
+});
+
+test('purchase confirmation reuses request id after uncertain failure and refreshes all state on success', async () => {
+  let attempts = 0;
+  const harness = createPlayerRuntimeHarness({
+    identity: { kind: 'registered', username: 'player_01', displayName: '立哥' },
+    balance: 100,
+    products: [{
+      sku: 'makeup_card', name: '补签卡', description: '补签一次', price: 20,
+      active: true, purchaseLimit: null, purchasedCount: 0, remainingLimit: null,
+    }],
+    buyProduct: async () => {
+      attempts += 1;
+      if (attempts === 1) throw new Error('NETWORK_TIMEOUT');
+      return { sku: 'makeup_card', pricePaid: 20, balance: 80, quantity: 1 };
+    },
+    refreshEconomy: async () => ({ balance: 80, isAdmin: false, loaded: true }),
+  });
+  let instance;
+  try {
+    instance = player.mount();
+    await flushPromises();
+    harness.shopProductList.querySelector('[data-shop-buy="makeup_card"]')
+      .dispatchEvent(new Event('click'));
+    assert.equal(harness.nodes.get('#shop-purchase-dialog').open, true);
+    assert.match(harness.nodes.get('#shop-purchase-name').textContent, /补签卡/);
+    assert.match(harness.nodes.get('#shop-purchase-price').textContent, /20 金币/);
+
+    harness.nodes.get('#shop-purchase-confirm').dispatchEvent(new Event('click'));
+    await flushPromises();
+    harness.nodes.get('#shop-purchase-confirm').dispatchEvent(new Event('click'));
+    await flushPromises();
+    await flushPromises();
+
+    const buys = harness.shopCalls.filter((call) => call.type === 'buy');
+    assert.equal(buys.length, 2);
+    assert.equal(buys[0].requestId, buys[1].requestId);
+    assert.match(buys[0].requestId, /^[0-9a-f-]{36}$/i);
+    assert.equal(harness.economyRefreshes, 1);
+    assert.ok(harness.shopCalls.filter((call) => call.type === 'list').length >= 2);
+    assert.ok(harness.shopCalls.filter((call) => call.type === 'inventory').length >= 2);
+    assert.equal(harness.nodes.get('#shop-purchase-dialog').open, false);
+    assert.match(harness.nodes.get('#shop-message').textContent, /购买成功/);
+  } finally {
+    instance?.destroy();
+    harness.restore();
+  }
 });
 
 test('player center exposes shop, inventory, item makeup, and rename-card guidance', () => {

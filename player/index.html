@@ -17,6 +17,7 @@
     <script src="/src/services/economy.js" defer></script>
     <script src="/src/services/stats.js" defer></script>
     <script src="/src/services/checkin.js" defer></script>
+    <script src="/src/services/shop.js" defer></script>
     <script src="/src/services/activities.js" defer></script>
     <script src="/src/services/notifications.js" defer></script>
     <script src="/src/services/friends.js" defer></script>
@@ -82,6 +83,12 @@
           </button>
           <button id="player-tab-friends" class="player-tab" type="button" role="tab" aria-selected="false" aria-controls="player-panel-friends" data-player-tab="friends" tabindex="-1">
             好友
+          </button>
+          <button id="player-tab-shop" class="player-tab" type="button" role="tab" aria-selected="false" aria-controls="player-panel-shop" data-player-tab="shop" tabindex="-1">
+            商城
+          </button>
+          <button id="player-tab-inventory" class="player-tab" type="button" role="tab" aria-selected="false" aria-controls="player-panel-inventory" data-player-tab="inventory" tabindex="-1">
+            背包
           </button>
         </nav>
 
@@ -154,9 +161,48 @@
             <p id="friend-message" class="player-message" aria-live="polite" aria-atomic="true"></p>
           </section>
 
+          <section id="player-panel-shop" class="player-panel" role="tabpanel" aria-labelledby="player-tab-shop" data-player-panel="shop" tabindex="-1" hidden>
+            <header class="player-panel-heading">
+              <h2>功能道具商城</h2>
+              <p>商品价格与限购由服务端决定，每次购买一件。</p>
+            </header>
+            <div id="shop-product-list" class="shop-product-list" aria-live="polite">
+              <p class="player-placeholder">正在准备商品。</p>
+            </div>
+            <p id="shop-message" class="player-message" aria-live="polite" aria-atomic="true"></p>
+          </section>
+
+          <section id="player-panel-inventory" class="player-panel" role="tabpanel" aria-labelledby="player-tab-inventory" data-player-panel="inventory" tabindex="-1" hidden>
+            <header class="player-panel-heading">
+              <h2>背包</h2>
+              <p>已持有的道具即使商品下架也可继续使用。</p>
+            </header>
+            <div id="inventory-list" class="inventory-list" aria-live="polite">
+              <p class="player-placeholder">登录后查看背包。</p>
+            </div>
+            <p id="inventory-message" class="player-message" aria-live="polite" aria-atomic="true"></p>
+          </section>
+
           <p id="player-message" class="player-message" aria-live="polite" aria-atomic="true"></p>
         </div>
       </div>
+
+      <dialog id="shop-purchase-dialog" class="shop-purchase-dialog" aria-labelledby="shop-purchase-title">
+        <div class="shop-purchase-shell">
+          <h2 id="shop-purchase-title">确认购买</h2>
+          <p id="shop-purchase-name"></p>
+          <p id="shop-purchase-price"></p>
+          <div class="shop-purchase-actions">
+            <button id="shop-purchase-cancel" class="player-secondary-action" type="button">取消购买</button>
+            <button id="shop-purchase-confirm" class="player-primary-action" type="button">确认购买</button>
+          </div>
+        </div>
+      </dialog>
+
+      <template id="makeup-payment-options-template">
+        <label><input type="radio" name="makeupPayment" value="coins">使用金币</label>
+        <label><input type="radio" name="makeupPayment" value="item">使用补签卡</label>
+      </template>
 
       <dialog id="account-dialog" class="account-dialog" aria-labelledby="account-dialog-title">
         <div class="account-dialog-shell">
@@ -207,8 +253,9 @@
             <p class="account-username">登录用户名 <strong id="profile-username"></strong></p>
             <p class="account-username">玩家 UID <strong id="profile-player-uid"></strong></p>
             <label class="account-field" for="profile-game-name">
-              <span>游戏名</span>
+              <span>修改游戏名，消耗 1 张改名卡</span>
               <input id="profile-game-name" name="gameName" type="text" maxlength="16" autocomplete="nickname" required>
+              <small>当前改名卡 <strong id="profile-rename-card-count">0</strong> 张，<a href="/player/?tab=shop">前往商城</a></small>
             </label>
             <div class="account-profile-actions">
               <button class="button primary" type="submit">保存游戏名</button>

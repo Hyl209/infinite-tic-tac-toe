@@ -849,6 +849,56 @@ body[data-view="player"] {
   padding: 0 14px;
 }
 
+.makeup-payment-options {
+  margin: 20px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 9px;
+  border: 0;
+}
+
+.makeup-payment-options legend {
+  margin-bottom: 4px;
+  color: var(--portal-ink);
+  font-weight: 740;
+}
+
+.makeup-payment-option {
+  min-width: 0;
+  padding: 11px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--portal-line);
+  color: var(--portal-muted);
+  cursor: pointer;
+}
+
+.makeup-payment-option:has(input:checked) {
+  border-color: var(--portal-accent-soft);
+  color: var(--portal-ink);
+  background: var(--portal-bg);
+}
+
+.makeup-payment-option:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.makeup-payment-option input {
+  accent-color: var(--portal-accent);
+}
+
+.checkin-shop-link {
+  color: var(--portal-accent-soft);
+  font-size: 0.84rem;
+}
+
+.checkin-shop-link:focus-visible {
+  outline: 2px solid var(--portal-accent-soft);
+  outline-offset: 3px;
+}
+
 .shop-product-list,
 .inventory-list {
   min-width: 0;

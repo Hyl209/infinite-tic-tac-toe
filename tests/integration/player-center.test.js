@@ -1552,7 +1552,12 @@ test('coin makeup confirms reward, cost, and net change and trusts the service o
     assert.match(dialog.textContent, /费用 20 金币/);
     assert.match(dialog.textContent, /净变化 -16 金币/);
     assert.equal(confirm.textContent, '使用金币补签');
-    assert.doesNotMatch(dialog.textContent, /道具/);
+    const coinOption = dialog.querySelector('[data-makeup-payment="coins"]');
+    const itemOption = dialog.querySelector('[data-makeup-payment="item"]');
+    assert.equal(coinOption.checked, true);
+    assert.equal(itemOption.disabled, true);
+    assert.match(dialog.textContent, /当前持有 0/);
+    assert.equal(dialog.querySelector('.checkin-shop-link').href, '/player/?tab=shop');
 
     confirm.dispatchEvent(new Event('click'));
     await flushPromises();
@@ -1571,6 +1576,7 @@ test('coin makeup confirms reward, cost, and net change and trusts the service o
     await flushPromises();
     await flushPromises();
     assert.equal(harness.checkinCalls.length, 2);
+    assert.equal(harness.checkinCalls[0].requestId, harness.checkinCalls[1].requestId);
     assert.equal(harness.monthCalls.length, 2);
     assert.equal(harness.economyRefreshes, 1);
   } finally {
@@ -2001,6 +2007,59 @@ test('player center exposes UID-aware friend management and invite inbox structu
   assert.match(html, /id=["']social-toast-region["'][^>]*aria-live=["']polite["']/);
   assert.ok(html.indexOf('/src/services/friends.js') < html.indexOf('/src/routes/account-panel.js'));
   assert.ok(html.indexOf('/src/routes/account-panel.js') < html.indexOf('/src/routes/social-inbox.js'));
+});
+
+test('item makeup disables all payment controls while pending and refreshes inventory once', async () => {
+  const pending = createDeferred();
+  const month = createMonthSnapshot(2026, 8, {
+    '2026-08-01': { rewardAmount: 4, canMakeup: true, makeupCost: 20 },
+    '2026-08-02': { isToday: true, rewardAmount: 6 },
+  });
+  const harness = createPlayerRuntimeHarness({
+    identity: { kind: 'registered', username: 'player_01', displayName: '立哥' },
+    month,
+    inventory: { makeupCard: 1, renameCard: 0 },
+    makeUp: () => pending.promise,
+  });
+  let instance;
+  try {
+    instance = player.mount();
+    await flushPromises();
+    const inventoryLoadsBefore = harness.shopCalls.filter((call) => call.type === 'inventory').length;
+    harness.calendar.querySelector('[data-checkin-action="makeup"]')
+      .dispatchEvent(new Event('click'));
+    const dialog = harness.calendar.querySelector('[data-makeup-dialog]');
+    const coinOption = dialog.querySelector('[data-makeup-payment="coins"]');
+    const itemOption = dialog.querySelector('[data-makeup-payment="item"]');
+    const confirm = dialog.querySelector('[data-checkin-action="confirm-makeup"]');
+    assert.equal(itemOption.disabled, false);
+    assert.match(dialog.textContent, /当前持有 1/);
+    coinOption.checked = false;
+    itemOption.checked = true;
+    itemOption.dispatchEvent(new Event('change'));
+    assert.equal(confirm.textContent, '使用补签卡补签');
+
+    confirm.dispatchEvent(new Event('click'));
+    confirm.dispatchEvent(new Event('click'));
+    assert.equal(coinOption.disabled, true);
+    assert.equal(itemOption.disabled, true);
+    assert.equal(confirm.disabled, true);
+    assert.equal(harness.checkinCalls.length, 1);
+    assert.equal(harness.checkinCalls[0].paymentMethod, 'item');
+
+    pending.resolve({ rewardAmount: 4, paymentAmount: 1, balance: 104 });
+    await flushPromises();
+    await flushPromises();
+    assert.equal(
+      harness.shopCalls.filter((call) => call.type === 'inventory').length,
+      inventoryLoadsBefore + 1,
+    );
+    assert.match(harness.nodes.get('#player-message').textContent, /补签成功/);
+  } finally {
+    pending.resolve(null);
+    instance?.destroy();
+    harness.restore();
+  }
 });
 
 test('shop and inventory render fixed items with balance and limit disabled reasons', async () => {

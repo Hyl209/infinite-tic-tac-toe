@@ -16,7 +16,8 @@
     CHECKIN_ALREADY_DONE: '今天已经签到',
     MAKEUP_DATE_INVALID: '补签日期无效',
     MAKEUP_OUTSIDE_CURRENT_MONTH: '只能补签本月日期',
-    ITEM_PAYMENT_UNAVAILABLE: '暂不支持道具补签',
+    INSUFFICIENT_ITEMS: '补签卡不足',
+    INVALID_MAKEUP_PAYMENT: '请选择正确的补签方式',
     INVALID_PAYMENT_METHOD: '补签支付方式无效',
     INVALID_CHECKIN_RULE: '签到规则无效',
     CHECKIN_RULE_DATE_INVALID: '签到规则生效日期无效',
@@ -199,8 +200,7 @@
     async function makeUp(date, paymentMethod, requestId) {
       requireRegistered();
       if (!isValidDate(date)) fail('MAKEUP_DATE_INVALID');
-      if (paymentMethod === 'item') fail('ITEM_PAYMENT_UNAVAILABLE');
-      if (paymentMethod !== 'coins') fail('INVALID_PAYMENT_METHOD');
+      if (paymentMethod !== 'coins' && paymentMethod !== 'item') fail('INVALID_PAYMENT_METHOD');
       requireRequestId(requestId);
       return mapResult(requiredRpcRow(await callRpc('perform_makeup_checkin', {
         p_date: date,

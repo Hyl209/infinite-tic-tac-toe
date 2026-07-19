@@ -1344,11 +1344,38 @@
       const title = createNode('h4', '', `${Number(day.checkinDate.slice(5, 7))} 月 ${Number(day.checkinDate.slice(8, 10))} 日补签确认`);
       title.id = titleId;
       const details = createNode('div', 'checkin-confirmation-details');
-      details.append(
-        createNode('p', '', `奖励 ${action.rewardAmount} 金币`),
-        createNode('p', '', `费用 ${action.makeupCost} 金币`),
-        createNode('p', 'checkin-confirmation-net', `净变化 ${formatCoinDelta(action.netAmount)}`),
+      const rewardLine = createNode('p', '', `奖励 ${action.rewardAmount} 金币`);
+      const costLine = createNode('p', '', `费用 ${action.makeupCost} 金币`);
+      const netLine = createNode('p', 'checkin-confirmation-net', `净变化 ${formatCoinDelta(action.netAmount)}`);
+      details.append(rewardLine, costLine, netLine);
+      const options = createNode('fieldset', 'makeup-payment-options');
+      options.append(createNode('legend', '', '选择补签方式'));
+
+      function paymentOption(value, text, disabled = false) {
+        const label = createNode('label', 'makeup-payment-option');
+        const input = createNode('input');
+        input.type = 'radio';
+        input.name = `makeup-payment-${day.checkinDate}`;
+        input.value = value;
+        input.dataset.makeupPayment = value;
+        input.checked = value === 'coins';
+        input.disabled = disabled;
+        label.append(input, createNode('span', '', text));
+        return { label, input };
+      }
+
+      const coinOption = paymentOption('coins', `使用 ${action.makeupCost} 金币`);
+      const itemOption = paymentOption(
+        'item',
+        `使用 1 张补签卡（当前持有 ${Number(inventory.makeupCard || 0)}）`,
+        Number(inventory.makeupCard || 0) < 1,
       );
+      options.append(coinOption.label, itemOption.label);
+      if (itemOption.input.disabled) {
+        const shopLink = createNode('a', 'checkin-shop-link', '前往商城购买补签卡');
+        shopLink.href = '/player/?tab=shop';
+        options.append(shopLink);
+      }
       const controls = createNode('div', 'checkin-confirmation-actions');
       const cancelButton = createNode('button', 'checkin-secondary-action', '取消');
       cancelButton.type = 'button';
@@ -1356,13 +1383,27 @@
       confirmButton.type = 'button';
       confirmButton.dataset.checkinAction = 'confirm-makeup';
       controls.append(cancelButton, confirmButton);
-      shell.append(title, details, controls);
+      shell.append(title, details, options, controls);
       dialog.append(shell);
       checkinCalendar.append(dialog);
 
       cancelButton.addEventListener('click', () => dialog.close(), { signal });
+      function selectPayment(value) {
+        coinOption.input.checked = value === 'coins';
+        itemOption.input.checked = value === 'item';
+        const useItem = value === 'item';
+        costLine.textContent = useItem ? '消耗 1 张补签卡' : `费用 ${action.makeupCost} 金币`;
+        netLine.textContent = useItem
+          ? `金币变化 ${formatCoinDelta(action.rewardAmount)}`
+          : `净变化 ${formatCoinDelta(action.netAmount)}`;
+        confirmButton.textContent = useItem ? '使用补签卡补签' : '使用金币补签';
+      }
+      coinOption.input.addEventListener('change', () => selectPayment('coins'), { signal });
+      itemOption.input.addEventListener('change', () => selectPayment('item'), { signal });
+      const requestId = createRequestId();
       confirmButton.addEventListener('click', () => {
-        void runCheckinAction({ type: 'makeup', day, action, dialog });
+        const paymentMethod = itemOption.input.checked ? 'item' : 'coins';
+        void runCheckinAction({ type: 'makeup', day, action, dialog, paymentMethod, requestId });
       }, { signal });
       if (typeof dialog.showModal === 'function') dialog.showModal();
       else dialog.setAttribute('open', '');
@@ -1484,23 +1525,32 @@
       return false;
     }
 
-    async function runCheckinAction({ type, day, action, dialog = null }) {
+    async function runCheckinAction({
+      type, day, action, dialog = null, paymentMethod = 'coins', requestId = null,
+    }) {
       if (actionPending || destroyed || !checkinClient) return;
       const generation = identityGeneration;
       const token = { generation };
       actionPending = token;
       setActionDisabled(true);
+      dialog?.querySelectorAll('[data-makeup-payment]').forEach((input) => {
+        input.disabled = true;
+      });
       let completed = false;
       let refreshed = false;
       try {
-        const requestId = createRequestId();
+        const actionRequestId = requestId || createRequestId();
         const result = type === 'checkin'
-          ? await checkinClient.checkIn(requestId)
-          : await checkinClient.makeUp(day.checkinDate, 'coins', requestId);
+          ? await checkinClient.checkIn(actionRequestId)
+          : await checkinClient.makeUp(day.checkinDate, paymentMethod, actionRequestId);
         completed = true;
         if (destroyed || generation !== identityGeneration || actionPending !== token) return;
         dialog?.close?.();
-        const refreshResults = await Promise.all([refreshCheckinMonth(), refreshWallet()]);
+        const refreshResults = await Promise.all([
+          refreshCheckinMonth(),
+          refreshWallet(),
+          ...(type === 'makeup' && paymentMethod === 'item' ? [refreshInventory()] : []),
+        ]);
         refreshed = refreshResults.every(Boolean);
         if (destroyed || generation !== identityGeneration || actionPending !== token) return;
         if (!refreshed) {
@@ -1509,11 +1559,15 @@
         }
         const amount = type === 'checkin'
           ? Number(result?.rewardAmount ?? action.rewardAmount)
-          : action.netAmount;
+          : paymentMethod === 'item'
+            ? Number(result?.rewardAmount ?? action.rewardAmount)
+            : action.netAmount;
         setMessage(
           type === 'checkin'
             ? `签到成功，获得 ${formatCoinDelta(amount)}`
-            : `补签成功，净变化 ${formatCoinDelta(amount)}`,
+            : paymentMethod === 'item'
+              ? `补签成功，使用 1 张补签卡，获得 ${formatCoinDelta(amount)}`
+              : `补签成功，净变化 ${formatCoinDelta(amount)}`,
           'success',
         );
       } catch (error) {
@@ -1525,7 +1579,13 @@
         setMessage(text, 'error');
       } finally {
         if (actionPending === token) actionPending = null;
-        if (!destroyed && generation === identityGeneration) setActionDisabled(completed && !refreshed);
+        if (!destroyed && generation === identityGeneration) {
+          setActionDisabled(completed && !refreshed);
+          dialog?.querySelectorAll('[data-makeup-payment]').forEach((input) => {
+            input.disabled = input.dataset.makeupPayment === 'item'
+              && Number(inventory.makeupCard || 0) < 1;
+          });
+        }
       }
     }
 

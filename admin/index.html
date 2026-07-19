@@ -207,13 +207,13 @@
             <form id="account-register-form" class="account-form" hidden>
               <label class="account-field"><span>登录用户名</span><input name="username" type="text" minlength="3" maxlength="20" pattern="[A-Za-z0-9_]{3,20}" autocomplete="username" required></label>
               <label class="account-field"><span>密码</span><input name="password" type="password" minlength="8" maxlength="64" autocomplete="new-password" required></label>
-              <label class="account-field"><span>游戏名</span><input name="gameName" type="text" maxlength="16" autocomplete="nickname" required></label>
+              <label class="account-field"><span>设置游戏名</span><input name="gameName" type="text" maxlength="16" autocomplete="nickname" required></label>
               <button class="button primary" type="submit">注册账号</button>
             </form>
           </div>
           <form id="account-profile-form" class="account-form" hidden>
             <p class="account-username">登录用户名 <strong id="profile-username"></strong></p>
-            <label class="account-field"><span>游戏名</span><input id="profile-game-name" name="gameName" type="text" maxlength="16" required></label>
+            <label class="account-field"><span>修改游戏名，消耗 1 张改名卡</span><input id="profile-game-name" name="gameName" type="text" maxlength="16" required><small>当前改名卡 <strong id="profile-rename-card-count">0</strong> 张，<a href="/player/?tab=shop">前往商城</a></small></label>
             <div class="account-profile-actions"><button class="button primary" type="submit">保存游戏名</button><button id="account-logout-button" class="button danger" type="button">退出账号</button></div>
           </form>
           <section id="wallet-panel" class="wallet-panel" hidden>

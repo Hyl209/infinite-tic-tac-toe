@@ -273,6 +273,21 @@ test('默认页面提供 HYL Space 门户并按工具、作品、游戏、动态
   assert.doesNotMatch(html, /href="#"/);
 });
 
+test('all public account shells distinguish free registration naming from rename-card usage', () => {
+  for (const file of ['index.html', 'game/index.html', 'player/index.html', 'admin/index.html']) {
+    const html = fs.readFileSync(file, 'utf8');
+    assert.match(html, /设置游戏名/, `${file} missing free registration naming copy`);
+    assert.match(html, /修改游戏名，消耗\s*1\s*张改名卡/, `${file} missing rename-card copy`);
+    assert.match(html, /id=["']profile-rename-card-count["']/, `${file} missing rename-card count`);
+    assert.match(html, /href=["']\/player\/\?tab=shop["']/, `${file} missing shop link`);
+    assert.match(html, /src=["']\/src\/services\/shop\.js["']/, `${file} missing shop service`);
+    assert.ok(
+      html.indexOf('/src/services/shop.js') < html.indexOf('/src/routes/account-panel.js'),
+      `${file} must load shop before account panel`,
+    );
+  }
+});
+
 test('旧游戏查询参数会重定向到独立游戏页面', () => {
   assert.equal(
     portal.getLegacyGameRedirect('https://hhhyl.me/?game=gomoku&room=ABC23D'),

@@ -20,6 +20,7 @@
     PROFILE_SAVE_FAILED: '个人资料保存失败，请稍后重试',
     PLAYER_UID_EXHAUSTED: '玩家 UID 已发放完毕，请联系管理员',
     PLAYER_UID_IMMUTABLE: '玩家 UID 不可修改',
+    INSUFFICIENT_ITEMS: '需要一张改名卡',
   };
 
   function normalizeUsername(value) {
@@ -67,6 +68,16 @@
     const uid = Number(value);
     if (!Number.isInteger(uid) || uid < 0 || uid > 999999) throw new Error('INVALID_PLAYER_UID');
     return String(uid).padStart(6, '0');
+  }
+
+  function createRequestId() {
+    if (typeof globalScope.crypto?.randomUUID === 'function') return globalScope.crypto.randomUUID();
+    const bytes = new Uint8Array(16);
+    globalScope.crypto?.getRandomValues?.(bytes);
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('');
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
   }
 
   function getGuestName({
@@ -187,13 +198,17 @@
     function registeredIdentity(user, profile) {
       const fallbackUsername = String(user?.email || '').split('@')[0];
       const username = profile?.username || fallbackUsername;
-      return {
+      const result = {
         kind: 'registered',
         uid: formatPlayerUid(profile?.player_uid),
         username,
         displayName: profile?.game_name || username,
         needsProfile: !profile,
       };
+      if (profile?.rename_card_quantity != null) {
+        result.renameCardQuantity = Number(profile.rename_card_quantity || 0);
+      }
+      return result;
     }
 
     async function identityForUser(user) {
@@ -258,18 +273,6 @@
       return result.data || payload;
     }
 
-    async function updateProfile(user, gameName) {
-      const client = await getSupabaseClient();
-      const result = await client
-        .from('profiles')
-        .update({ game_name: gameName })
-        .eq('id', user.id)
-        .select('username, game_name, player_uid')
-        .single();
-      if (result.error) throw new Error('PROFILE_SAVE_FAILED', { cause: result.error });
-      return result.data;
-    }
-
     async function register({ username, password, gameName }) {
       const { normalizedUsername, normalizedGameName } = validateCredentials({
         username,
@@ -322,8 +325,19 @@
       if (sessionResult.error) throw sessionResult.error;
       const user = sessionResult.data.session?.user;
       if (!user || user.is_anonymous || !identity.username) throw new Error('PROFILE_REQUIRED');
-      const profile = await updateProfile(user, gameName);
-      return setIdentity(registeredIdentity(user, profile));
+      const result = await client.rpc('rename_with_item', {
+        p_game_name: gameName,
+        p_request_id: createRequestId(),
+      });
+      if (result.error) throw result.error;
+      const row = Array.isArray(result.data) ? result.data[0] : result.data;
+      if (!row?.username || !row?.game_name) throw new Error('PROFILE_SAVE_FAILED');
+      return setIdentity(registeredIdentity(user, {
+        username: row.username,
+        game_name: row.game_name,
+        player_uid: identity.uid,
+        rename_card_quantity: row.rename_card_quantity,
+      }));
     }
 
     async function logout() {

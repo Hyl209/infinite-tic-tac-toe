@@ -19,6 +19,7 @@
     <script src="/src/services/friends.js" defer></script>
     <script src="/src/services/economy.js" defer></script>
     <script src="/src/services/stats.js" defer></script>
+    <script src="/src/services/shop.js" defer></script>
     <script src="/src/routes/account-panel.js" defer></script>
     <script src="/src/routes/game-friends.js" defer></script>
     <script src="/src/routes/game.js" defer></script>
@@ -178,7 +179,7 @@
                   >
                 </label>
                 <label class="account-field" for="register-game-name">
-                  <span>游戏名</span>
+                  <span>设置游戏名</span>
                   <input
                     id="register-game-name"
                     name="gameName"
@@ -196,7 +197,7 @@
               <p class="account-username">登录用户名 <strong id="profile-username"></strong></p>
               <p class="account-username">玩家 UID <strong id="profile-player-uid"></strong></p>
               <label class="account-field" for="profile-game-name">
-                <span>游戏名</span>
+                <span>修改游戏名，消耗 1 张改名卡</span>
                 <input
                   id="profile-game-name"
                   name="gameName"
@@ -205,6 +206,7 @@
                   autocomplete="nickname"
                   required
                 >
+                <small>当前改名卡 <strong id="profile-rename-card-count">0</strong> 张，<a href="/player/?tab=shop">前往商城</a></small>
               </label>
               <div class="account-profile-actions">
                 <button class="button primary" type="submit">保存游戏名</button>

@@ -58,6 +58,7 @@
     const profileUsername = document.querySelector('#profile-username');
     const profilePlayerUid = document.querySelector('#profile-player-uid');
     const profileGameName = document.querySelector('#profile-game-name');
+    const profileRenameCardCount = document.querySelector('#profile-rename-card-count');
     const walletPanel = document.querySelector('#wallet-panel');
     const walletBalance = document.querySelector('#wallet-balance');
     const redeemCodeForm = document.querySelector('#redeem-code-form');
@@ -74,6 +75,7 @@
     const accountApi = globalScope.PlayerAccount;
     const economyApi = globalScope.PlayerEconomy;
     const statsApi = globalScope.PlayerStats;
+    const shopApi = globalScope.PlayerShop;
     const onlineApi = globalScope.OnlineGame;
     const accountClient = accountApi?.createAccountClient({
       config: globalScope.ONLINE_GAME_CONFIG,
@@ -81,6 +83,7 @@
     });
     const economyClient = economyApi?.createEconomyClient({ accountClient });
     const statsClient = statsApi?.createStatsClient({ accountClient });
+    const shopClient = shopApi?.createShopClient({ accountClient });
     const listeners = new Set();
 
     let identity = accountClient?.getIdentity() || {
@@ -94,6 +97,7 @@
       isAdmin: false,
       loaded: false,
     };
+    let inventory = { makeupCard: 0, renameCard: 0 };
     let busy = false;
     let mode = 'login';
     let seasons = [];
@@ -105,7 +109,11 @@
     let historyRequestId = 0;
 
     function snapshot() {
-      return { identity: { ...identity }, economySnapshot: { ...economySnapshot } };
+      return {
+        identity: { ...identity },
+        economySnapshot: { ...economySnapshot },
+        inventory: { ...inventory },
+      };
     }
 
     function notify() {
@@ -275,6 +283,7 @@
       walletPanel.hidden = !registered;
       matchHistoryPanel.hidden = !registered;
       walletBalance.textContent = String(economySnapshot.balance);
+      if (profileRenameCardCount) profileRenameCardCount.textContent = String(inventory.renameCard || 0);
       openAdminButton.hidden = !registered || !economySnapshot.isAdmin;
       if (registered) {
         accountDialogTitle.textContent = '个人资料';
@@ -312,13 +321,32 @@
       return economySnapshot;
     }
 
+    async function refreshInventory({ reportError = false } = {}) {
+      if (!shopClient || identity.kind !== 'registered') {
+        inventory = { makeupCard: 0, renameCard: 0 };
+        render();
+        return inventory;
+      }
+      try {
+        inventory = await shopClient.getInventory();
+      } catch (error) {
+        inventory = { makeupCard: 0, renameCard: 0 };
+        if (reportError) setMessage(accountMessage, shopApi.mapShopError(error), 'error');
+      }
+      render();
+      return inventory;
+    }
+
     async function runAction(action, successMessage) {
       if (!accountClient || busy) return;
       setBusy(true);
       setMessage(accountMessage);
       try {
         identity = await action();
-        await refreshEconomy();
+        if (identity.renameCardQuantity != null) {
+          inventory = { ...inventory, renameCard: Number(identity.renameCardQuantity || 0) };
+        }
+        await Promise.all([refreshEconomy(), refreshInventory()]);
         setMessage(accountMessage, successMessage, 'success');
       } catch (error) {
         setMessage(accountMessage, accountApi.mapAccountError(error), 'error');
@@ -332,6 +360,7 @@
       render();
       if (identity.kind === 'registered') {
         void refreshEconomy({ reportError: true });
+        void refreshInventory({ reportError: true });
         void loadHistory({ reset: true });
       }
       if (!accountClient?.isConfigured()) {
@@ -409,6 +438,7 @@
       standings = [];
       render();
       void refreshEconomy();
+      void refreshInventory();
       if (identity.kind === 'registered') void loadHistory({ reset: true });
     });
     economyClient?.subscribe((nextSnapshot) => {
@@ -420,8 +450,10 @@
       accountClient,
       economyClient,
       statsClient,
+      shopClient,
       getIdentity: () => ({ ...identity }),
       getEconomySnapshot: () => ({ ...economySnapshot }),
+      getInventory: () => ({ ...inventory }),
       subscribe(listener) {
         listeners.add(listener);
         return () => listeners.delete(listener);
@@ -433,6 +465,7 @@
         if (accountDialog.open) accountDialog.close();
       },
       refreshEconomy,
+      refreshInventory,
     };
 
     render();
@@ -440,7 +473,7 @@
       void accountClient.initialize().then((nextIdentity) => {
         identity = nextIdentity;
         render();
-        return refreshEconomy();
+        return Promise.all([refreshEconomy(), refreshInventory()]);
       }).catch((error) => {
         setMessage(accountMessage, accountApi.mapAccountError(error), 'error');
       });

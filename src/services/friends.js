@@ -3,6 +3,7 @@
 
   const USERNAME_PATTERN = /^[a-z0-9_]{3,20}$/;
   const PLAYER_UID_PATTERN = /^\d{6}$/;
+  let nextChannelId = 0;
   const ERROR_MESSAGES = {
     ACCOUNT_CLIENT_REQUIRED: '缺少账号客户端',
     REGISTERED_ACCOUNT_REQUIRED: '请先登录正式账号',
@@ -130,6 +131,7 @@
       fail('ACCOUNT_CLIENT_REQUIRED');
     }
 
+    const channelName = `player-social:${++nextChannelId}`;
     const listeners = new Set();
     let channel = null;
     let channelSupabase = null;
@@ -239,7 +241,7 @@
       if (destroyed || listeners.size === 0 || accountClient.getIdentity()?.kind !== 'registered') return;
       const supabase = await getSupabaseClient();
       if (destroyed || version !== channelVersion || listeners.size === 0) return;
-      const nextChannel = supabase.channel('player-social');
+      const nextChannel = supabase.channel(channelName);
       nextChannel.on('postgres_changes', {
         event: '*', schema: 'public', table: 'friend_requests',
       }, notifyChanged);

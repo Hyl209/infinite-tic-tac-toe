@@ -266,6 +266,22 @@ test('realtime subscription ignores payload state, watches requests and invites,
   await client.disconnect();
 });
 
+test('independent friends clients use isolated realtime topics', async () => {
+  const harness = createHarness();
+  const first = createClient(harness);
+  const second = createClient(harness);
+  const firstUnsubscribe = await first.subscribe(() => {});
+  const secondUnsubscribe = await second.subscribe(() => {});
+
+  assert.equal(harness.channels.length, 2);
+  assert.notEqual(harness.channels[0].name, harness.channels[1].name);
+
+  await firstUnsubscribe();
+  await secondUnsubscribe();
+  assert.equal(harness.removed.length, 2);
+  await Promise.all([first.disconnect(), second.disconnect()]);
+});
+
 test('presence starts immediately for registered identity, repeats every 45s, resumes, and stops', async () => {
   const timers = [];
   const cleared = [];

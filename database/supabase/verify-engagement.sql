@@ -37,9 +37,8 @@ begin
   into v_actual_tables
   from pg_publication_tables
   where pubname = 'supabase_realtime' and schemaname = 'public';
-  if cardinality(v_actual_tables) <> cardinality(v_realtime_tables)
-     or not (v_actual_tables @> v_realtime_tables and v_actual_tables <@ v_realtime_tables) then
-    raise exception 'unexpected public tables in supabase_realtime: %', v_actual_tables;
+  if not (v_actual_tables @> v_realtime_tables) then
+    raise exception 'missing engagement tables in supabase_realtime: %', v_actual_tables;
   end if;
 
   foreach v_name in array v_tables loop
@@ -155,7 +154,8 @@ begin
       union all
       select user_id, -payment_amount, 'checkin_makeup_cost', checkin_date::text,
              'checkin:makeup:cost:' || user_id::text || ':' || checkin_date::text
-      from public.player_checkins where checkin_type = 'makeup' and payment_amount <> 0
+      from public.player_checkins
+      where checkin_type = 'makeup' and payment_method = 'coins' and payment_amount <> 0
       union all
       select user_id, reward_amount, 'checkin_makeup_reward', checkin_date::text,
              'checkin:makeup:reward:' || user_id::text || ':' || checkin_date::text

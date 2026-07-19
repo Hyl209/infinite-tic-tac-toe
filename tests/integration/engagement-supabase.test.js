@@ -617,6 +617,13 @@ test('engagement smoke instructions use the stable insufficient-coins error code
   assert.doesNotMatch(sql, /INSUFFICIENT_BALANCE/);
 });
 
+test('engagement verifier requires its Realtime tables without rejecting later additions', () => {
+  const sql = readSql(verifyPath);
+  assert.match(sql, /v_actual_tables\s*@>\s*v_realtime_tables/i);
+  assert.doesNotMatch(sql, /v_actual_tables\s*<@\s*v_realtime_tables/i);
+  assert.doesNotMatch(sql, /cardinality\s*\(\s*v_actual_tables\s*\)\s*<>/i);
+});
+
 test('fixture: critical searches ignore SQL comments', () => {
   const sql = stripSqlComments("-- create table public.fake(id int);\n/* public.require_site_admin(); */ select '-- keep';");
   assert.doesNotMatch(sql, /create table|require_site_admin/i);

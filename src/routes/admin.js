@@ -249,6 +249,8 @@
     function recordRow(title, lines = [], actions = []) {
       const row = document.createElement('article');
       row.className = 'admin-record-row';
+      row.dataset.appleReveal = '';
+      row.dataset.appleListItem = '';
       const main = document.createElement('div');
       main.className = 'admin-record-main';
       const heading = document.createElement('strong');
@@ -302,6 +304,7 @@
       activityList.replaceChildren();
       if (activities.length === 0) {
         activityList.append(emptyRecord('暂无活动排期。'));
+        globalScope.HYLAppleUI?.refresh(activityList);
         return;
       }
       activities.forEach((activity) => {
@@ -313,6 +316,7 @@
           { label: '提前下架', dataName: 'unpublishActivity', dataValue: activity.id, danger: true, disabled: !activity.active },
         ]));
       });
+      globalScope.HYLAppleUI?.refresh(activityList);
     }
 
     function resetActivityForm() {
@@ -345,6 +349,7 @@
       checkinList.replaceChildren();
       if (checkinRules.length === 0) {
         checkinList.append(emptyRecord('暂无签到规则版本。'));
+        globalScope.HYLAppleUI?.refresh(checkinList);
         return;
       }
       checkinRules.forEach((rule) => {
@@ -357,6 +362,7 @@
           `补签费用 ${rule.makeupCost} 金币 · 创建于 ${formatLocalDateTime(rule.createdAt)}`,
         ]));
       });
+      globalScope.HYLAppleUI?.refresh(checkinList);
     }
 
     function notificationStatus(notification) {
@@ -371,6 +377,7 @@
       notificationList.replaceChildren();
       if (notifications.length === 0) {
         notificationList.append(emptyRecord('暂无站点通知。'));
+        globalScope.HYLAppleUI?.refresh(notificationList);
         return;
       }
       notifications.forEach((notification) => {
@@ -386,6 +393,7 @@
           disabled: !notification.active,
         }]));
       });
+      globalScope.HYLAppleUI?.refresh(notificationList);
     }
 
     function renderSeasons() {
@@ -404,11 +412,15 @@
       const history = seasons.filter((season) => season.status === 'ended');
       if (history.length === 0) {
         seasonList.append(emptyRecord('暂无历史赛季。'));
+        globalScope.HYLAppleUI?.refresh(currentSeasonElement);
+        globalScope.HYLAppleUI?.refresh(seasonList);
         return;
       }
       history.forEach((season) => seasonList.append(recordRow(season.name, [
         `${formatLocalDateTime(season.startedAt)} 至 ${formatLocalDateTime(season.endedAt)}`,
       ])));
+      globalScope.HYLAppleUI?.refresh(currentSeasonElement);
+      globalScope.HYLAppleUI?.refresh(seasonList);
     }
 
     function redeemCodeStatus(code) {
@@ -422,6 +434,7 @@
       redeemList.replaceChildren();
       if (redeemCodes.length === 0) {
         redeemList.append(emptyRecord('暂无兑换码。'));
+        globalScope.HYLAppleUI?.refresh(redeemList);
         return;
       }
       redeemCodes.forEach((code) => redeemList.append(recordRow(code.codeHint, [
@@ -433,29 +446,32 @@
         danger: true,
         disabled: !code.active,
       }])));
+      globalScope.HYLAppleUI?.refresh(redeemList);
     }
 
     function renderSystemStatus() {
       systemStatus.replaceChildren();
       const rows = [
-        ['账号身份', accountPanel?.getIdentity?.().displayName || '未知'],
-        ['管理权限', economySnapshot.isAdmin ? '已通过' : '未通过'],
-        ['经济快照', economySnapshot.loaded ? `已连接 · 余额 ${economySnapshot.balance}` : '未加载'],
-        ['活动配置', `${activities.length} 条`],
-        ['签到规则', `${checkinRules.length} 个版本`],
-        ['站点通知', `${notifications.length} 条`],
-        ['竞技赛季', `${seasons.length} 个`],
-        ['兑换码', `${redeemCodes.length} 个`],
+        ['账号身份', accountPanel?.getIdentity?.().displayName || '未知', false],
+        ['管理权限', economySnapshot.isAdmin ? '已通过' : '未通过', false],
+        ['经济快照', economySnapshot.loaded ? `已连接 · 余额 ${economySnapshot.balance}` : '未加载', economySnapshot.loaded],
+        ['活动配置', `${activities.length} 条`, true],
+        ['签到规则', `${checkinRules.length} 个版本`, true],
+        ['站点通知', `${notifications.length} 条`, true],
+        ['竞技赛季', `${seasons.length} 个`, true],
+        ['兑换码', `${redeemCodes.length} 个`, true],
       ];
-      rows.forEach(([term, value]) => {
+      rows.forEach(([term, value, counter]) => {
         const row = document.createElement('div');
         const dt = document.createElement('dt');
         const dd = document.createElement('dd');
         dt.textContent = term;
         dd.textContent = value;
+        if (counter) dd.dataset.appleCounter = '';
         row.append(dt, dd);
         systemStatus.append(row);
       });
+      globalScope.HYLAppleUI?.refresh(systemStatus);
     }
 
     function renderShopProducts() {
@@ -471,6 +487,7 @@
           ? `最近更新 ${formatLocalDateTime(product.updatedAt)}`
           : '尚未更新';
       });
+      globalScope.HYLAppleUI?.refresh(workspace);
     }
 
     function renderAll() {
@@ -481,6 +498,7 @@
       renderRedeemCodes();
       renderShopProducts();
       renderSystemStatus();
+      globalScope.HYLAppleUI?.refresh(workspace);
     }
 
     function clearAdminData() {
@@ -504,7 +522,7 @@
     async function loadAllConfigData(token = generation) {
       if (token !== generation) return;
       workspace.setAttribute('aria-busy', 'true');
-      setMessage(accessState, '管理权限已通过，正在并行加载站点配置…');
+      setMessage(accessState, '正在加载配置…');
       try {
         const loaded = await Promise.all([
           activitiesClient.adminList(),
@@ -518,11 +536,11 @@
         [activities, checkinRules, notifications, seasons, redeemCodes, shopProducts] = loaded;
         renderAll();
         retryButton.hidden = true;
-        setMessage(accessState, '管理权限已通过；服务端 RPC 继续执行最终权限校验。', 'success');
+        setMessage(accessState, '管理权限已通过。', 'success');
       } catch (error) {
         if (token !== generation) return;
         retryButton.hidden = false;
-        setMessage(accessState, `配置加载失败：${String(error?.message || error)}。可重试，服务端权限边界未改变。`, 'error');
+        setMessage(accessState, `配置加载失败：${String(error?.message || error)}`, 'error');
       } finally {
         if (token === generation) workspace.setAttribute('aria-busy', 'false');
       }
@@ -544,7 +562,7 @@
 
     async function verifyAccess(token = generation) {
       if (token !== generation) return;
-      setAccess('loading', '正在等待账号初始化与经济权限快照…');
+      setAccess('loading', '正在验证管理权限…');
       retryButton.hidden = true;
       try {
         const result = await initializeAdminAccess({ accountClient, economyClient });
@@ -559,7 +577,7 @@
           return;
         }
         if (result.access !== 'admin') throw new Error('权限快照尚未就绪');
-        setAccess('admin', '管理权限已通过，正在加载配置…', 'success');
+        setAccess('admin', '正在加载配置…', 'success');
         await activateAdmin(token);
       } catch (error) {
         if (token !== generation) return;
@@ -863,7 +881,7 @@
         accountKey = nextAccountKey;
         generation += 1;
         activatingGeneration = null;
-        setAccess('loading', '账号已切换，正在重新验证管理权限…');
+        setAccess('loading', '正在验证管理权限…');
         clearAdminData();
         void verifyAccess(generation);
         return;
@@ -871,7 +889,7 @@
       const nextAccess = resolveAdminAccess({ identity, economySnapshot: nextSnapshot });
       if (nextAccess === access) return;
       if (nextAccess === 'admin') {
-        setAccess('admin', '管理权限已通过，正在加载配置…', 'success');
+        setAccess('admin', '正在加载配置…', 'success');
         void activateAdmin(generation);
       } else if (nextAccess === 'forbidden') {
         setAccess('forbidden', '当前账号无管理权限。', 'error');

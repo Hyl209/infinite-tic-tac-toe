@@ -6,7 +6,23 @@
     'PRODUCT_NOT_FOUND', 'PRODUCT_INACTIVE', 'PRODUCT_PRICE_INVALID',
     'PURCHASE_LIMIT_REACHED', 'INSUFFICIENT_COINS', 'INVALID_REQUEST_ID',
   ];
+  const APPLE_CARD_CLASSES = new Set([
+    'activity-card', 'activity-detail', 'notification-item',
+    'friend-row', 'shop-product-row', 'inventory-row',
+  ]);
   let mounted = null;
+
+  function applyAppleHooks(node, className) {
+    const classes = String(className || '').split(/\s+/);
+    if (classes.some((name) => APPLE_CARD_CLASSES.has(name))) node.dataset.appleCard = '';
+    return node;
+  }
+
+  function refreshAppleUI(...roots) {
+    roots.forEach((root) => {
+      if (root) globalScope.HYLAppleUI?.refresh?.(root);
+    });
+  }
 
   function normalizePlayerTab(value) {
     return VALID_TABS.has(value) ? value : 'checkin';
@@ -174,7 +190,7 @@
       const node = document.createElement(tagName);
       node.className = className;
       if (text) node.textContent = text;
-      return node;
+      return applyAppleHooks(node, className);
     }
 
     function setMessage(text = '', state = '') {
@@ -229,9 +245,11 @@
       }) : [empty('暂无收到的好友申请。')]));
       outgoingList.replaceChildren(...(outgoing.length ? outgoing.map((request) => {
         const item = createNode('article', 'friend-row');
-        item.append(playerCopy(request.player, `已向 @${request.player.username} 发出申请`));
+        item.append(playerCopy(request.player, `@${request.player.username}`));
         return item;
       }) : [empty('暂无发出的好友申请。')]));
+      refreshAppleUI(incomingList);
+      refreshAppleUI(outgoingList);
     }
 
     function renderFriends() {
@@ -250,7 +268,8 @@
         }, `remove:${friend.id}`));
         item.append(playerCopy(friend, `@${friend.username}`), status, actions);
         return item;
-      }) : [empty('还没有好友，可以先按 UID 或用户名查找。')]));
+      }) : [empty('暂无好友。')]));
+      refreshAppleUI(friendList);
     }
 
     function inviteUrl(invite) {
@@ -283,11 +302,13 @@
         item.append(details, actions);
         return item;
       }) : [empty('暂无待处理的游戏邀请。')]));
+      refreshAppleUI(inviteList);
     }
 
     function renderSearchResult() {
       if (!foundPlayer) {
         searchResult.replaceChildren();
+        refreshAppleUI(searchResult);
         return;
       }
       const item = createNode('article', 'friend-search-player friend-row');
@@ -307,6 +328,7 @@
       }
       item.append(playerCopy(foundPlayer, `@${foundPlayer.username}`), actions);
       searchResult.replaceChildren(item);
+      refreshAppleUI(searchResult);
     }
 
     function updatePendingCount() {
@@ -336,6 +358,7 @@
       friendList.replaceChildren(empty('登录正式账号后可管理好友。'));
       inviteList.replaceChildren(empty('登录正式账号后可接收游戏邀请。'));
       searchResult.replaceChildren();
+      refreshAppleUI(incomingList, outgoingList, friendList, inviteList, searchResult);
       searchInput.disabled = true;
       searchForm.querySelector('button')?.setAttribute('disabled', '');
       setMessage('请先登录正式账号使用好友功能。');
@@ -353,6 +376,7 @@
       friendList.replaceChildren(empty('正在加载好友列表。'));
       inviteList.replaceChildren(empty('正在加载游戏邀请。'));
       searchResult.replaceChildren();
+      refreshAppleUI(incomingList, outgoingList, friendList, inviteList, searchResult);
       updatePendingCount();
       setMessage();
     }
@@ -628,7 +652,7 @@
       const node = document.createElement(tagName);
       node.className = className;
       if (text) node.textContent = text;
-      return node;
+      return applyAppleHooks(node, className);
     }
 
     function setPanelMessage(node, text = '', state = '') {
@@ -660,16 +684,13 @@
     function renderShop() {
       if (!shopProductList) return;
       if (shopItems.length === 0) {
-        shopProductList.replaceChildren(createNode('p', 'player-placeholder', '暂无上架商品。'));
+        renderEmptyState(shopProductList, '暂无上架商品。');
         return;
       }
       const rows = shopItems.map((product) => {
         const row = createNode('article', 'shop-product-row');
         const copy = createNode('div', 'shop-product-copy');
-        copy.append(
-          createNode('strong', '', product.name),
-          createNode('p', '', product.description),
-        );
+        copy.append(createNode('strong', '', product.name));
         const meta = createNode('div', 'shop-product-meta');
         const price = createNode('span', 'shop-product-price', `${Number(product.price || 0)} 金币`);
         const limit = product.purchaseLimit == null
@@ -686,6 +707,7 @@
         return row;
       });
       shopProductList.replaceChildren(...rows);
+      refreshAppleUI(shopProductList);
     }
 
     function inventoryRow(name, quantity, actionLabel, target) {
@@ -712,6 +734,7 @@
         inventoryRow('补签卡', Number(inventory.makeupCard || 0), '去签到月历', 'checkin'),
         inventoryRow('改名卡', Number(inventory.renameCard || 0), '去修改游戏名', 'account'),
       );
+      refreshAppleUI(inventoryList);
       setPanelMessage(
         inventoryMessage,
         isRegistered() ? '' : '登录正式账号后可查看和使用背包道具。',
@@ -735,6 +758,7 @@
         const text = globalScope.PlayerShop?.mapShopError?.(error)
           || '商城加载失败，请稍后重试';
         shopProductList?.replaceChildren(createNode('p', 'player-placeholder', text));
+        refreshAppleUI(shopProductList);
         setPanelMessage(shopMessage, text, 'error');
         return false;
       } finally {
@@ -864,6 +888,16 @@
       shell.append(button);
       container.className = 'player-placeholder';
       container.replaceChildren(shell);
+      refreshAppleUI(container);
+    }
+
+    function renderEmptyState(container, title) {
+      if (!container) return;
+      const shell = createNode('div', 'player-empty-state');
+      shell.append(createNode('h3', 'player-empty-state__title', title));
+      container.className = 'player-placeholder';
+      container.replaceChildren(shell);
+      refreshAppleUI(container);
     }
 
     function createActivityCover(activity) {
@@ -915,18 +949,15 @@
       detail.dataset.activityDetail = activity.id;
       detail.setAttribute('aria-label', `${activity.title}详情`);
       detail.append(
-        createNode('p', 'activity-detail-kicker', '活动详情'),
         createNode('h3', '', activity.title),
         createNode('p', 'activity-detail-period', `有效期：${formatActivityPeriod(activity)}`),
-        createNode('p', 'activity-detail-body', activity.body || '活动暂未提供更多说明。'),
       );
+      if (activity.body) detail.append(createNode('p', 'activity-detail-body', activity.body));
 
       const actions = createNode('div', 'activity-detail-actions');
       const rewardAmount = Number(activity.rewardAmount || 0);
       if (rewardAmount > 0) {
         actions.append(createActivityClaimButton(activity));
-      } else {
-        actions.append(createNode('span', 'activity-detail-status', activityStatus(activity)));
       }
       if (activity.actionUrl) {
         actions.append(createExternalLink(
@@ -943,8 +974,7 @@
     function renderActivities() {
       if (!activityList) return;
       if (activityItems.length === 0) {
-        activityList.className = 'player-placeholder';
-        activityList.replaceChildren(createNode('p', '', '暂无可参与的活动。'));
+        renderEmptyState(activityList, '现在没有进行中的活动。');
         if (currentActivityId) setMessage('活动已下架或不可用', 'error');
         return;
       }
@@ -960,11 +990,10 @@
         content.append(
           createNode('h3', '', activity.title),
           createNode('p', 'activity-card-period', formatActivityPeriod(activity)),
-          createNode('p', 'activity-card-reward', Number(activity.rewardAmount || 0) > 0
-            ? `奖励 ${Number(activity.rewardAmount)} 金币`
-            : '无金币奖励'),
-          createNode('span', 'activity-card-status', activityStatus(activity)),
         );
+        if (Number(activity.rewardAmount || 0) > 0) {
+          content.append(createNode('p', 'activity-card-reward', `奖励 ${Number(activity.rewardAmount)} 金币`));
+        }
         const openButton = createNode('button', 'player-secondary-action', selected ? '正在查看' : '查看详情');
         openButton.type = 'button';
         openButton.dataset.activityOpen = activity.id;
@@ -987,6 +1016,7 @@
       else if (currentActivityId) setMessage('活动已下架或不可用', 'error');
       activityList.className = 'activity-list';
       activityList.replaceChildren(layout);
+      refreshAppleUI(activityList);
     }
 
     function openActivity(activityId, unavailableMessage = '活动已下架或不可用') {
@@ -996,8 +1026,15 @@
       url.searchParams.set('tab', 'activities');
       url.searchParams.set('activity', activityId);
       globalScope.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
-      renderTabs();
-      renderActivities();
+      if (typeof globalScope.HYLAppleUI?.transition === 'function') {
+        globalScope.HYLAppleUI?.transition(() => {
+          renderTabs();
+          renderActivities();
+        }, 'player-activity');
+      } else {
+        renderTabs();
+        renderActivities();
+      }
       if (!activityItems.some((activity) => activity.id === activityId)) {
         setMessage(unavailableMessage, 'error');
       }
@@ -1089,8 +1126,7 @@
     function renderNotifications() {
       if (!notificationList) return;
       if (notificationItems.length === 0) {
-        notificationList.className = 'player-placeholder';
-        notificationList.replaceChildren(createNode('p', '', '暂无通知。'));
+        renderEmptyState(notificationList, '暂无通知。');
         return;
       }
 
@@ -1124,8 +1160,6 @@
             statuses.append(createNode('span', 'notification-reward-status', notification.rewardClaimed
               ? `奖励 ${rewardAmount} 金币 · 已领取`
               : `奖励 ${rewardAmount} 金币 · 未领取`));
-          } else {
-            statuses.append(createNode('span', 'notification-reward-status', '无奖励'));
           }
           item.append(statuses);
 
@@ -1141,7 +1175,7 @@
           const detail = createNode('div', 'notification-detail');
           detail.id = detailId;
           detail.hidden = !opened;
-          detail.append(createNode('p', 'notification-body', notification.body || '该通知暂无正文。'));
+          if (notification.body) detail.append(createNode('p', 'notification-body', notification.body));
           const actions = createNode('div', 'notification-actions');
           if (opened && !notification.isRead && notificationReadFailures.has(notification.id)) {
             const retryRead = createNode('button', 'player-secondary-action', notificationReads.has(notification.id)
@@ -1196,6 +1230,7 @@
         });
       notificationList.className = 'notification-list';
       notificationList.replaceChildren(inbox);
+      refreshAppleUI(notificationList);
     }
 
     async function markNotificationRead(notificationId) {
@@ -1325,9 +1360,8 @@
 
     function renderGuestCalendar() {
       if (!checkinCalendar) return;
-      checkinCalendar.className = 'player-placeholder';
-      const prompt = createNode('p', '', '登录正式账号后，这里会显示当月签到记录。');
-      checkinCalendar.replaceChildren(prompt);
+      checkinCalendar.hidden = true;
+      checkinCalendar.replaceChildren();
     }
 
     function openMakeupConfirmation(day, action) {
@@ -1411,21 +1445,18 @@
 
     function renderCalendar(days) {
       if (!checkinCalendar) return;
+      checkinCalendar.hidden = false;
       const calendarToday = days.find((day) => day.isToday)?.checkinDate || getHongKongDate();
       const cells = buildCalendarCells(days, calendarToday);
       if (cells.length === 0) {
-        checkinCalendar.className = 'player-placeholder';
-        checkinCalendar.replaceChildren(createNode('p', '', '本月暂无签到数据。'));
+        renderEmptyState(checkinCalendar, '这个月还没有记录。');
         return;
       }
 
       const firstDay = cells.find((cell) => cell.kind === 'day');
       const monthLabel = `${Number(firstDay.date.slice(0, 4))} 年 ${Number(firstDay.date.slice(5, 7))} 月`;
       const heading = createNode('div', 'checkin-calendar-heading');
-      heading.append(
-        createNode('h3', '', monthLabel),
-        createNode('p', '', '每日奖励与签到状态'),
-      );
+      heading.append(createNode('h3', '', monthLabel));
       const weekdays = createNode('div', 'checkin-weekdays');
       weekdays.setAttribute('aria-hidden', 'true');
       ['一', '二', '三', '四', '五', '六', '日'].forEach((label) => {
@@ -1494,6 +1525,12 @@
 
       const request = ++calendarRequest;
       const month = getHongKongDate().slice(0, 7);
+      if (checkinCalendar) {
+        checkinCalendar.hidden = false;
+        if (!checkinCalendar.childElementCount) {
+          checkinCalendar.replaceChildren(createNode('p', '', '正在加载签到月历。'));
+        }
+      }
       checkinCalendar?.setAttribute('aria-busy', 'true');
       try {
         const days = await checkinClient.getMonth(month);
@@ -1617,7 +1654,11 @@
         url.searchParams.delete('activity');
       }
       globalScope.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
-      renderTabs();
+      if (typeof globalScope.HYLAppleUI?.transition === 'function') {
+        globalScope.HYLAppleUI?.transition(() => renderTabs(), 'player-tab');
+      } else {
+        renderTabs();
+      }
       if (currentTab === 'friends') void friendsPanel?.refresh();
       if (currentTab === 'shop') void refreshShop();
       if (currentTab === 'inventory') void refreshInventory();

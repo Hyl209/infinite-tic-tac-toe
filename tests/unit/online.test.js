@@ -205,7 +205,7 @@ test('getOnlineStatusMessage 在等待、回合、掉线和胜负状态显示双
         playerNames: { X: '立哥', O: '棋友' },
       },
     }),
-    '棋友获胜，再来一局',
+    '棋友获胜',
   );
 });
 

@@ -52,8 +52,6 @@ body.admin-page {
 }
 
 .admin-brand img { width: 34px; height: 34px; object-fit: contain; }
-.admin-brand small { margin-left: 6px; color: var(--admin-accent); font-size: 0.68em; }
-
 .admin-shell {
   width: min(1240px, calc(100% - 36px));
   margin: 0 auto;
@@ -72,15 +70,7 @@ body.admin-page {
   gap: 22px;
 }
 
-.admin-hero { align-items: end; margin-bottom: 38px; }
-.admin-hero p, .admin-kicker {
-  margin: 0 0 8px;
-  color: var(--admin-muted);
-  font-size: 0.76rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
+.admin-hero { align-items: end; margin-bottom: 28px; }
 
 .admin-hero h1 { max-width: 720px; margin: 0; font-size: 4.5rem; line-height: 0.98; letter-spacing: -0.04em; text-wrap: balance; }
 .admin-section-heading h2, .admin-access h2 { margin: 0; font-size: 2rem; letter-spacing: -0.025em; text-wrap: balance; }
@@ -130,7 +120,6 @@ button:disabled, input:disabled, textarea:disabled, select:disabled {
 }
 
 .admin-access {
-  min-height: 148px;
   margin-bottom: 34px;
   padding: clamp(22px, 4vw, 38px);
   border: 1px solid var(--admin-accent);
@@ -198,7 +187,8 @@ button:disabled, input:disabled, textarea:disabled, select:disabled {
 .admin-inline-form { align-items: end; flex-wrap: wrap; padding: 22px 0 28px; }
 .admin-inline-form .admin-field { flex: 1 1 190px; }
 
-.admin-message { min-height: 24px; margin: 0 0 14px; color: var(--admin-muted); }
+.admin-message { margin: 0; color: var(--admin-muted); }
+.admin-message:not(:empty) { margin-bottom: 14px; }
 .admin-message[data-state="error"] { color: oklch(0.82 0.11 20); }
 .admin-message[data-state="success"] { color: var(--admin-success); }
 
@@ -219,8 +209,7 @@ button:disabled, input:disabled, textarea:disabled, select:disabled {
   border-bottom: 1px solid var(--admin-line);
 }
 .admin-shop-copy { align-self: center; min-width: 0; }
-.admin-shop-copy strong, .admin-shop-copy span { display: block; }
-.admin-shop-copy span { margin-top: 6px; color: var(--admin-muted); line-height: 1.5; }
+.admin-shop-copy strong { display: block; }
 .admin-shop-toggle input { width: 1.2rem; min-height: 1.2rem; accent-color: var(--admin-accent); }
 .admin-shop-actions { display: grid; justify-items: end; gap: 8px; }
 .admin-shop-actions small { color: var(--admin-muted); font-size: 0.76rem; white-space: nowrap; }
@@ -246,7 +235,7 @@ button:disabled, input:disabled, textarea:disabled, select:disabled {
 
 @media (max-width: 760px) {
   .admin-topbar { min-height: 64px; padding: 10px 16px; }
-  .admin-brand small, .admin-topbar .account-button-copy, .admin-topbar .coin-balance { display: none; }
+  .admin-topbar .account-button-copy, .admin-topbar .coin-balance { display: none; }
   .admin-shell { width: min(100% - 28px, 1240px); padding-top: 42px; }
   .admin-hero, .admin-access, .admin-section-heading, .admin-record-row { align-items: stretch; flex-direction: column; }
   .admin-hero h1 { font-size: 2.75rem; }

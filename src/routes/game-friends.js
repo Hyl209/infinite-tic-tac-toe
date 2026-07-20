@@ -99,6 +99,8 @@
     function friendCard(friend) {
       const item = document.createElement('article');
       item.className = 'friend-invite-item';
+      item.dataset.appleReveal = '';
+      item.dataset.appleListItem = '';
       const details = document.createElement('div');
       details.className = 'friend-invite-player';
       const name = document.createElement('strong');
@@ -114,6 +116,8 @@
       const recipient = invite.recipient || invite.friend || {};
       const item = document.createElement('article');
       item.className = 'friend-invite-item is-pending';
+      item.dataset.appleReveal = '';
+      item.dataset.appleListItem = '';
       const details = document.createElement('div');
       details.className = 'friend-invite-player';
       const name = document.createElement('strong');
@@ -128,10 +132,12 @@
     function renderList() {
       if (!waitingRoom) {
         list.replaceChildren();
+        globalScope.HYLAppleUI?.refresh?.(list);
         return;
       }
       if (pendingInvite) {
         list.replaceChildren(pendingCard(pendingInvite));
+        globalScope.HYLAppleUI?.refresh?.(list);
         return;
       }
       if (friends.length === 0) {
@@ -139,9 +145,11 @@
         empty.className = 'friend-invite-empty';
         empty.textContent = busy ? '正在加载好友' : '暂无可邀请的好友';
         list.replaceChildren(empty);
+        globalScope.HYLAppleUI?.refresh?.(list);
         return;
       }
       list.replaceChildren(...friends.map(friendCard));
+      globalScope.HYLAppleUI?.refresh?.(list);
     }
 
     function render() {

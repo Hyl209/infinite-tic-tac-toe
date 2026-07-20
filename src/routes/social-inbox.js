@@ -28,6 +28,7 @@
       || typeof friendsApi?.createFriendsClient !== 'function') return null;
 
     const seenIds = new Set();
+    const toastTimers = new Map();
     let identity = accountPanel.getIdentity?.() || accountClient.getIdentity?.() || { kind: 'guest' };
     let lifecycleVersion = 0;
     let refreshVersion = 0;
@@ -46,12 +47,26 @@
     }
 
     function clearToasts() {
+      toastTimers.forEach((timer) => globalScope.clearTimeout?.(timer));
+      toastTimers.clear();
       toastRegion.replaceChildren();
+    }
+
+    function dismissToast(toast) {
+      const timer = toastTimers.get(toast);
+      if (timer) globalScope.clearTimeout?.(timer);
+      toastTimers.delete(toast);
+      if (globalScope.HYLAppleUI?.dismissToast) {
+        globalScope.HYLAppleUI?.dismissToast(toast);
+      } else {
+        toast.remove();
+      }
     }
 
     function showToast(entry) {
       const toast = documentRef.createElement('article');
       toast.className = 'social-toast';
+      toast.setAttribute('data-toast-type', 'info');
       toast.setAttribute('role', 'status');
 
       const message = documentRef.createElement('p');
@@ -70,10 +85,13 @@
       closeButton.setAttribute('type', 'button');
       closeButton.setAttribute('aria-label', '关闭社交提醒');
       closeButton.textContent = '关闭';
-      closeButton.addEventListener('click', () => toast.remove());
+      closeButton.addEventListener('click', () => dismissToast(toast));
 
       toast.append(message, link, closeButton);
       toastRegion.append(toast);
+      globalScope.HYLAppleUI?.refresh?.(toast);
+      const timer = globalScope.setTimeout?.(() => dismissToast(toast), 4200);
+      if (timer) toastTimers.set(toast, timer);
     }
 
     async function refresh({ notifyNew = false, version = lifecycleVersion, client = friendsClient } = {}) {

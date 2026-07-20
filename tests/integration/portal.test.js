@@ -487,7 +487,7 @@ test('门户配置使用统一字段且占位内容不提供假链接', () => {
     for (const item of portalContent[section]) {
       assert.equal(typeof item.id, 'string');
       assert.equal(typeof item.title, 'string');
-      assert.equal(typeof item.summary, 'string');
+      assert.equal('summary' in item, false);
       assert.equal(typeof item.status, 'string');
       assert.notEqual(item.href, '#');
     }

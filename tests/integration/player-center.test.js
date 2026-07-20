@@ -511,7 +511,6 @@ test('player center exposes stable, keyboard-reachable tabs and live status', ()
   assert.match(html, /id="player-message"[^>]*aria-live="polite"/);
   assert.match(html, /id="checkin-login-button"[^>]*type="button"/);
   assert.match(html, /id="account-button"[^>]*aria-label="打开账号面板"/);
-  assert.match(html, /游客[^<]*(?:活动|通知)|(?:活动|通知)[^<]*游客/);
 });
 
 test('player route normalizes tabs and preserves an activity deep link', () => {
@@ -564,8 +563,8 @@ test('activities render safe cards and a deep-linked detail with a cover fallbac
     assert.ok(detail);
     assert.match(card.textContent, /夏日活动 <img src=x/);
     assert.match(card.textContent, /7 月 1 日.*7 月 31 日/);
-    assert.match(card.textContent, /无金币奖励/);
-    assert.match(card.textContent, /查看活动/);
+    assert.doesNotMatch(card.textContent, /无金币奖励/);
+    assert.match(card.textContent, /正在查看/);
     assert.equal(detail.querySelector('.activity-detail-body').textContent, `正文 ${malicious}`);
     assert.equal(detail.querySelector('img'), null, 'admin body must stay text, not markup');
 
@@ -655,7 +654,7 @@ test('activity empty, retry, guest claim, and unavailable deep-link states use e
     assert.match(harness.activityList.textContent, /活动加载失败，请重试/);
     harness.activityList.querySelector('[data-activity-retry]').dispatchEvent(new Event('click'));
     await flushPromises();
-    assert.match(harness.activityList.textContent, /暂无可参与的活动/);
+    assert.match(harness.activityList.textContent, /现在没有进行中的活动/);
     assert.match(harness.nodes.get('#player-message').textContent, /活动已下架或不可用/);
 
     instance.refreshActivities();
@@ -1608,6 +1607,13 @@ test('player tabs update the URL without reloading and mount only in a browser',
   assert.match(source, /addEventListener\s*\(\s*['"]click['"]/);
 });
 
+test('player tab and activity view changes use the shared View Transition wrapper', () => {
+  const source = fs.readFileSync('./src/routes/player.js', 'utf8');
+  assert.match(source, /HYLAppleUI\?\.transition\([\s\S]*['"]player-tab['"]/);
+  assert.match(source, /HYLAppleUI\?\.transition\([\s\S]*['"]player-activity['"]/);
+  assert.match(source, /history\.replaceState[\s\S]*HYLAppleUI\?\.transition/);
+});
+
 test('player tab arrow navigation keeps focus in the tab list', () => {
   const source = read('./src/routes/player.js');
 
@@ -1974,7 +1980,7 @@ test('player styles preserve the Black Obsidian system on narrow and reduced-mot
   assert.match(css, /\.checkin-day-action:disabled/);
   assert.match(css, /\.activity-layout\s*\{[^}]*display:\s*grid/s);
   assert.match(css, /\.activity-cover-image/);
-  assert.match(css, /\.activity-card-status/);
+  assert.doesNotMatch(css, /\.activity-card-status/);
   assert.match(css, /\.notification-inbox/);
   assert.match(css, /\.notification-unread-dot/);
   assert.match(css, /\.notification-expired-status/);
@@ -1988,6 +1994,30 @@ test('player styles preserve the Black Obsidian system on narrow and reduced-mot
   assert.match(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)/);
   assert.doesNotMatch(css, /background-clip:\s*text/);
   assert.doesNotMatch(css, /backdrop-filter/);
+});
+
+test('player center uses Apple Dark Pro surfaces, concise headings, and structured empty states', () => {
+  const html = read('./player/index.html');
+  const css = read('./assets/styles/player.css');
+  const source = read('./src/routes/player.js');
+
+  for (const heading of ['签到月历', '活动', '通知', '好友', '商城', '背包']) {
+    assert.match(html, new RegExp(heading));
+  }
+
+  assert.match(css, /--player-stage-activities:\s*#eee9ff/);
+  assert.match(css, /body\[data-apple-page="player"\]\s+\.player-tab\[aria-selected="true"\][^{]*\{[^}]*background:\s*#f5f5f7/s);
+  assert.match(css, /body\[data-apple-page="player"\]\s+\.activity-card[^{]*\{[^}]*background:\s*#fff/s);
+  assert.match(css, /body\[data-apple-page="player"\]\s+\.player-panel\[data-player-panel="activities"\][^{]*\{[^}]*var\(--player-stage-activities\)/s);
+  assert.match(
+    css,
+    /body\[data-apple-page="player"\]\s+\.player-content\s+\.player-panel\s*\{[^}]*background:\s*var\(--player-stage-base\)/s,
+  );
+  assert.match(source, /function renderEmptyState\s*\(/);
+  assert.match(source, /player-empty-state__title/);
+  assert.doesNotMatch(source, /player-empty-state__description/);
+  assert.match(source, /现在没有进行中的活动。/);
+  assert.match(source, /暂无通知。/);
 });
 
 test('player center exposes UID-aware friend management and invite inbox structure', () => {

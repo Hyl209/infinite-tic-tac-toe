@@ -25,6 +25,11 @@
 
   const ROUTE_ROOM_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
+  function syncViewTransition(mutator) {
+    mutator();
+    return null;
+  }
+
   function normalizeRouteRoomCode(value) {
     return String(value || '')
       .toUpperCase()
@@ -439,6 +444,8 @@
       const row = document.createElement(heading ? 'div' : 'article');
       row.className = `leaderboard-row${heading ? ' leaderboard-row-heading' : ''}`;
       if (!heading) {
+        row.dataset.appleCard = '';
+        row.dataset.appleListItem = '';
         row.classList.toggle('is-current-player', entry.isCurrentPlayer);
         row.classList.toggle('is-podium', entry.rank <= 3);
       }
@@ -447,7 +454,19 @@
         : [`#${entry.rank}`, entry.displayName, `${entry.points} 分`, `${entry.wins} / ${entry.draws} / ${entry.losses}`, formatWinRate(entry.winRate)];
       values.forEach((value) => {
         const cell = document.createElement(heading ? 'span' : 'div');
-        cell.textContent = value;
+        const index = row.children.length;
+        if (!heading && index === 3) {
+          [entry.wins, entry.draws, entry.losses].forEach((count, countIndex) => {
+            if (countIndex > 0) cell.append(' / ');
+            const counter = document.createElement('span');
+            counter.dataset.appleCounter = '';
+            counter.textContent = String(count);
+            cell.append(counter);
+          });
+        } else {
+          cell.textContent = value;
+          if (!heading && [0, 2, 4].includes(index)) cell.dataset.appleCounter = '';
+        }
         row.append(cell);
       });
       return row;
@@ -467,7 +486,7 @@
       })) {
         const empty = document.createElement('p');
         empty.className = 'leaderboard-empty-state';
-        empty.textContent = '这个分榜还没有玩家，完成正式账号对局后即可上榜。';
+        empty.textContent = '暂无玩家。';
         leaderboardList.append(empty);
       } else if (topEntries.length > 0) {
         leaderboardList.append(createLeaderboardRow({}, { heading: true }));
@@ -481,6 +500,7 @@
         leaderboardCurrentPlayer.append(label, createLeaderboardRow(current));
         leaderboardCurrentPlayer.hidden = false;
       }
+      globalScope.HYLAppleUI?.refresh(leaderboardView);
     }
 
     async function loadLeaderboard() {
@@ -522,10 +542,17 @@
 
     async function showLeaderboardView() {
       if (accountDialog?.open) accountDialog.close();
-      home.hidden = true;
-      gameView.hidden = true;
-      leaderboardView.hidden = false;
-      document.body.dataset.view = 'leaderboard';
+      const mutateView = () => {
+        home.hidden = true;
+        gameView.hidden = true;
+        leaderboardView.hidden = false;
+        document.body.dataset.view = 'leaderboard';
+      };
+      if (globalScope.HYLAppleUI?.transition) {
+        globalScope.HYLAppleUI.transition(mutateView, 'game-leaderboard');
+      } else {
+        syncViewTransition(mutateView);
+      }
       await loadLeaderboard();
     }
 
@@ -774,14 +801,14 @@
       if (state.gameMode === 'pvp') {
         if (state.status === 'x_win') return `${displayMark('X')}获胜`;
         if (state.status === 'o_win') return `${displayMark('O')}获胜`;
-        if (state.status === 'draw') return '平局，棋逢对手';
+        if (state.status === 'draw') return '平局';
         return `轮到${displayMark(state.currentMark)}落子`;
       }
       if (state.status === 'x_win' || state.status === 'o_win') {
         const winner = state.status === 'x_win' ? 'X' : 'O';
-        return winner === state.playerMark ? '你赢了，漂亮的一局' : 'AI 获胜，再试一次';
+        return winner === state.playerMark ? '你获胜' : 'AI 获胜';
       }
-      if (state.status === 'draw') return '平局，棋逢对手';
+      if (state.status === 'draw') return '平局';
       if (state.currentTurn === 'ai') return 'AI 正在思考';
       return `轮到你，你执${displayMark(state.playerMark)}`;
     }
@@ -880,7 +907,7 @@
       markInfo.textContent = isOnline
         ? hasOnlineRoom
           ? `你是${onlineGame.playerNames?.[onlineGame.playerMark] || '玩家'}，执${displayMark(onlineGame.playerMark)}，${onlineGame.wagerAmount > 0 ? `每人彩头 ${onlineGame.wagerAmount} 金币` : '本局无彩头'}`
-          : '创建房间或输入房间码，邀请好友加入'
+          : ''
         : isPvp
           ? `${displayMark('X')}和${displayMark('O')}轮流落子，${displayMark('X')}先手`
           : `你执${displayMark(state.playerMark)}，AI 执${displayMark(state.aiMark)}`;
@@ -1427,11 +1454,18 @@
       gameType = type;
       engine = engineFor(type);
       if (!engine) return;
-      if (accountDialog?.open) accountDialog.close();
-      leaderboardView.hidden = true;
-      home.hidden = true;
-      gameView.hidden = false;
-      document.body.dataset.view = 'game';
+      const mutateView = () => {
+        if (accountDialog?.open) accountDialog.close();
+        leaderboardView.hidden = true;
+        home.hidden = true;
+        gameView.hidden = false;
+        document.body.dataset.view = 'game';
+      };
+      if (globalScope.HYLAppleUI?.transition) {
+        globalScope.HYLAppleUI.transition(mutateView, 'game-board');
+      } else {
+        syncViewTransition(mutateView);
+      }
       document.querySelector('input[name="game-mode"][value="ai"]').checked = true;
       const storedMode = globalScope.localStorage?.getItem(PLACEMENT_STORAGE_KEY);
       placementMode = getDefaultPlacementMode(
@@ -1474,11 +1508,18 @@
 
     async function showGameHome({ replaceUrl = false } = {}) {
       await resetGameSession();
-      gameView.hidden = true;
-      leaderboardView.hidden = true;
-      home.hidden = false;
-      document.body.dataset.view = 'games';
-      updateViewUrl('games', replaceUrl);
+      const mutateView = () => {
+        gameView.hidden = true;
+        leaderboardView.hidden = true;
+        home.hidden = false;
+        document.body.dataset.view = 'games';
+        updateViewUrl('games', replaceUrl);
+      };
+      if (globalScope.HYLAppleUI?.transition) {
+        globalScope.HYLAppleUI.transition(mutateView, 'game-home');
+      } else {
+        syncViewTransition(mutateView);
+      }
     }
 
     Object.assign(exported, {
@@ -1495,9 +1536,16 @@
       const button = event.target.closest('[data-leaderboard-game]');
       if (!button || button.dataset.leaderboardGame === leaderboardGameType) return;
       leaderboardGameType = button.dataset.leaderboardGame;
-      leaderboardGameTabs.querySelectorAll('[data-leaderboard-game]').forEach((tab) => {
-        tab.setAttribute('aria-selected', String(tab === button));
-      });
+      const mutateTabs = () => {
+        leaderboardGameTabs.querySelectorAll('[data-leaderboard-game]').forEach((tab) => {
+          tab.setAttribute('aria-selected', String(tab === button));
+        });
+      };
+      if (globalScope.HYLAppleUI?.transition) {
+        globalScope.HYLAppleUI.transition(mutateTabs, 'game-leaderboard-tab');
+      } else {
+        syncViewTransition(mutateTabs);
+      }
       void loadLeaderboard();
     });
     backHomeButton.addEventListener('click', () => void showGameHome());

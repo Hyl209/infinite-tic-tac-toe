@@ -1,19 +1,21 @@
 :root {
   color-scheme: dark;
-  --background: #0c1323;
-  --surface: #151f34;
-  --surface-strong: #1c2942;
-  --line: #33415f;
-  --text: #f4f7fb;
-  --muted: #aab6cb;
-  --accent: #72d7e7;
-  --accent-strong: #34b7cc;
-  --x-color: #ff806f;
-  --o-color: #72d7e7;
-  --success: #91e6b3;
-  --warning: #ffc46b;
-  --radius: 18px;
-  --shadow: 0 24px 80px rgb(1 6 18 / 0.42);
+  --background: var(--apple-bg);
+  --surface: var(--apple-surface-solid);
+  --surface-strong: #2c2c2e;
+  --line: var(--apple-line);
+  --text: var(--apple-ink);
+  --muted: var(--apple-muted);
+  --accent: var(--apple-blue);
+  --accent-strong: var(--apple-blue-action);
+  --x-color: var(--apple-magenta);
+  --o-color: var(--apple-blue);
+  --gomoku-black: #111318;
+  --gomoku-white: #f5f5f7;
+  --success: var(--apple-green);
+  --warning: var(--apple-yellow);
+  --radius: var(--apple-radius);
+  --shadow: var(--apple-shadow-lg);
   font-family: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", system-ui, sans-serif;
 }
 
@@ -234,19 +236,12 @@ button {
   gap: 16px;
 }
 
-.friend-invite-heading p,
 .friend-invite-heading h2,
 .friend-invite-empty {
   margin: 0;
 }
 
-.friend-invite-heading p {
-  color: var(--muted);
-  font-size: 0.78rem;
-}
-
 .friend-invite-heading h2 {
-  margin-top: 3px;
   font-size: 1.4rem;
 }
 
@@ -350,13 +345,6 @@ button {
   padding-right: 52px;
 }
 
-.account-dialog-header > p:first-child {
-  margin: 0 0 7px;
-  color: var(--accent);
-  font-size: 0.78rem;
-  font-weight: 750;
-}
-
 .account-dialog-header h2 {
   margin: 0;
   font-size: 1.65rem;
@@ -364,9 +352,13 @@ button {
 }
 
 .account-dialog-header > p:last-child {
-  margin: 10px 0 0;
+  margin: 8px 0 0;
   color: var(--muted);
   line-height: 1.55;
+}
+
+.account-dialog-header > p:last-child:empty {
+  margin: 0;
 }
 
 .account-tabs {
@@ -452,11 +444,14 @@ button {
 }
 
 .account-message {
-  min-height: 1.45em;
-  margin: 14px 0 0;
+  margin: 0;
   color: var(--muted);
   font-size: 0.82rem;
   line-height: 1.45;
+}
+
+.account-message:not(:empty) {
+  margin-top: 14px;
 }
 
 .account-message[data-state="error"] {
@@ -465,13 +460,6 @@ button {
 
 .account-message[data-state="success"] {
   color: var(--success);
-}
-
-.account-footnote {
-  margin: 8px 0 0;
-  color: var(--muted);
-  font-size: 0.76rem;
-  line-height: 1.5;
 }
 
 .match-history-panel {
@@ -492,7 +480,6 @@ button {
   gap: 2px;
 }
 
-.match-history-heading small,
 .season-summary-title {
   color: var(--muted);
   font-size: 0.76rem;
@@ -688,7 +675,6 @@ button {
   gap: 28px;
 }
 
-.leaderboard-header > div > p,
 .admin-season-section .admin-list-heading p,
 .admin-code-section > .admin-list-heading p {
   margin: 0 0 7px;
@@ -754,10 +740,13 @@ button {
 }
 
 .leaderboard-message {
-  min-height: 1.5em;
-  margin: 18px 0 8px;
+  margin: 0;
   color: var(--muted);
   font-size: 0.82rem;
+}
+
+.leaderboard-message:not(:empty) {
+  margin: 18px 0 8px;
 }
 
 .leaderboard-message[data-state="error"] {
@@ -1005,25 +994,10 @@ button {
   object-fit: cover;
 }
 
-.home-kicker {
-  margin: 0 0 12px;
-  color: var(--accent);
-  font-size: 0.82rem;
-  font-weight: 750;
-}
-
 .home-copy h1 {
   max-width: 13ch;
   font-size: clamp(2.6rem, 7vw, 5.4rem);
   line-height: 0.98;
-}
-
-.home-copy div > p:last-child {
-  max-width: 48ch;
-  margin: 18px 0 0;
-  color: var(--muted);
-  font-size: clamp(1rem, 2vw, 1.15rem);
-  line-height: 1.65;
 }
 
 .game-picker {
@@ -1034,7 +1008,7 @@ button {
 
 .game-choice {
   min-width: 0;
-  min-height: 250px;
+  min-height: 220px;
   padding: clamp(20px, 4vw, 32px);
   display: grid;
   grid-template-columns: minmax(120px, 0.8fr) minmax(150px, 1fr);
@@ -1088,7 +1062,8 @@ button {
   font-weight: 850;
 }
 
-.tic-preview i:nth-child(3n) {
+.tic-preview i:nth-child(3),
+.tic-preview i:nth-child(7) {
   color: var(--o-color);
 }
 
@@ -1124,17 +1099,11 @@ button {
 .choice-copy {
   display: grid;
   align-content: center;
-  gap: 12px;
+  gap: 8px;
 }
 
 .choice-copy strong {
   font-size: clamp(1.35rem, 3vw, 2rem);
-}
-
-.choice-copy small {
-  color: var(--muted);
-  font-size: 0.9rem;
-  line-height: 1.6;
 }
 
 .choice-copy > span {
@@ -1250,7 +1219,6 @@ h1 {
   background: rgb(31 64 75 / 0.72);
 }
 
-.status-label,
 .arena-label {
   margin: 0 0 7px;
   color: var(--muted);
@@ -1409,11 +1377,14 @@ h1 {
 }
 
 .online-room-message {
-  min-height: 1.35em;
-  margin-top: 8px;
+  margin: 0;
   color: var(--warning);
   font-size: 0.8rem;
   line-height: 1.45;
+}
+
+.online-room-message:not(:empty) {
+  margin-top: 8px;
 }
 
 fieldset {
@@ -1779,13 +1750,16 @@ legend {
   pointer-events: none;
 }
 
-.gomoku-cell.mark-x,
-.gomoku-cell.mark-o {
-  --piece-color: #172033;
+.gomoku-cell.mark-x {
+  --piece-color: var(--gomoku-black);
+}
+
+.mark-info:empty {
+  margin: 0;
 }
 
 .gomoku-cell.mark-o {
-  --piece-color: #edf1f4;
+  --piece-color: var(--gomoku-white);
 }
 
 .gomoku-cell.mark-x::after,
@@ -1804,7 +1778,7 @@ legend {
 }
 
 .gomoku-cell.last-move::after {
-  background: radial-gradient(circle, #ff806f 0 12%, var(--piece-color) 14%);
+  background: radial-gradient(circle, var(--apple-orange) 0 12%, var(--piece-color) 14%);
 }
 
 .gomoku-cell.winner {

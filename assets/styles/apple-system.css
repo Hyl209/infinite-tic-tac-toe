@@ -1,0 +1,896 @@
+:root {
+  color-scheme: dark;
+  --apple-blue: #0071e3;
+  --apple-blue-hover: #0077ed;
+  --apple-purple: #bf5af2;
+  --apple-magenta: #ff375f;
+  --apple-green: #30d158;
+  --apple-orange: #ff9f0a;
+  --apple-red: #ff453a;
+  --apple-bg: #050507;
+  --apple-surface: rgba(255, 255, 255, 0.07);
+  --apple-surface-hover: rgba(255, 255, 255, 0.11);
+  --apple-surface-strong: rgba(255, 255, 255, 0.14);
+  --apple-surface-solid: #1c1c1e;
+  --apple-border: rgba(255, 255, 255, 0.12);
+  --apple-line: var(--apple-border);
+  --apple-line-strong: rgba(255, 255, 255, 0.24);
+  --apple-text-primary: rgba(255, 255, 255, 0.96);
+  --apple-text-secondary: rgba(255, 255, 255, 0.66);
+  --apple-ink: var(--apple-text-primary);
+  --apple-muted: var(--apple-text-secondary);
+  --apple-blue-action: var(--apple-blue);
+  --apple-yellow: #ffd60a;
+  --apple-focus: #64d2ff;
+  --apple-shadow-sm: 0 8px 24px rgba(0, 0, 0, 0.22);
+  --apple-shadow-md: 0 18px 48px rgba(0, 0, 0, 0.34);
+  --apple-shadow-lg: 0 32px 96px rgba(0, 0, 0, 0.48);
+  --apple-radius-sm: 12px;
+  --apple-radius-md: 16px;
+  --apple-radius-lg: 24px;
+  --apple-radius-pill: 999px;
+  --apple-radius: var(--apple-radius-md);
+  --apple-nav-height: 64px;
+  --apple-nav-height-compact: 50px;
+  --apple-z-aurora: 0;
+  --apple-z-content: 1;
+  --apple-z-sticky: 30;
+  --apple-z-dropdown: 40;
+  --apple-z-modal-backdrop: 50;
+  --apple-z-modal: 60;
+  --apple-z-toast: 70;
+  --apple-z-tooltip: 80;
+
+  /* Aggressive aura defaults — 4-layer dynamic glow system */
+  --apple-glow-blue-opacity: 0.38;
+  --apple-glow-indigo-opacity: 0.32;
+  --apple-glow-purple-opacity: 0.28;
+  --apple-glow-pink-opacity: 0.24;
+  --apple-glow-blue-scale: 1;
+  --apple-glow-indigo-scale: 1;
+  --apple-glow-purple-scale: 1;
+  --apple-glow-pink-scale: 1;
+  --apple-glow-blue-theme-x: 0px;
+  --apple-glow-blue-theme-y: 0px;
+  --apple-glow-indigo-theme-x: 0px;
+  --apple-glow-indigo-theme-y: 0px;
+  --apple-glow-purple-theme-x: 0px;
+  --apple-glow-purple-theme-y: 0px;
+  --apple-glow-pink-theme-x: 0px;
+  --apple-glow-pink-theme-y: 0px;
+
+  --portal-bg: var(--apple-bg);
+  --portal-surface: var(--apple-surface-solid);
+  --portal-surface-strong: #2c2c2e;
+  --portal-line: var(--apple-line);
+  --portal-ink: var(--apple-ink);
+  --portal-muted: var(--apple-muted);
+  --portal-accent: var(--apple-blue);
+  --portal-accent-soft: #7eb8ff;
+  --admin-bg: var(--apple-bg);
+  --admin-surface: var(--apple-surface-solid);
+  --admin-surface-raised: #2c2c2e;
+  --admin-line: var(--apple-line);
+  --admin-line-strong: var(--apple-line-strong);
+  --admin-text: var(--apple-ink);
+  --admin-muted: var(--apple-muted);
+  --admin-accent: var(--apple-blue);
+  --admin-accent-soft: rgba(41, 151, 255, 0.16);
+  --admin-danger: var(--apple-red);
+  --admin-success: var(--apple-green);
+  --background: var(--apple-bg);
+  --surface: var(--apple-surface-solid);
+  --surface-strong: #2c2c2e;
+  --line: var(--apple-line);
+  --text: var(--apple-ink);
+  --muted: var(--apple-muted);
+  --accent: var(--apple-blue);
+  --accent-strong: var(--apple-blue-action);
+  --success: var(--apple-green);
+  --warning: var(--apple-yellow);
+  --radius: var(--apple-radius);
+  --shadow: var(--apple-shadow-lg);
+  --nav-height: var(--apple-nav-height);
+}
+
+html {
+  scroll-padding-top: calc(var(--apple-nav-height) + 24px);
+}
+
+body[data-apple-page] {
+  position: relative;
+  isolation: isolate;
+  min-width: 320px;
+  min-height: 100dvh;
+  color: var(--apple-ink);
+  background: var(--apple-bg);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+}
+
+body[data-apple-page] button,
+body[data-apple-page] input,
+body[data-apple-page] select,
+body[data-apple-page] textarea {
+  font-family: inherit;
+}
+
+body[data-apple-page] button:not(.cell):not(.gomoku-cell):not(.checkin-day),
+body[data-apple-page] a.button,
+body[data-apple-page] a.portal-action,
+body[data-apple-page] a.admin-link-button,
+body[data-apple-page] [role="tab"] {
+  min-height: 44px;
+  border-radius: var(--apple-radius-md);
+  font-weight: 600;
+}
+
+body[data-apple-page] input:not([type="checkbox"]):not([type="radio"]),
+body[data-apple-page] select,
+body[data-apple-page] textarea {
+  min-height: 46px;
+  border: 1px solid var(--apple-border);
+  border-radius: var(--apple-radius-md);
+  color: var(--apple-text-primary);
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset;
+}
+
+body[data-apple-page] input:not([type="checkbox"]):not([type="radio"]):focus-visible,
+body[data-apple-page] select:focus-visible,
+body[data-apple-page] textarea:focus-visible {
+  border-color: var(--apple-blue-hover);
+  box-shadow: 0 0 0 4px rgba(0, 113, 227, 0.2);
+}
+
+body[data-apple-page] main,
+body[data-apple-page] footer {
+  position: relative;
+  z-index: var(--apple-z-content);
+}
+
+body[data-apple-page]:not([data-apple-page="portal"]) main {
+  padding-top: var(--apple-nav-height);
+}
+
+body[data-apple-page="portal"] .portal-home {
+  background: transparent;
+}
+
+/* ========== Aggressive 4-Layer Aura ========== */
+
+.apple-aurora {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 1;
+  transition: opacity 800ms ease;
+}
+
+.apple-aurora::before {
+  content: "";
+  position: absolute;
+  inset: -12%;
+  background:
+    radial-gradient(ellipse at 18% 55%, rgba(88, 86, 214, 0.28) 0%, rgba(88, 86, 214, 0.12) 32%, transparent 64%),
+    radial-gradient(ellipse at 82% 22%, rgba(0, 122, 255, 0.36) 0%, rgba(0, 122, 255, 0.15) 34%, transparent 66%),
+    radial-gradient(ellipse at 55% 35%, rgba(175, 82, 222, 0.24) 0%, rgba(175, 82, 222, 0.1) 30%, transparent 62%),
+    radial-gradient(ellipse at 76% 88%, rgba(255, 45, 85, 0.22) 0%, rgba(255, 45, 85, 0.09) 30%, transparent 62%);
+  opacity: 0.82;
+  transform-origin: center;
+  will-change: transform, opacity;
+  animation: apple-aura-wash 10s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+/* Glow layers — massive, slow, high-opacity */
+.apple-glow {
+  position: absolute;
+  width: clamp(45rem, 85vw, 72rem);
+  aspect-ratio: 1;
+  transform-style: preserve-3d;
+  transform-origin: center;
+  will-change: transform, translate, scale, opacity;
+}
+
+.apple-glow::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  filter: blur(150px);
+  opacity: 0.9;
+  transform-origin: center;
+  will-change: transform, opacity;
+}
+
+/* Layer 1 — Blue #007aff */
+.apple-glow--blue {
+  top: -28%;
+  right: -8%;
+  opacity: var(--apple-glow-blue-opacity);
+  translate: var(--apple-glow-blue-theme-x) var(--apple-glow-blue-theme-y);
+  scale: var(--apple-glow-blue-scale);
+}
+
+.apple-glow--blue::before {
+  background: radial-gradient(circle, #007aff 0%, rgba(0, 122, 255, 0.62) 34%, transparent 72%);
+  animation: apple-aurora-float-blue 10s ease-in-out infinite alternate;
+}
+
+/* Layer 2 — Indigo #5856d6 */
+.apple-glow--indigo {
+  top: 18%;
+  left: -22%;
+  opacity: var(--apple-glow-indigo-opacity);
+  translate: var(--apple-glow-indigo-theme-x) var(--apple-glow-indigo-theme-y);
+  scale: var(--apple-glow-indigo-scale);
+}
+
+.apple-glow--indigo::before {
+  background: radial-gradient(circle, #5856d6 0%, rgba(88, 86, 214, 0.62) 34%, transparent 72%);
+  animation: apple-aurora-float-indigo 14s ease-in-out -3s infinite alternate;
+}
+
+/* Layer 3 — Purple #af52de */
+.apple-glow--purple {
+  top: 44%;
+  right: -28%;
+  opacity: var(--apple-glow-purple-opacity);
+  translate: var(--apple-glow-purple-theme-x) var(--apple-glow-purple-theme-y);
+  scale: var(--apple-glow-purple-scale);
+}
+
+.apple-glow--purple::before {
+  background: radial-gradient(circle, #af52de 0%, rgba(175, 82, 222, 0.62) 34%, transparent 72%);
+  animation: apple-aurora-float-purple 19s ease-in-out -7s infinite alternate;
+}
+
+/* Layer 4 — Pink #ff2d55 */
+.apple-glow--pink {
+  right: -18%;
+  bottom: -32%;
+  opacity: var(--apple-glow-pink-opacity);
+  translate: var(--apple-glow-pink-theme-x) var(--apple-glow-pink-theme-y);
+  scale: var(--apple-glow-pink-scale);
+}
+
+.apple-glow--pink::before {
+  background: radial-gradient(circle, #ff2d55 0%, rgba(255, 45, 85, 0.58) 34%, transparent 72%);
+  animation: apple-aurora-float-pink 25s ease-in-out -12s infinite alternate;
+}
+
+/* ========== Aggressive Keyframes ========== */
+
+@keyframes apple-aurora-float-blue {
+  0%   { transform: translate3d(-12%, -8%, 0) scale(0.78) rotate(0deg); opacity: 0.62; }
+  35%  { transform: translate3d(14%, 12%, 0) scale(1.22) rotate(1.5deg); opacity: 1; }
+  70%  { transform: translate3d(8%, 22%, 0) scale(1.38) rotate(-0.8deg); opacity: 0.88; }
+  100% { transform: translate3d(-6%, 22%, 0) scale(1.42) rotate(0deg); opacity: 0.74; }
+}
+
+@keyframes apple-aurora-float-indigo {
+  0%   { transform: translate3d(14%, 6%, 0) scale(0.88) rotate(0deg); opacity: 0.68; }
+  40%  { transform: translate3d(-14%, -12%, 0) scale(1.28) rotate(-2deg); opacity: 1; }
+  75%  { transform: translate3d(-20%, -6%, 0) scale(1.44) rotate(-0.5deg); opacity: 0.85; }
+  100% { transform: translate3d(8%, -16%, 0) scale(1.36) rotate(0deg); opacity: 0.72; }
+}
+
+@keyframes apple-aurora-float-purple {
+  0%   { transform: translate3d(-16%, 10%, 0) scale(0.98) rotate(0deg); opacity: 0.66; }
+  38%  { transform: translate3d(8%, -14%, 0) scale(1.18) rotate(1.2deg); opacity: 1; }
+  72%  { transform: translate3d(16%, -20%, 0) scale(1.32) rotate(0.6deg); opacity: 0.82; }
+  100% { transform: translate3d(-10%, -8%, 0) scale(1.26) rotate(0deg); opacity: 0.7; }
+}
+
+@keyframes apple-aurora-float-pink {
+  0%   { transform: translate3d(-8%, 18%, 0) scale(1.05) rotate(0deg); opacity: 0.6; }
+  34%  { transform: translate3d(16%, -12%, 0) scale(0.82) rotate(-1.5deg); opacity: 0.97; }
+  68%  { transform: translate3d(20%, -22%, 0) scale(1.15) rotate(-0.4deg); opacity: 0.84; }
+  100% { transform: translate3d(-14%, 8%, 0) scale(1.28) rotate(0deg); opacity: 0.7; }
+}
+
+@keyframes apple-aura-wash {
+  0%, 100% { transform: translate3d(-8%, -5%, 0) scale(0.88); opacity: 0.52; }
+  50%      { transform: translate3d(8%, 6%, 0) scale(1.12); opacity: 1; }
+}
+
+/* ========== Navigation ========== */
+
+[data-apple-nav] {
+  position: fixed;
+  z-index: var(--apple-z-sticky);
+  top: 0;
+  right: 0;
+  left: 0;
+  height: var(--apple-nav-height);
+  min-height: 0;
+  border-bottom: 1px solid var(--apple-line);
+  background: rgba(0, 0, 0, 0.72);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03);
+  backdrop-filter: saturate(160%) blur(22px);
+  transition: height 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 320ms ease,
+    box-shadow 320ms ease,
+    backdrop-filter 320ms ease;
+}
+
+.site-nav.is-scrolled,
+.admin-topbar.is-scrolled {
+  height: var(--apple-nav-height-compact);
+  background: rgba(5, 5, 7, 0.95);
+  box-shadow: 0 12px 38px rgba(0, 0, 0, 0.38);
+  backdrop-filter: saturate(180%) blur(32px);
+}
+
+[data-apple-nav] > .site-nav-inner,
+[data-apple-nav].admin-topbar > .site-nav-inner {
+  width: min(100% - 32px, 1240px);
+  height: 100%;
+  min-height: 0;
+  margin-inline: auto;
+  display: flex;
+  align-items: center;
+  gap: clamp(10px, 2vw, 24px);
+}
+
+.admin-topbar[data-apple-nav] {
+  padding: 0;
+}
+
+[data-apple-nav] .site-brand {
+  flex: 0 0 auto;
+}
+
+[data-apple-nav] .site-menu {
+  align-items: center;
+  gap: 4px;
+}
+
+[data-apple-nav] .site-menu a {
+  padding: 8px 10px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+[data-apple-nav] .account-button {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+/* Scroll progress — 3px, gradient, glow */
+.apple-scroll-progress {
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--apple-blue), var(--apple-purple), var(--apple-magenta));
+  box-shadow: 0 0 12px rgba(0, 113, 227, 0.4), 0 0 24px rgba(175, 82, 222, 0.25);
+  transform: scaleX(var(--apple-scroll-progress, 0));
+  transform-origin: left center;
+  will-change: transform;
+}
+
+.site-menu-button {
+  color: var(--apple-ink);
+}
+
+.player-center-link,
+.notification-bell {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+[data-apple-breathe] {
+  min-height: 46px;
+}
+
+.site-menu a,
+.player-header-links a {
+  border-radius: 999px;
+  color: var(--apple-muted);
+  transition: color 180ms ease, background-color 180ms ease, translate 180ms ease;
+}
+
+.site-menu a:hover,
+.site-menu a:focus-visible,
+.player-header-links a:hover,
+.player-header-links a:focus-visible {
+  color: var(--apple-ink);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* ========== Reveal & Cards ========== */
+
+[data-apple-reveal] {
+  visibility: visible;
+  opacity: 1;
+}
+
+body[data-apple-page="admin"] .admin-section,
+body[data-apple-page="game"] .control-panel,
+body[data-apple-page="game"] .game-panel,
+body[data-apple-page="game"] .leaderboard-shell {
+  border-color: var(--apple-line);
+  border-radius: var(--apple-radius-lg);
+  background: var(--apple-surface);
+  box-shadow: var(--apple-shadow-sm);
+  backdrop-filter: saturate(145%) blur(24px);
+}
+
+/* Cards with spotlight-ready surface */
+[data-apple-card] {
+  border: 1px solid var(--apple-line);
+  border-radius: var(--apple-radius-lg);
+  background: var(--apple-surface);
+  box-shadow: var(--apple-shadow-sm);
+  backdrop-filter: saturate(145%) blur(24px);
+  transform-style: preserve-3d;
+  transform-origin: center;
+  translate: 0 0;
+  scale: 1;
+  transition: translate 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    scale 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 320ms ease,
+    box-shadow 320ms ease,
+    background-color 320ms ease;
+}
+
+[data-apple-hero-visual],
+[data-apple-orbit] {
+  will-change: transform;
+}
+
+.obsidian-orbit::after {
+  content: "";
+  position: absolute;
+  top: 6%;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #8ca7ff;
+  box-shadow: 0 0 18px rgba(124, 151, 255, 0.8);
+  translate: -50% -50%;
+}
+
+/* Card spotlight — pointer-driven radial highlight */
+[data-apple-card].is-apple-tilting {
+  border-color: rgba(255, 255, 255, 0.32);
+  background:
+    radial-gradient(
+      circle at var(--pointer-x, 50%) var(--pointer-y, 50%),
+      rgba(255, 255, 255, 0.12),
+      transparent 42%
+    ),
+    var(--apple-surface-hover);
+  box-shadow: var(--apple-shadow-md), 0 0 40px rgba(255, 255, 255, 0.04);
+}
+
+/* Card hover — stronger lift */
+[data-apple-card]:hover {
+  translate: 0 -8px;
+  scale: 1.035;
+  border-color: var(--apple-line-strong);
+  background: var(--apple-surface-hover);
+  box-shadow: var(--apple-shadow-md);
+}
+
+[data-apple-card][aria-selected="true"],
+[data-apple-card].is-active,
+[data-apple-card].activity-card--selected,
+[data-apple-card].is-current-player {
+  border-color: rgba(0, 113, 227, 0.52);
+  box-shadow: var(--apple-shadow-md), 0 0 0 1px rgba(0, 113, 227, 0.22);
+}
+
+/* ========== Tab Highlight ========== */
+
+.apple-tab-highlight {
+  position: absolute;
+  z-index: 0;
+  top: 0;
+  left: 0;
+  border-radius: 14px;
+  background: #f5f5f7;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  pointer-events: none;
+  transform-origin: left top;
+  will-change: transform, width, height;
+}
+
+.has-apple-tab-highlight {
+  position: relative;
+  isolation: isolate;
+}
+
+.has-apple-tab-highlight > [role="tab"] {
+  position: relative;
+  z-index: 1;
+}
+
+.has-apple-tab-highlight > [role="tab"][aria-selected="true"] {
+  background: transparent !important;
+}
+
+/* ========== Toasts ========== */
+
+.social-toast-region {
+  top: auto;
+  bottom: max(28px, env(safe-area-inset-bottom));
+}
+
+.social-toast {
+  border-color: rgba(0, 122, 255, 0.28);
+  background: rgba(28, 28, 30, 0.94);
+  backdrop-filter: saturate(150%) blur(22px);
+  transform-origin: center bottom;
+}
+
+.social-toast[data-toast-type="success"] {
+  border-color: rgba(48, 209, 88, 0.42);
+  box-shadow: 0 18px 48px rgba(48, 209, 88, 0.14), var(--apple-shadow-md);
+}
+
+.social-toast[data-toast-type="error"] {
+  border-color: rgba(255, 69, 58, 0.46);
+  box-shadow: 0 18px 48px rgba(255, 69, 58, 0.14), var(--apple-shadow-md);
+}
+
+.social-toast[data-toast-type="info"] {
+  border-color: rgba(0, 122, 255, 0.38);
+  box-shadow: 0 18px 48px rgba(0, 122, 255, 0.12), var(--apple-shadow-md);
+}
+
+.social-toast[data-toast-state="leaving"] {
+  pointer-events: none;
+}
+
+/* ========== Buttons ========== */
+
+.apple-button--primary,
+.apple-button--secondary {
+  border-radius: var(--apple-radius-pill);
+  transition: translate 220ms ease, scale 220ms ease, filter 220ms ease, box-shadow 220ms ease;
+}
+
+.apple-button--primary {
+  border-color: var(--apple-blue-action);
+  color: #ffffff;
+  background: linear-gradient(180deg, var(--apple-blue), #0068d1);
+  box-shadow: 0 10px 28px rgba(0, 113, 227, 0.26);
+}
+
+.apple-button--secondary {
+  border-color: var(--apple-line-strong);
+  color: var(--apple-ink);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.apple-button--primary:hover,
+.apple-button--secondary:hover {
+  translate: 0 -3px;
+  scale: 1.04;
+}
+
+.apple-button--primary:hover {
+  box-shadow: 0 18px 44px rgba(0, 113, 227, 0.42);
+}
+
+.apple-button--secondary:hover {
+  filter: brightness(1.1);
+}
+
+.apple-button--primary:active,
+.apple-button--secondary:active {
+  translate: 0 1px;
+  scale: 0.94;
+}
+
+.is-apple-clicked {
+  animation: apple-button-rebound 380ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes apple-button-rebound {
+  0%   { scale: 1; }
+  42%  { scale: 0.92; }
+  100% { scale: 1; }
+}
+
+/* ========== Status Dots & Bells ========== */
+
+.tool-dot[data-state] {
+  display: inline-block;
+  width: 0.55rem;
+  height: 0.55rem;
+  margin-inline-end: 0.45rem;
+  border-radius: 50%;
+  vertical-align: 0.02em;
+  background: var(--apple-muted);
+}
+
+.tool-dot[data-state="ready"] {
+  background: var(--apple-green);
+  animation: apple-ready-pulse 2.4s ease-in-out infinite;
+}
+
+.tool-dot[data-state="pending"] {
+  background: var(--apple-yellow);
+}
+
+@keyframes apple-ready-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(48, 209, 88, 0.38); }
+  50%      { box-shadow: 0 0 0 9px rgba(48, 209, 88, 0); }
+}
+
+.notification-bell.is-apple-ringing > svg {
+  transform-origin: 50% 12%;
+  animation: apple-bell-unread 900ms ease-in-out 1;
+}
+
+@keyframes apple-bell-unread {
+  0%, 100% { rotate: 0deg; }
+  32%      { rotate: 3.5deg; }
+  68%      { rotate: -3.5deg; }
+}
+
+/* ========== Pause State ========== */
+
+.is-apple-paused .apple-aurora::before,
+.is-apple-paused .apple-glow,
+.is-apple-paused .apple-glow::before,
+.is-apple-paused .tool-dot[data-state="ready"],
+.is-apple-paused .notification-bell > svg {
+  animation-play-state: paused !important;
+}
+
+/* ========== List Items ========== */
+
+[data-apple-list-item] {
+  transition: translate 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    color 240ms ease,
+    background-color 240ms ease;
+}
+
+[data-apple-list-item]:hover,
+[data-apple-list-item]:focus-within {
+  translate: 8px 0;
+  color: var(--apple-ink);
+  background-color: rgba(255, 255, 255, 0.04);
+}
+
+/* ========== Focus ========== */
+
+body[data-apple-page] :focus-visible {
+  outline: 3px solid var(--apple-focus);
+  outline-offset: 3px;
+}
+
+/* ========== View Transitions ========== */
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 280ms;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ========== Responsive: ≤900px ========== */
+
+@media (max-width: 900px) {
+  [data-apple-nav] .account-button {
+    width: auto;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 4px;
+  }
+
+  .site-menu-button {
+    min-height: 40px;
+    margin-left: auto;
+    padding: 0 11px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border: 1px solid var(--apple-line);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.06);
+    font-size: 0.76rem;
+  }
+
+  .site-menu-button i,
+  .site-menu-button i::before {
+    content: "";
+    width: 15px;
+    height: 1px;
+    display: block;
+    background: currentColor;
+    transition: rotate 180ms ease, translate 180ms ease;
+  }
+
+  .site-menu-button i::before {
+    translate: 0 5px;
+  }
+
+  .site-menu-button[aria-expanded="true"] i {
+    rotate: 45deg;
+  }
+
+  .site-menu-button[aria-expanded="true"] i::before {
+    translate: 0 0;
+    rotate: -90deg;
+  }
+
+  .site-menu,
+  .player-header-links.site-menu {
+    position: fixed;
+    z-index: var(--apple-z-dropdown);
+    top: calc(var(--apple-nav-height) + 8px);
+    right: 14px;
+    left: 14px;
+    display: grid;
+    gap: 4px;
+    padding: 10px;
+    border: 1px solid var(--apple-line);
+    border-radius: var(--apple-radius);
+    background: rgba(28, 28, 30, 0.96);
+    box-shadow: var(--apple-shadow-md);
+    backdrop-filter: blur(24px);
+    visibility: hidden;
+    opacity: 0;
+    translate: 0 -8px;
+    pointer-events: none;
+  }
+
+  .site-menu.is-open,
+  .player-header-links.site-menu.is-open {
+    visibility: visible;
+    opacity: 1;
+    translate: 0 0;
+    pointer-events: auto;
+  }
+
+  .site-menu a,
+  .player-header-links.site-menu a {
+    display: block;
+    padding: 12px 14px;
+  }
+}
+
+/* ========== Responsive: ≥901px ========== */
+
+@media (min-width: 901px) {
+  .site-menu-button {
+    display: none;
+  }
+
+  .site-menu,
+  .player-header-links.site-menu {
+    position: static;
+    display: flex;
+    overflow: hidden;
+    border-radius: 999px;
+    visibility: visible;
+    opacity: 1;
+    translate: none;
+    pointer-events: auto;
+  }
+}
+
+/* ========== Responsive: ≤719px (mobile aura) ========== */
+
+@media (max-width: 719px) {
+  [data-apple-card] {
+    will-change: auto;
+  }
+
+  [data-apple-card]:hover {
+    translate: 0 -4px;
+    scale: 1.02;
+  }
+
+  .apple-glow {
+    width: clamp(32rem, 120vw, 52rem);
+  }
+
+  .apple-glow::before {
+    filter: blur(120px);
+  }
+
+  .apple-aurora::before {
+    opacity: 0.7;
+  }
+}
+
+/* ========== Reduced Motion ========== */
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+
+  .apple-aurora::before,
+  .apple-glow::before,
+  [data-apple-card],
+  [data-apple-card][aria-selected="true"],
+  [data-apple-breathe],
+  .tool-dot[data-state="ready"],
+  .notification-bell > svg,
+  .is-apple-clicked {
+    animation: none !important;
+  }
+
+  .apple-aurora {
+    opacity: 0.72;
+  }
+
+  [data-apple-card],
+  [data-apple-card]:hover,
+  [data-apple-list-item],
+  [data-apple-list-item]:hover,
+  .apple-button--primary,
+  .apple-button--secondary {
+    translate: none !important;
+    scale: 1 !important;
+    transform: none !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 0.01ms;
+  }
+}
+
+/* ========== Reduced Transparency ========== */
+
+@media (prefers-reduced-transparency: reduce) {
+  [data-apple-nav],
+  [data-apple-card],
+  .site-menu,
+  .player-header-links.site-menu {
+    backdrop-filter: none;
+  }
+
+  [data-apple-nav] { background: var(--apple-bg); }
+  [data-apple-card] { background: var(--apple-surface-solid); }
+  body[data-apple-page="admin"] .admin-section,
+  body[data-apple-page="game"] .control-panel,
+  body[data-apple-page="game"] .game-panel,
+  body[data-apple-page="game"] .leaderboard-shell { background: var(--apple-surface-solid); }
+  .site-menu,
+  .player-header-links.site-menu { background: #1c1c1e; }
+
+  .apple-glow--blue {
+    opacity: calc(var(--apple-glow-blue-opacity) * 1.65);
+    top: -16%;
+    right: -4%;
+  }
+
+  .apple-glow--indigo {
+    opacity: calc(var(--apple-glow-indigo-opacity) * 1.65);
+    top: 12%;
+    left: -12%;
+  }
+
+  .apple-glow--purple {
+    opacity: calc(var(--apple-glow-purple-opacity) * 1.65);
+    top: 34%;
+    right: -16%;
+  }
+
+  .apple-glow--pink {
+    opacity: calc(var(--apple-glow-pink-opacity) * 1.65);
+    right: -10%;
+    bottom: -20%;
+  }
+
+  .apple-aurora::before {
+    background:
+      radial-gradient(ellipse at 18% 55%, rgba(88, 86, 214, 0.42) 0%, rgba(88, 86, 214, 0.2) 32%, transparent 64%),
+      radial-gradient(ellipse at 82% 22%, rgba(0, 122, 255, 0.48) 0%, rgba(0, 122, 255, 0.22) 34%, transparent 66%),
+      radial-gradient(ellipse at 55% 35%, rgba(175, 82, 222, 0.36) 0%, rgba(175, 82, 222, 0.16) 30%, transparent 62%),
+      radial-gradient(ellipse at 76% 88%, rgba(255, 45, 85, 0.3) 0%, rgba(255, 45, 85, 0.14) 30%, transparent 62%);
+    opacity: 1;
+  }
+
+  .apple-glow::before { filter: none; }
+}

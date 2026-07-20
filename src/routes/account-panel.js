@@ -46,7 +46,6 @@
     const accountCoinBalance = document.querySelector('#account-coin-balance');
     const accountCloseButton = document.querySelector('#account-close-button');
     const accountDialogTitle = document.querySelector('#account-dialog-title');
-    const accountDialogDescription = document.querySelector('#account-dialog-description');
     const accountAuthView = document.querySelector('#account-auth-view');
     const accountLoginTab = document.querySelector('#account-login-tab');
     const accountRegisterTab = document.querySelector('#account-register-tab');
@@ -136,10 +135,18 @@
       accountLoginTab.setAttribute('aria-selected', String(!registering));
       accountRegisterTab.setAttribute('aria-selected', String(registering));
       accountDialogTitle.textContent = registering ? '注册账号' : '登录账号';
-      accountDialogDescription.textContent = registering
-        ? '用户名用于登录，游戏名会显示给在线对手。'
-        : '登录后，游戏名会同步到其他设备。';
       if (clearMessage) setMessage(accountMessage);
+    }
+
+    function transitionMode(nextMode) {
+      const normalized = nextMode === 'register' ? 'register' : 'login';
+      if (normalized === mode) return;
+      const apply = () => setMode(normalized);
+      if (globalScope.HYLAppleUI?.transition) {
+        globalScope.HYLAppleUI?.transition(apply, 'account-tab');
+      } else {
+        apply();
+      }
     }
 
     function setBusy(nextBusy) {
@@ -157,8 +164,9 @@
       if (!season) {
         const empty = document.createElement('p');
         empty.className = 'history-empty-state';
-        empty.textContent = '暂无赛季，在线对局仍会保留在历史中。';
+        empty.textContent = '暂无赛季。';
         seasonSummary.append(empty);
+        globalScope.HYLAppleUI?.refresh?.(seasonSummary);
         return;
       }
       const title = document.createElement('p');
@@ -169,9 +177,11 @@
         const standing = standings.find((item) => item.gameType === type);
         const item = document.createElement('article');
         item.className = 'season-summary-item';
+        item.dataset.appleCard = '';
         const name = document.createElement('span');
         name.textContent = gameTypeLabel(type);
         const points = document.createElement('strong');
+        points.dataset.appleCounter = '';
         points.textContent = `${standing?.points || 0} 分`;
         const meta = document.createElement('small');
         meta.textContent = standing
@@ -180,6 +190,7 @@
         item.append(name, points, meta);
         seasonSummary.append(item);
       });
+      globalScope.HYLAppleUI?.refresh?.(seasonSummary);
     }
 
     function renderHistory() {
@@ -188,7 +199,7 @@
       if (history.length === 0 && !historyBusy) {
         const empty = document.createElement('p');
         empty.className = 'history-empty-state';
-        empty.textContent = '还没有在线战绩，完成一局后会显示在这里。';
+        empty.textContent = '暂无在线战绩。';
         matchHistoryList.append(empty);
       } else {
         const fragment = document.createDocumentFragment();
@@ -196,6 +207,9 @@
           const item = document.createElement('article');
           item.className = 'match-history-item';
           item.dataset.result = match.result;
+          item.dataset.appleCard = '';
+          item.dataset.appleReveal = '';
+          item.dataset.appleListItem = '';
           const heading = document.createElement('div');
           heading.className = 'match-history-item-heading';
           const opponent = document.createElement('strong');
@@ -210,16 +224,19 @@
           values.className = 'match-history-values';
           const points = document.createElement('span');
           points.textContent = match.pointsAwarded === null ? '不计分' : `积分 +${match.pointsAwarded}`;
+          if (match.pointsAwarded !== null) points.dataset.appleCounter = '';
           const wager = document.createElement('span');
           wager.textContent = match.wagerAmount === 0
             ? '无彩头'
             : `彩头 ${match.coinDelta > 0 ? '+' : ''}${match.coinDelta}`;
+          if (match.wagerAmount !== 0) wager.dataset.appleCounter = '';
           values.append(points, wager);
           item.append(heading, meta, values);
           fragment.append(item);
         });
         matchHistoryList.append(fragment);
       }
+      globalScope.HYLAppleUI?.refresh?.(matchHistoryList);
       if (loadMoreHistoryButton) {
         loadMoreHistoryButton.hidden = !historyHasMore;
         loadMoreHistoryButton.disabled = historyBusy;
@@ -287,7 +304,6 @@
       openAdminButton.hidden = !registered || !economySnapshot.isAdmin;
       if (registered) {
         accountDialogTitle.textContent = '个人资料';
-        accountDialogDescription.textContent = '修改后的游戏名会用于之后加入的在线房间。';
         profileUsername.textContent = identity.username;
         if (profilePlayerUid) profilePlayerUid.textContent = identity.uid || '未分配';
         if (document.activeElement !== profileGameName) profileGameName.value = identity.displayName;
@@ -369,8 +385,8 @@
       accountDialog.showModal();
     });
     accountCloseButton?.addEventListener('click', () => accountDialog.close());
-    accountLoginTab?.addEventListener('click', () => setMode('login'));
-    accountRegisterTab?.addEventListener('click', () => setMode('register'));
+    accountLoginTab?.addEventListener('click', () => transitionMode('login'));
+    accountRegisterTab?.addEventListener('click', () => transitionMode('register'));
     accountLoginForm?.addEventListener('submit', (event) => {
       event.preventDefault();
       const data = new FormData(accountLoginForm);

@@ -165,14 +165,12 @@
       const winnerName = game.playerNames?.[winner] || (winner === game.playerMark ? ownName : opponentName);
       if (game.finishReason === 'disconnect') return `${winnerName}因对手掉线获胜`;
       if (game.finishReason === 'active_exit') return `${winnerName}因对手退出获胜`;
-      return winner === game.playerMark
-        ? `${winnerName}获胜，漂亮的一局`
-        : `${winnerName}获胜，再来一局`;
+      return `${winnerName}获胜`;
     }
 
     if (game.status === 'draw') {
       if (game.rematchReady?.[game.playerMark]) return `等待${opponentName}确认再来一局`;
-      return '本局平局，再来一局';
+      return '平局';
     }
 
     return '线上棋局状态已更新';

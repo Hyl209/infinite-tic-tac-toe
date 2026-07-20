@@ -9,8 +9,10 @@
     <link rel="icon" href="/assets/images/image_01.png">
     <link rel="stylesheet" href="/assets/styles/game.css">
     <link rel="stylesheet" href="/assets/styles/portal.css">
+    <link rel="stylesheet" href="/assets/styles/apple-system.css?v=20260720-breathe2">
     <script src="/assets/vendor/gsap/gsap.min.js" defer></script>
     <script src="/assets/vendor/gsap/ScrollTrigger.min.js" defer></script>
+    <script src="/src/ui/apple-animations.js" defer></script>
     <script src="/src/config/portal.js" defer></script>
     <script src="/src/config/online.js" defer></script>
     <script src="/src/utils/room-code.js" defer></script>
@@ -26,9 +28,16 @@
     <script src="/src/routes/notification-bell.js" defer></script>
     <script src="/src/routes/social-inbox.js" defer></script>
   </head>
-  <body>
+  <body data-apple-page="portal">
     <a class="skip-link" href="#site-main">跳到主要内容</a>
-    <header class="site-nav">
+    <div class="apple-aurora" aria-hidden="true">
+      <span class="apple-glow apple-glow--blue"></span>
+      <span class="apple-glow apple-glow--indigo"></span>
+      <span class="apple-glow apple-glow--purple"></span>
+      <span class="apple-glow apple-glow--pink"></span>
+    </div>
+    <header class="site-nav" data-apple-nav>
+      <span class="apple-scroll-progress" aria-hidden="true"></span>
       <div class="site-nav-inner">
         <a class="site-brand" href="/" aria-label="返回 HYL Space 首页">
           <span class="site-brand-mark" aria-hidden="true">
@@ -71,28 +80,25 @@
             <small id="account-kind-label">游客身份</small>
             <strong id="account-display-name">匿名玩家</strong>
           </span>
-          <span id="account-coin-balance" class="coin-balance" hidden>金币 0</span>
+          <span id="account-coin-balance" class="coin-balance" hidden data-apple-counter>金币 0</span>
         </button>
       </div>
     </header>
 
     <main id="site-main" class="site-shell" tabindex="-1">
       <section id="portal-home" class="portal-home">
-        <section class="portal-hero" aria-labelledby="portal-main-title">
+        <section class="portal-hero" aria-labelledby="portal-main-title" data-apple-entrance>
           <div class="portal-hero-copy">
-            <p class="portal-signature">Personal digital index</p>
             <h1 id="portal-main-title">HYL<br>SPACE</h1>
-            <p class="portal-intro">这里收着我正在使用、制作和反复打磨的东西。</p>
             <div class="portal-hero-actions">
-              <a class="portal-action primary" href="#tools" data-portal-section="tools">打开工具集</a>
-              <a class="portal-action secondary" href="/game/">进入游戏专区</a>
+              <a class="portal-action primary apple-button--primary" href="#tools" data-portal-section="tools" data-apple-breathe>打开工具集</a>
+              <a class="portal-action secondary apple-button--secondary" href="/game/">进入游戏专区</a>
             </div>
-            <p class="portal-index-note">TOOLS · WORKS · PLAY · NOTES</p>
           </div>
 
           <div class="obsidian-stage" aria-hidden="true">
-            <span class="obsidian-orbit orbit-one"></span>
-            <span class="obsidian-orbit orbit-two"></span>
+            <span class="obsidian-orbit orbit-one" data-apple-orbit data-orbit-duration="24"></span>
+            <span class="obsidian-orbit orbit-two" data-apple-orbit data-orbit-duration="36" data-orbit-direction="reverse"></span>
             <svg class="obsidian-object" viewBox="0 0 620 720" role="presentation">
               <defs>
                 <linearGradient id="obsidian-face-a" x1="0" y1="0" x2="1" y2="1">
@@ -128,56 +134,51 @@
                 <path d="M520 190 314 338 134 530"/>
               </g>
             </svg>
-            <span class="obsidian-caption">HYL / 2026</span>
           </div>
         </section>
 
-        <section id="tools" class="portal-section portal-tools" aria-labelledby="tools-title">
+        <section id="tools" class="portal-section portal-tools" aria-labelledby="tools-title" data-apple-reveal data-apple-theme="blue">
           <header class="portal-section-heading">
-            <h2 id="tools-title">先把工具放在手边</h2>
-            <p>日常会反复用到的效率入口，整理完成后可从这里直接打开。</p>
+            <h2 id="tools-title">工具</h2>
           </header>
           <div id="portal-tools-list" class="portal-index-list" data-portal-list="tools">
             <p class="portal-empty">工具内容正在整理。</p>
           </div>
         </section>
 
-        <section id="works" class="portal-section portal-works" aria-labelledby="works-title">
+        <section id="works" class="portal-section portal-works" aria-labelledby="works-title" data-apple-reveal data-apple-theme="purple">
           <header class="portal-section-heading">
-            <h2 id="works-title">正在做，也持续在改</h2>
-            <p>只陈列能够真实打开、真实使用或仍在推进的项目。</p>
+            <h2 id="works-title">作品</h2>
           </header>
           <div id="portal-works-list" class="portal-work-gallery" data-portal-list="works">
             <p class="portal-empty">作品内容正在整理。</p>
           </div>
         </section>
 
-        <section id="games" class="portal-section portal-games" aria-labelledby="games-title">
+        <section id="games" class="portal-section portal-games" aria-labelledby="games-title" data-apple-reveal data-apple-theme="magenta">
           <header class="portal-section-heading">
-            <h2 id="games-title">需要放松时，下一盘</h2>
-            <p>游戏仍然完整保留，但它只是 HYL Space 的一部分。</p>
+            <h2 id="games-title">游戏</h2>
           </header>
           <div class="portal-game-stage">
-            <a class="portal-game-link" href="/game/?game=tic_tac_toe">
+            <a class="portal-game-link" href="/game/?game=tic_tac_toe" data-apple-card>
               <span class="portal-game-board tic" aria-hidden="true">
                 <i>X</i><i></i><i>O</i><i></i><i>X</i><i></i><i>O</i><i></i><i>X</i>
               </span>
-              <span><strong>无限井字棋</strong><small>动态消子 · AI · 双人 · 在线</small></span>
+              <span><strong>无限井字棋</strong></span>
             </a>
-            <a class="portal-game-link" href="/game/?game=gomoku">
+            <a class="portal-game-link" href="/game/?game=gomoku" data-apple-card>
               <span class="portal-game-board gomoku" aria-hidden="true">
                 <i></i><i></i><i></i><i></i><i></i>
               </span>
-              <span><strong>五子棋</strong><small>15×15 棋盘 · AI · 双人 · 在线</small></span>
+              <span><strong>五子棋</strong></span>
             </a>
           </div>
-          <a class="portal-section-action" href="/game/">查看游戏专区与排行榜</a>
+          <a class="portal-section-action apple-button--secondary" href="/game/">查看游戏专区与排行榜</a>
         </section>
 
-        <section id="updates" class="portal-section portal-updates" aria-labelledby="updates-title">
+        <section id="updates" class="portal-section portal-updates" aria-labelledby="updates-title" data-apple-reveal data-apple-theme="blend">
           <header class="portal-section-heading">
-            <h2 id="updates-title">最近在做什么</h2>
-            <p>不做流水账，只保留值得回看的变化。</p>
+            <h2 id="updates-title">动态</h2>
           </header>
           <div id="portal-updates-list" class="portal-timeline" data-portal-list="updates">
             <p class="portal-empty">动态内容正在整理。</p>
@@ -186,7 +187,6 @@
 
         <footer class="portal-footer">
           <strong>HYL SPACE</strong>
-          <p>工具、作品、游戏与持续发生的事。</p>
           <a href="#portal-main-title">回到顶部</a>
         </footer>
       </section>
@@ -195,9 +195,8 @@
           <div class="account-dialog-shell">
             <button id="account-close-button" class="account-close-button" type="button">关闭</button>
             <header class="account-dialog-header">
-              <p>玩家身份</p>
               <h2 id="account-dialog-title">登录账号</h2>
-              <p id="account-dialog-description">登录后，游戏名会同步到其他设备。</p>
+              <p id="account-dialog-description"></p>
             </header>
 
             <div id="account-auth-view">
@@ -206,7 +205,7 @@
                 <button id="account-register-tab" type="button" role="tab" aria-selected="false">注册</button>
               </div>
 
-              <form id="account-login-form" class="account-form">
+              <form id="account-login-form" class="account-form" data-apple-tab-panel>
                 <label class="account-field" for="login-username">
                   <span>用户名</span>
                   <input
@@ -233,10 +232,10 @@
                     required
                   >
                 </label>
-                <button class="button primary" type="submit">登录账号</button>
+                <button class="button primary apple-button--primary" type="submit">登录账号</button>
               </form>
 
-              <form id="account-register-form" class="account-form" hidden>
+              <form id="account-register-form" class="account-form" data-apple-tab-panel hidden>
                 <label class="account-field" for="register-username">
                   <span>登录用户名</span>
                   <input
@@ -276,7 +275,7 @@
                     required
                   >
                 </label>
-                <button class="button primary" type="submit">注册账号</button>
+                <button class="button primary apple-button--primary" type="submit">注册账号</button>
               </form>
             </div>
 
@@ -293,10 +292,10 @@
                   autocomplete="nickname"
                   required
                 >
-                <small>当前改名卡 <strong id="profile-rename-card-count">0</strong> 张，<a href="/player/?tab=shop">前往商城</a></small>
+                <small>当前改名卡 <strong id="profile-rename-card-count" data-apple-counter>0</strong> 张，<a href="/player/?tab=shop">前往商城</a></small>
               </label>
               <div class="account-profile-actions">
-                <button class="button primary" type="submit">保存游戏名</button>
+                <button class="button primary apple-button--primary" type="submit">保存游戏名</button>
                 <button id="account-logout-button" class="button danger" type="button">退出账号</button>
               </div>
             </form>
@@ -305,9 +304,9 @@
               <div class="wallet-heading">
                 <div>
                   <small>可用金币</small>
-                  <strong id="wallet-balance">0</strong>
+                  <strong id="wallet-balance" data-apple-counter>0</strong>
                 </div>
-                <button id="open-admin-button" class="button secondary" type="button" hidden>管理后台</button>
+                <button id="open-admin-button" class="button secondary apple-button--secondary" type="button" hidden>管理后台</button>
               </div>
               <form id="redeem-code-form" class="redeem-form">
                 <label class="account-field" for="redeem-code-input">
@@ -323,7 +322,7 @@
                       placeholder="XXXX-XXXX-XXXX"
                       required
                     >
-                    <button class="button primary" type="submit">领取金币</button>
+                    <button class="button primary apple-button--primary" type="submit">领取金币</button>
                   </div>
                 </label>
               </form>
@@ -333,7 +332,6 @@
             <section id="match-history-panel" class="match-history-panel" hidden aria-labelledby="match-history-title">
               <div class="match-history-heading">
                 <div>
-                  <small>个人战绩</small>
                   <h3 id="match-history-title">最近对局</h3>
                 </div>
                 <label for="match-history-filter">
@@ -348,13 +346,12 @@
               <div id="season-summary" class="season-summary" aria-live="polite"></div>
               <p id="match-history-message" class="account-message" aria-live="polite"></p>
               <div id="match-history-list" class="match-history-list"></div>
-              <button id="load-more-history-button" class="button secondary" type="button" hidden>
+              <button id="load-more-history-button" class="button secondary apple-button--secondary" type="button" hidden>
                 加载更多战绩
               </button>
             </section>
 
             <p id="account-message" class="account-message" aria-live="polite"></p>
-            <p class="account-footnote">游客也能在线对战，名称会显示为匿名玩家加随机码。</p>
           </div>
         </dialog>
       <div id="social-toast-region" class="social-toast-region" aria-live="polite" aria-atomic="false"></div>

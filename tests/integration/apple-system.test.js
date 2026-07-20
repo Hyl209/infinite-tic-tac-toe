@@ -86,6 +86,10 @@ test('shared CSS declares the consolidated Apple tokens, controls, surfaces, and
   assert.match(css, /\[data-apple-breathe\][\s\S]*min-height:\s*46px/);
   assert.match(css, /\[data-apple-reveal\][\s\S]*visibility:\s*visible/);
   assert.match(css, /body\[data-apple-page\][\s\S]*-apple-system,[\s\S]*BlinkMacSystemFont,[\s\S]*SF Pro Display/);
+  assert.match(css, /body\[data-apple-page\]\s*\{[^}]*user-select:\s*none/s);
+  assert.match(css, /body\[data-apple-page\]\s+a\s*\{[^}]*text-decoration:\s*none/s);
+  assert.match(css, /body\[data-apple-page\]\s+a\.button\s*\{[^}]*display:\s*inline-flex[^}]*align-items:\s*center[^}]*justify-content:\s*center/s);
+  assert.match(css, /body\[data-apple-page\]\s*:is\(input,\s*textarea,\s*\[contenteditable=["']true["']\]\)\s*\{[^}]*user-select:\s*text/s);
   assert.match(css, /body\[data-apple-page\][\s\S]*button[\s\S]*min-height:\s*44px[\s\S]*font-weight:\s*600/);
   assert.match(css, /body\[data-apple-page\][\s\S]*input[\s\S]*select[\s\S]*textarea[\s\S]*min-height:\s*46px/);
   assert.match(css, /\[data-apple-card\][\s\S]*border-radius:\s*var\(--apple-radius-lg\)/);

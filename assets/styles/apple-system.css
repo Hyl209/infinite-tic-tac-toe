@@ -105,6 +105,15 @@ body[data-apple-page] {
   color: var(--apple-ink);
   background: var(--apple-bg);
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+  user-select: none;
+}
+
+body[data-apple-page] a {
+  text-decoration: none;
+}
+
+body[data-apple-page] :is(input, textarea, [contenteditable="true"]) {
+  user-select: text;
 }
 
 body[data-apple-page] button,
@@ -122,6 +131,12 @@ body[data-apple-page] [role="tab"] {
   min-height: 44px;
   border-radius: var(--apple-radius-md);
   font-weight: 600;
+}
+
+body[data-apple-page] a.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 body[data-apple-page] input:not([type="checkbox"]):not([type="radio"]),
